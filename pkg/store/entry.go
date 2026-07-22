@@ -1,0 +1,45 @@
+package store
+
+import "time"
+
+// Flag bits for Entry.Flags.
+const (
+	FlagNegative uint32 = 1 << 0
+)
+
+// Entry is the on-node stored value envelope (versioned LWW + TTL).
+type Entry struct {
+	Value    []byte
+	Version  uint64
+	ExpireAt int64 // unix nano; 0 = no expiry
+	Flags    uint32
+}
+
+// IsNegative reports whether this is a negative-cache sentinel.
+func (e Entry) IsNegative() bool {
+	return e.Flags&FlagNegative != 0
+}
+
+// Expired reports whether the entry is past ExpireAt at time now.
+func (e Entry) Expired(now time.Time) bool {
+	if e.ExpireAt == 0 {
+		return false
+	}
+	return now.UnixNano() >= e.ExpireAt
+}
+
+// CloneValue returns a copy of Value (nil-safe).
+func (e Entry) CloneValue() []byte {
+	if e.Value == nil {
+		return nil
+	}
+	out := make([]byte, len(e.Value))
+	copy(out, e.Value)
+	return out
+}
+
+// Cost estimates memory cost for MaxBytes accounting.
+func (e Entry) Cost() int64 {
+	// key cost is tracked separately by the store; this is value envelope cost.
+	return int64(len(e.Value)) + 64 // rough overhead for metadata
+}

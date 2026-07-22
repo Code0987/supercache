@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package supercache.peer.v1;
+
+option go_package = "github.com/Code0987/supercache/api/gen/peer/v1;peerv1";
+
+service Peer {
+  rpc ApplyPut(ApplyPutRequest) returns (ApplyPutResponse);
+  rpc ApplyDelete(ApplyDeleteRequest) returns (ApplyDeleteResponse);
+  rpc ForwardPut(ForwardPutRequest) returns (ForwardPutResponse);
+  rpc ForwardDelete(ForwardDeleteRequest) returns (ForwardDeleteResponse);
+  rpc GetOrLoad(GetOrLoadRequest) returns (GetOrLoadResponse);
+}
+
+message Entry {
+  bytes value = 1;
+  uint64 version = 2;
+  int64 expire_at_unix_nano = 3;
+  uint32 flags = 4;
+}
+
+message ApplyPutRequest {
+  string keyspace = 1;
+  string key = 2;
+  Entry entry = 3;
+  uint64 ring_generation = 4;
+}
+
+message ApplyPutResponse {
+  bool applied = 1;
+}
+
+message ApplyDeleteRequest {
+  string keyspace = 1;
+  string key = 2;
+  uint64 delete_version = 3;
+  uint64 ring_generation = 4;
+}
+
+message ApplyDeleteResponse {
+  bool applied = 1;
+}
+
+message ForwardPutRequest {
+  string keyspace = 1;
+  string key = 2;
+  bytes value = 3;
+  int64 ttl_nanos = 4;
+  bool ttl_set = 5;
+}
+
+message ForwardPutResponse {}
+
+message ForwardDeleteRequest {
+  string keyspace = 1;
+  string key = 2;
+}
+
+message PeerFailure {
+  string peer_id = 1;
+  string message = 2;
+}
+
+message ForwardDeleteResponse {
+  repeated PeerFailure failures = 1;
+}
+
+message GetOrLoadRequest {
+  string keyspace = 1;
+  string key = 2;
+}
+
+message GetOrLoadResponse {
+  bool found = 1;
+  Entry entry = 2;
+}

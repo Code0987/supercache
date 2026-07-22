@@ -1,0 +1,31 @@
+# Binaries (root only — do not ignore cmd/supercache-node/)
+/supercache-node
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage / profiles
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace (local)
+go.work
+go.work.sum
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs / local runtime
+*.log
+/tmp/
