@@ -473,3 +473,113 @@ func TestGetCancelledContext(t *testing.T) {
 		t.Fatalf("want canceled, got %v", err)
 	}
 }
+
+// Canceling one LoadThrough Get must not fail a concurrent Get that still has a live context.
+func TestSingleflightCanceledCallerDoesNotFailCoWaiters(t *testing.T) {
+	var started sync.WaitGroup
+	started.Add(1)
+	release := make(chan struct{})
+	src := datasource.Func(func(ctx context.Context, key string) ([]byte, error) {
+		started.Done()
+		select {
+		case <-release:
+			return []byte("ok"), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+	e := engine.New()
+	defer e.Close()
+	_ = e.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: src,
+	})
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	errCh1 := make(chan error, 1)
+	go func() {
+		_, err := e.Get(ctx1, "lt", "k")
+		errCh1 <- err
+	}()
+	started.Wait()
+
+	// Second caller with an independent, non-canceled context joins the same singleflight.
+	errCh2 := make(chan error, 1)
+	valCh2 := make(chan []byte, 1)
+	go func() {
+		v, err := e.Get(context.Background(), "lt", "k")
+		errCh2 <- err
+		valCh2 <- v
+	}()
+	// Let second Get enter flight.Do waiters.
+	time.Sleep(30 * time.Millisecond)
+	cancel1()
+
+	// Unblock the loader (if it still uses a non-canceled load context).
+	close(release)
+
+	err1 := <-errCh1
+	err2 := <-errCh2
+	// First may be canceled or still succeed depending on timing; second must succeed.
+	if err2 != nil {
+		t.Fatalf("co-waiter must not fail due to peer cancel: err2=%v err1=%v", err2, err1)
+	}
+	if string(<-valCh2) != "ok" {
+		t.Fatal("co-waiter value")
+	}
+}
+
+// After Delete, a delayed ApplyPut with an older version must not resurrect the key.
+func TestEngineNoResurrectionAfterDelete(t *testing.T) {
+	e := engine.New()
+	defer e.Close()
+	_ = e.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
+	ctx := context.Background()
+	if err := e.Put(ctx, "c", "k", []byte("v1")); err != nil {
+		t.Fatal(err)
+	}
+	// First Put mints version 1; Delete mints a higher tombstone version.
+	stale := store.Entry{Value: []byte("v1"), Version: 1}
+	if err := e.Delete(ctx, "c", "k"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := e.ApplyPut("c", "k", stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("stale ApplyPut after Delete must not apply")
+	}
+	if _, err := e.Get(ctx, "c", "k"); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("resurrected: %v", err)
+	}
+}
+
+// Version tracker must not grow without bound as keys are written and evicted.
+func TestVersionTrackerBounded(t *testing.T) {
+	const capN = 32
+	e := engine.New(engine.WithMaxVersionKeys(capN))
+	defer e.Close()
+	_ = e.UpdateKeySpace(keyspace.Config{
+		Name: "c", Mode: keyspace.ModeCacheOnly,
+		// Tiny budget so entries are evicted quickly.
+		MaxBytes: 256,
+		TTL:      time.Minute,
+	})
+	ctx := context.Background()
+	for i := 0; i < 200; i++ {
+		k := fmt.Sprintf("key-%04d", i)
+		if err := e.Put(ctx, "c", k, []byte("xxxxxxxx")); err != nil {
+			// Some puts may fail MaxBytes for a single entry; use small values.
+			_ = e.Put(ctx, "c", k, []byte("x"))
+		}
+	}
+	n := e.VersionTrackerSize("c")
+	if n < 0 {
+		t.Fatal("keyspace missing")
+	}
+	// Allow a little headroom above cap while prune runs, but must not track all 200 forever.
+	if n > capN*2 {
+		t.Fatalf("version tracker size %d exceeds bound (cap=%d)", n, capN)
+	}
+}

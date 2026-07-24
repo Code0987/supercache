@@ -7,14 +7,18 @@ import (
 	"time"
 )
 
+// DefaultTombstoneTTL bounds how long delete markers block stale ApplyPut.
+const DefaultTombstoneTTL = 5 * time.Minute
+
 // Memory is a mutex-protected LRU store with MaxBytes.
 type Memory struct {
-	mu       sync.Mutex
-	maxBytes int64
-	bytes    int64
-	items    map[string]*list.Element
-	order    *list.List // front = most recent
-	now      func() time.Time
+	mu           sync.Mutex
+	maxBytes     int64
+	bytes        int64
+	items        map[string]*list.Element
+	order        *list.List // front = most recent
+	now          func() time.Time
+	tombstoneTTL time.Duration
 
 	hits      atomic.Uint64
 	misses    atomic.Uint64
@@ -36,13 +40,19 @@ func WithClock(now func() time.Time) MemoryOption {
 	return func(m *Memory) { m.now = now }
 }
 
+// WithTombstoneTTL sets how long delete tombstones are retained (0 = no expiry).
+func WithTombstoneTTL(d time.Duration) MemoryOption {
+	return func(m *Memory) { m.tombstoneTTL = d }
+}
+
 // NewMemory creates a store. maxBytes <= 0 means unbounded (still LRU-ordered).
 func NewMemory(maxBytes int64, opts ...MemoryOption) *Memory {
 	m := &Memory{
-		maxBytes: maxBytes,
-		items:    make(map[string]*list.Element),
-		order:    list.New(),
-		now:      time.Now,
+		maxBytes:     maxBytes,
+		items:        make(map[string]*list.Element),
+		order:        list.New(),
+		now:          time.Now,
+		tombstoneTTL: DefaultTombstoneTTL,
 	}
 	for _, o := range opts {
 		o(m)
@@ -68,6 +78,11 @@ func (m *Memory) Get(key string) (Entry, bool) {
 		m.misses.Add(1)
 		return Entry{}, false
 	}
+	// Tombstones are not readable values.
+	if it.entry.IsTombstone() {
+		m.misses.Add(1)
+		return Entry{}, false
+	}
 	m.order.MoveToFront(el)
 	m.hits.Add(1)
 	out := it.entry
@@ -88,6 +103,7 @@ func (m *Memory) Peek(key string) (Entry, bool) {
 		m.removeElement(el)
 		return Entry{}, false
 	}
+	// Peek returns tombstones so version allocation can seed from delete version.
 	out := it.entry
 	out.Value = it.entry.CloneValue()
 	return out, true
@@ -123,13 +139,14 @@ func (m *Memory) AcceptIfNewer(key string, e Entry) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Never install a plain put over a still-valid higher/equal tombstone or live entry.
 	if el, ok := m.items[key]; ok {
 		it := el.Value.(*lruItem)
 		if !it.entry.Expired(m.now()) && e.Version <= it.entry.Version {
 			m.staleSkip.Add(1)
 			return false
 		}
-		// replace
+		// replace (including superseding an expired or lower-version tombstone)
 		cost := entryCost(key, e)
 		if m.maxBytes > 0 && cost > m.maxBytes {
 			return false
@@ -167,11 +184,16 @@ func (m *Memory) AcceptNegative(key string, e Entry) bool {
 	if el, ok := m.items[key]; ok {
 		it := el.Value.(*lruItem)
 		if !it.entry.Expired(m.now()) {
-			if !it.entry.IsNegative() {
+			if it.entry.IsTombstone() {
+				// Negatives must not resurrect over a delete tombstone with higher/equal version.
+				if e.Version <= it.entry.Version {
+					m.staleSkip.Add(1)
+					return false
+				}
+			} else if !it.entry.IsNegative() {
 				// Never clobber a live positive entry.
 				return false
-			}
-			if e.Version <= it.entry.Version {
+			} else if e.Version <= it.entry.Version {
 				m.staleSkip.Add(1)
 				return false
 			}
@@ -207,17 +229,55 @@ func (m *Memory) Delete(key string) bool {
 func (m *Memory) DeleteIfVersion(key string, deleteVersion uint64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	el, ok := m.items[key]
-	if !ok {
+
+	tomb := Entry{
+		Version:  deleteVersion,
+		Flags:    FlagTombstone,
+		ExpireAt: m.tombstoneExpireAt(),
+	}
+	cost := entryCost(key, tomb)
+	if m.maxBytes > 0 && cost > m.maxBytes {
+		// Still try to remove live data even if tombstone cannot be stored.
+		if el, ok := m.items[key]; ok {
+			it := el.Value.(*lruItem)
+			if it.entry.Expired(m.now()) || deleteVersion >= it.entry.Version {
+				m.removeElement(el)
+				return true
+			}
+			m.staleSkip.Add(1)
+			return false
+		}
 		return true
 	}
-	it := el.Value.(*lruItem)
-	if deleteVersion >= it.entry.Version {
-		m.removeElement(el)
+
+	if el, ok := m.items[key]; ok {
+		it := el.Value.(*lruItem)
+		if !it.entry.Expired(m.now()) && deleteVersion < it.entry.Version {
+			m.staleSkip.Add(1)
+			return false
+		}
+		m.bytes -= it.cost
+		it.entry = copyEntry(tomb)
+		it.cost = cost
+		m.bytes += cost
+		m.order.MoveToFront(el)
+		m.evictLocked()
 		return true
 	}
-	m.staleSkip.Add(1)
-	return false
+
+	it := &lruItem{key: key, entry: copyEntry(tomb), cost: cost}
+	el := m.order.PushFront(it)
+	m.items[key] = el
+	m.bytes += cost
+	m.evictLocked()
+	return true
+}
+
+func (m *Memory) tombstoneExpireAt() int64 {
+	if m.tombstoneTTL <= 0 {
+		return 0
+	}
+	return m.now().Add(m.tombstoneTTL).UnixNano()
 }
 
 func (m *Memory) Stats() Stats {

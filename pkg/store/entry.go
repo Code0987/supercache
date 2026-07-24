@@ -4,7 +4,8 @@ import "time"
 
 // Flag bits for Entry.Flags.
 const (
-	FlagNegative uint32 = 1 << 0
+	FlagNegative  uint32 = 1 << 0
+	FlagTombstone uint32 = 1 << 1 // versioned delete marker (blocks stale ApplyPut)
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -18,6 +19,11 @@ type Entry struct {
 // IsNegative reports whether this is a negative-cache sentinel.
 func (e Entry) IsNegative() bool {
 	return e.Flags&FlagNegative != 0
+}
+
+// IsTombstone reports whether this is a delete tombstone (not a readable value).
+func (e Entry) IsTombstone() bool {
+	return e.Flags&FlagTombstone != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

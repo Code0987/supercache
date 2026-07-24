@@ -36,11 +36,13 @@ type Store interface {
 	// regardless of version (concurrent Put must win over miss→NotFound).
 	AcceptNegative(key string, e Entry) bool
 
-	// Delete removes key if present. Returns true if something was removed.
+	// Delete removes key if present (hard remove, no tombstone). Returns true if removed.
 	Delete(key string) bool
 
-	// DeleteIfVersion removes key if local version <= deleteVersion (or missing).
-	// Returns true if removed or already absent with no higher version.
+	// DeleteIfVersion installs a versioned tombstone when local is missing or
+	// local.Version <= deleteVersion. Returns false only when a higher live/tombstone
+	// version already exists (stale delete). Tombstones make Get miss and reject
+	// AcceptIfNewer with version <= tombstone until the tombstone expires.
 	DeleteIfVersion(key string, deleteVersion uint64) bool
 
 	// Stats returns a snapshot of counters.

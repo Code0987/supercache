@@ -40,6 +40,10 @@ func (e *Engine) clusterSnapshot() *Cluster {
 }
 
 // PutLocal applies a Put on this node as owner (no forward), then async fan-out.
+//
+// When clustered and this node is not the ring owner, PutLocal re-forwards to the
+// current owner so a mis-routed ForwardPut cannot silently stay local-only.
+// If the owner cannot be reached, it applies locally and force-fans-out.
 func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value []byte, opts ...PutOption) error {
 	ctx, end := e.startSpan(ctx, "engine.PutLocal")
 	defer end()
@@ -61,6 +65,35 @@ func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value [
 		return err
 	}
 
+	// Ownership re-check: avoid accepting a write as owner when the ring disagrees.
+	c := e.clusterSnapshot()
+	if c != nil && c.Ring != nil {
+		if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+			if c.Transport != nil && owner.Addr != "" && !forwardDepthExceeded(ctx) {
+				pc := putConfig{}
+				for _, o := range opts {
+					o(&pc)
+				}
+				var ttlNanos int64
+				if pc.ttlSet {
+					ttlNanos = int64(pc.ttl)
+				}
+				fctx := withForwardDepth(ctx)
+				if err := c.Transport.ForwardPut(fctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet); err == nil {
+					return nil
+				}
+				// Fall through: apply + force fan-out so the write still propagates.
+			}
+			return e.putLocalApply(ctx, ks, keyspaceName, key, value, true, opts...)
+		}
+	}
+	return e.putLocalApply(ctx, ks, keyspaceName, key, value, false, opts...)
+}
+
+func (e *Engine) putLocalApply(ctx context.Context, ks *ksRuntime, keyspaceName, key string, value []byte, forceFanout bool, opts ...PutOption) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	pc := putConfig{}
 	for _, o := range opts {
 		o(&pc)
@@ -77,25 +110,45 @@ func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value [
 	}
 	ent.ExpireAt = e.expireAt(ttl)
 	if !ks.store.AcceptIfNewer(key, ent) {
-		if cur, ok := ks.store.Peek(key); ok && cur.Version >= ent.Version {
+		if cur, ok := ks.store.Peek(key); ok && !cur.IsTombstone() && cur.Version >= ent.Version {
+			e.metrics.RecordPut(keyspaceName)
+			return nil
+		}
+		// Tombstone with higher/equal version or MaxBytes rejection.
+		if cur, ok := ks.store.Peek(key); ok && cur.IsTombstone() && cur.Version >= ent.Version {
+			// Should not happen if nextVersion seeds from Peek; treat as success no-op.
 			e.metrics.RecordPut(keyspaceName)
 			return nil
 		}
 		return fmt.Errorf("%w: entry exceeds MaxBytes", ErrInvalidArgument)
 	}
 	e.metrics.RecordPut(keyspaceName)
-	e.fanoutPut(keyspaceName, key, ent)
+	e.fanoutPut(keyspaceName, key, ent, forceFanout)
 	return nil
 }
 
-func (e *Engine) fanoutPut(keyspaceName, key string, ent store.Entry) {
+type forwardDepthKey struct{}
+
+func forwardDepthExceeded(ctx context.Context) bool {
+	n, _ := ctx.Value(forwardDepthKey{}).(int)
+	return n >= 1
+}
+
+func withForwardDepth(ctx context.Context) context.Context {
+	n, _ := ctx.Value(forwardDepthKey{}).(int)
+	return context.WithValue(ctx, forwardDepthKey{}, n+1)
+}
+
+func (e *Engine) fanoutPut(keyspaceName, key string, ent store.Entry, force bool) {
 	c := e.clusterSnapshot()
 	if c == nil || c.Fanout == nil || c.Ring == nil {
 		return
 	}
-	// Only the owner should fan out authoritative fills.
-	if owner, ok := c.Ring.Owner(key); ok && owner.ID != c.SelfID {
-		return
+	// Only the owner should fan out authoritative fills, unless force (mis-route repair).
+	if !force {
+		if owner, ok := c.Ring.Owner(key); ok && owner.ID != c.SelfID {
+			return
+		}
 	}
 	peers := c.Ring.PeersExcept(c.SelfID)
 	if len(peers) == 0 {
@@ -278,7 +331,7 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 			}
 			return ent, nil
 		}
-		val, err := e.loadThrough(ctx, ks, key, true)
+		val, err := e.loadThrough(context.WithoutCancel(ctx), ks, key, true)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				// Prefer negative envelope after storeNegative inside loadThrough.
@@ -305,6 +358,9 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 				return ent, ErrNotFound
 			}
 		}
+		return store.Entry{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return store.Entry{}, err
 	}
 	return v.(store.Entry), nil

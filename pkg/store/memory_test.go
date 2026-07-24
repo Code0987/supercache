@@ -109,3 +109,76 @@ func TestAcceptNegativeNeverClobbersPositive(t *testing.T) {
 		t.Fatalf("got %+v ok=%v", e, ok)
 	}
 }
+
+// Delayed ApplyPut after Delete must not resurrect a key (tombstone / delete-version gate).
+func TestMemoryNoResurrectionAfterDelete(t *testing.T) {
+	m := NewMemory(0)
+	defer m.Close()
+
+	if !m.Set("k", Entry{Value: []byte("v1"), Version: 5}) {
+		t.Fatal("set")
+	}
+	if !m.DeleteIfVersion("k", 6) {
+		t.Fatal("delete should succeed")
+	}
+	if _, ok := m.Get("k"); ok {
+		t.Fatal("Get must miss after delete")
+	}
+	// Stale fan-out from before the delete.
+	if m.AcceptIfNewer("k", Entry{Value: []byte("stale"), Version: 5}) {
+		t.Fatal("delayed ApplyPut with version <= delete version must be rejected")
+	}
+	if _, ok := m.Get("k"); ok {
+		t.Fatal("key must not be resurrected")
+	}
+	// Newer write after delete is still allowed.
+	if !m.AcceptIfNewer("k", Entry{Value: []byte("v2"), Version: 7}) {
+		t.Fatal("version > delete tombstone must apply")
+	}
+	e, ok := m.Get("k")
+	if !ok || string(e.Value) != "v2" || e.Version != 7 {
+		t.Fatalf("got ok=%v entry=%+v", ok, e)
+	}
+}
+
+// ApplyDelete on a key that was never present must still block stale Puts.
+func TestMemoryDeleteTombstoneWhenMissing(t *testing.T) {
+	m := NewMemory(0)
+	defer m.Close()
+
+	if !m.DeleteIfVersion("missing", 10) {
+		t.Fatal("delete of missing key should succeed (install tombstone)")
+	}
+	if m.AcceptIfNewer("missing", Entry{Value: []byte("late"), Version: 9}) {
+		t.Fatal("stale put after cluster delete must not install")
+	}
+	if _, ok := m.Get("missing"); ok {
+		t.Fatal("must remain absent")
+	}
+	if !m.AcceptIfNewer("missing", Entry{Value: []byte("ok"), Version: 11}) {
+		t.Fatal("newer put should win over tombstone")
+	}
+}
+
+// Tombstones expire so they do not pin memory forever.
+func TestMemoryTombstoneExpiry(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := base
+	m := NewMemory(0, WithClock(func() time.Time { return now }))
+	defer m.Close()
+
+	m.Set("k", Entry{Value: []byte("v"), Version: 1, ExpireAt: base.Add(time.Hour).UnixNano()})
+	// Delete with short tombstone TTL via ExpireAt on the delete path is store-internal;
+	// here we simulate an expired tombstone then accept an older version (allowed after expiry).
+	if !m.DeleteIfVersion("k", 2) {
+		t.Fatal("delete")
+	}
+	// Advance past default tombstone lifetime if the store uses clock+TTL;
+	// after tombstone is gone, even version 1 may apply (no durable delete log).
+	now = base.Add(24 * time.Hour)
+	// Force purge of expired tombstone via Get miss path.
+	_, _ = m.Get("k")
+	if !m.AcceptIfNewer("k", Entry{Value: []byte("old"), Version: 1}) {
+		t.Fatal("after tombstone expiry, store behaves as empty for LWW")
+	}
+}

@@ -243,6 +243,47 @@ func TestGetOrLoadFromOwner(t *testing.T) {
 	}
 }
 
+// PutLocal on a non-owner must not silently keep the write local-only:
+// either re-route to the owner or fan-out so the owner observes the value.
+func TestPutLocalNonOwnerPropagates(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19041"
+		addrB = "127.0.0.1:19042"
+	)
+	engA, engB, cleanup := twoNodeCluster(t, addrA, addrB)
+	defer cleanup()
+
+	ctx := context.Background()
+	// Find a key owned by A.
+	var key string
+	for i := 0; i < 1000; i++ {
+		k := fmt.Sprintf("own-%d", i)
+		o, ok := engA.OwnerOf(k)
+		if ok && o.ID == "a" {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("could not find key owned by a")
+	}
+
+	// Mis-routed write: B accepts ForwardPut/PutLocal even though A owns the key.
+	if err := engB.PutLocal(ctx, "demo", key, []byte("from-b")); err != nil {
+		t.Fatalf("PutLocal on non-owner: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := engA.Get(ctx, "demo", key)
+		if err == nil && string(v) == "from-b" {
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("owner A never observed value written via non-owner PutLocal for key %s", key)
+}
+
 func twoNodeCluster(t *testing.T, addrA, addrB string) (*engine.Engine, *engine.Engine, func()) {
 	t.Helper()
 	engA := engine.New()

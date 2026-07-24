@@ -43,6 +43,9 @@ type PeerInfo struct {
 	Address string
 }
 
+// DefaultMaxVersionKeys caps per-keyspace version counters (high-cardinality safety).
+const DefaultMaxVersionKeys = 1_000_000
+
 // Engine is the SuperCache façade.
 type Engine struct {
 	mu        sync.RWMutex
@@ -59,10 +62,11 @@ type Engine struct {
 	hitRecorder  HitRecorder
 	topoListener TopologyListener
 
-	maxKeyLen    int
-	maxValueSize int
-	maxBatch     int
-	now          func() time.Time
+	maxKeyLen      int
+	maxValueSize   int
+	maxBatch       int
+	maxVersionKeys int
+	now            func() time.Time
 }
 
 type ksRuntime struct {
@@ -71,8 +75,9 @@ type ksRuntime struct {
 	guard  *protect.Guard
 	flight singleflight.Group
 	// lastVer tracks highest issued version per key (owner path).
-	verMu   sync.Mutex
-	lastVer map[string]uint64
+	verMu          sync.Mutex
+	lastVer        map[string]uint64
+	maxVersionKeys int
 }
 
 // Option configures Engine construction.
@@ -108,16 +113,26 @@ func WithLimits(maxKeyLen, maxValueSize, maxBatch int) Option {
 	}
 }
 
+// WithMaxVersionKeys caps the per-keyspace last-version map size (0 keeps default).
+func WithMaxVersionKeys(n int) Option {
+	return func(e *Engine) {
+		if n > 0 {
+			e.maxVersionKeys = n
+		}
+	}
+}
+
 // New creates a single-node Engine (WithSingleNode semantics).
 func New(opts ...Option) *Engine {
 	e := &Engine{
-		keyspaces:    make(map[string]*ksRuntime),
-		events:       make(chan ClusterEvent, 64),
-		metrics:      telemetry.New(),
-		maxKeyLen:    keyspace.DefaultMaxKeyLen,
-		maxValueSize: keyspace.DefaultMaxValueSize,
-		maxBatch:     keyspace.DefaultMaxBatch,
-		now:          time.Now,
+		keyspaces:      make(map[string]*ksRuntime),
+		events:         make(chan ClusterEvent, 64),
+		metrics:        telemetry.New(),
+		maxKeyLen:      keyspace.DefaultMaxKeyLen,
+		maxValueSize:   keyspace.DefaultMaxValueSize,
+		maxBatch:       keyspace.DefaultMaxBatch,
+		maxVersionKeys: DefaultMaxVersionKeys,
+		now:            time.Now,
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -169,10 +184,11 @@ func (e *Engine) UpdateKeySpace(cfg keyspace.Config) error {
 		guardCfg.RateLimitRPS = cfg.RateLimitRPS
 	}
 	e.keyspaces[cfg.Name] = &ksRuntime{
-		cfg:     cfg,
-		store:   store.NewMemory(cfg.MaxBytes, store.WithClock(e.now)),
-		guard:   protect.New(guardCfg),
-		lastVer: lastVer,
+		cfg:            cfg,
+		store:          store.NewMemory(cfg.MaxBytes, store.WithClock(e.now)),
+		guard:          protect.New(guardCfg),
+		lastVer:        lastVer,
+		maxVersionKeys: e.maxVersionKeys,
 	}
 	return nil
 }
@@ -244,6 +260,8 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 
 	// LoadThrough miss — owner GetOrLoad when clustered; else local fill.
 	// singleflight coalesces concurrent misses on this node.
+	// Use a non-cancelable context inside the flight so one caller's cancel does not
+	// abort the shared load for co-waiters (classic singleflight+context hazard).
 	v, err, _ := ks.flight.Do(key, func() (any, error) {
 		if ent, ok := ks.store.Get(key); ok {
 			if ent.IsNegative() {
@@ -251,7 +269,7 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 			}
 			return ent.Value, nil
 		}
-		return e.getViaCluster(ctx, ks, key)
+		return e.getViaCluster(context.WithoutCancel(ctx), ks, key)
 	})
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -259,6 +277,10 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 		} else if errors.Is(err, ErrUnavailable) {
 			e.metrics.RecordUnavailable(keyspaceName)
 		}
+		return nil, err
+	}
+	// Respect this caller's cancellation after the shared work completes.
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if v == nil {
@@ -342,7 +364,7 @@ func (e *Engine) loadThrough(ctx context.Context, ks *ksRuntime, key string, all
 	}
 	// Owner load path: async fan-out like Put (recommended default).
 	if allowFanout {
-		e.fanoutPut(ks.cfg.Name, key, ent)
+		e.fanoutPut(ks.cfg.Name, key, ent, false)
 	}
 	return append([]byte(nil), val...), nil
 }
@@ -366,7 +388,7 @@ func (e *Engine) storeNegative(ks *ksRuntime, key string, allowFanout bool) {
 	}
 	// PLAN: owner fans out negative entries so peers avoid SoT stampedes.
 	if allowFanout {
-		e.fanoutPut(ks.cfg.Name, key, ent)
+		e.fanoutPut(ks.cfg.Name, key, ent, false)
 	}
 }
 
@@ -534,6 +556,7 @@ func (ks *ksRuntime) nextVersion(key string, atLeast uint64) uint64 {
 	}
 	n := cur + 1
 	ks.lastVer[key] = n
+	ks.pruneLastVerLocked()
 	return n
 }
 
@@ -543,6 +566,43 @@ func (ks *ksRuntime) observeVersion(key string, v uint64) {
 	if v > ks.lastVer[key] {
 		ks.lastVer[key] = v
 	}
+	ks.pruneLastVerLocked()
+}
+
+// pruneLastVerLocked drops version counters when over maxVersionKeys.
+// Prefer keys no longer present in the store; then delete arbitrary extras.
+// Caller must hold verMu.
+func (ks *ksRuntime) pruneLastVerLocked() {
+	max := ks.maxVersionKeys
+	if max <= 0 || len(ks.lastVer) <= max {
+		return
+	}
+	for k := range ks.lastVer {
+		if len(ks.lastVer) <= max {
+			return
+		}
+		if _, ok := ks.store.Peek(k); !ok {
+			delete(ks.lastVer, k)
+		}
+	}
+	for k := range ks.lastVer {
+		if len(ks.lastVer) <= max {
+			return
+		}
+		delete(ks.lastVer, k)
+	}
+}
+
+// VersionTrackerSize returns the number of keys in the version map for a keyspace.
+// Returns -1 if the keyspace is unknown. Intended for tests and diagnostics.
+func (e *Engine) VersionTrackerSize(keyspaceName string) int {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return -1
+	}
+	ks.verMu.Lock()
+	defer ks.verMu.Unlock()
+	return len(ks.lastVer)
 }
 
 func errorsIsNotFound(err error) bool {

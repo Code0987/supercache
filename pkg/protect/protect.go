@@ -80,9 +80,24 @@ func (g *Guard) Allow() error {
 	}
 	if err := g.takeToken(); err != nil {
 		g.limited.Add(1)
+		// Do not leave a half-open probe stuck when rate limiting rejects it.
+		g.releaseProbeSlot()
 		return err
 	}
 	return nil
+}
+
+// releaseProbeSlot clears a half-open in-flight probe without counting a failure.
+// Used when the probe was granted but the request could not proceed (e.g. rate limit).
+func (g *Guard) releaseProbeSlot() {
+	if g == nil || g.cfg.FailureThreshold <= 0 {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if atomic.LoadInt32(&g.state) == stateHalfOpen {
+		g.probeInFlight = false
+	}
 }
 
 // AllowContext is Allow with context cancellation (no wait — fail fast).
