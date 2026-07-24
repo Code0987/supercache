@@ -262,7 +262,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	// singleflight coalesces concurrent misses on this node.
 	// Use a non-cancelable context inside the flight so one caller's cancel does not
 	// abort the shared load for co-waiters (classic singleflight+context hazard).
-	v, err, _ := ks.flight.Do(key, func() (any, error) {
+	// Flight key is prefixed so it never shares a result type with GetOrLoadLocal
+	// (which stores store.Entry in the same singleflight.Group).
+	v, err, _ := ks.flight.Do("get:"+key, func() (any, error) {
 		if ent, ok := ks.store.Get(key); ok {
 			if ent.IsNegative() {
 				return nil, ErrNotFound

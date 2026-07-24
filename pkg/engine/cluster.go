@@ -336,7 +336,8 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 		return store.Entry{}, ErrNotFound
 	}
 
-	v, err, _ := ks.flight.Do(key, func() (any, error) {
+	// Distinct flight key from Engine.Get ("get:"+key) — different result types.
+	v, err, _ := ks.flight.Do("gol:"+key, func() (any, error) {
 		if ent, ok := ks.store.Get(key); ok {
 			if ent.IsNegative() {
 				return ent, ErrNotFound
