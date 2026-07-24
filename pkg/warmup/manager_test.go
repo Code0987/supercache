@@ -143,3 +143,66 @@ func TestForceRefreshAheadReloads(t *testing.T) {
 	}
 	t.Fatalf("refresh did not force reload: loads=%d", loads.Load())
 }
+
+// Not-found misses must not inflate Errors; real failures must, even if the
+// message happens to contain the substring "not found".
+func TestWarmupErrorsUsesErrorsIsNotSubstring(t *testing.T) {
+	eng := engine.New()
+	defer eng.Close()
+
+	// Case 1: genuine NotFound — prefetch is fine, Errors stays 0.
+	srcNF := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		return nil, datasource.ErrNotFound
+	})
+	_ = eng.UpdateKeySpace(keyspace.Config{
+		Name: "nf", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcNF, NegativeTTL: time.Minute,
+	})
+	wm := warmup.NewManager(eng, warmup.Config{Workers: 2, TopN: 4})
+	eng.AttachWarmup(wm, wm)
+	wm.Start(context.Background())
+	defer wm.Stop()
+
+	wm.PrefetchNow("nf", "missing")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		// Prefetch completes (success or not-found) without bumping Errors.
+		_, _, errs := wm.Stats()
+		if errs == 0 {
+			// Wait until at least one job likely ran: poll Get once then recheck.
+			_, _ = eng.Get(context.Background(), "nf", "missing")
+			time.Sleep(20 * time.Millisecond)
+			// Job is async; wait for Errors to stay 0 after a short settle.
+			time.Sleep(50 * time.Millisecond)
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Give workers a moment to finish the prefetch job.
+	time.Sleep(100 * time.Millisecond)
+	_, _, errs := wm.Stats()
+	if errs != 0 {
+		t.Fatalf("genuine NotFound should not count as warmup error, errs=%d", errs)
+	}
+
+	// Case 2: backend failure whose message contains "not found" — must count as error.
+	// (string matching would incorrectly treat this as NotFound and suppress Errors.)
+	srcBoom := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		return nil, fmt.Errorf("upstream down: replica not found in topology")
+	})
+	_ = eng.UpdateKeySpace(keyspace.Config{
+		Name: "boom", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcBoom,
+	})
+	wm.PrefetchNow("boom", "k")
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_, _, errs = wm.Stats()
+		if errs >= 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_, _, errs = wm.Stats()
+	t.Fatalf("real load failure must increment Errors (not substring match); errs=%d", errs)
+}

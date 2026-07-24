@@ -4,11 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Code0987/supercache/pkg/datasource"
 )
 
 var (
 	// ErrNotFound is returned when the key is absent (or negative-cached).
-	ErrNotFound = errors.New("supercache: not found")
+	// It wraps datasource.ErrNotFound so callers (e.g. warmup) can use errors.Is
+	// without importing this package and creating a cycle.
+	ErrNotFound = fmt.Errorf("supercache: not found: %w", datasource.ErrNotFound)
 	// ErrKeyspaceNotFound means the named keyspace is not registered.
 	ErrKeyspaceNotFound = errors.New("supercache: keyspace not found")
 	// ErrUnavailable means the load path is rate-limited or circuit-open.

@@ -2,12 +2,13 @@ package warmup
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Code0987/supercache/internal/ring"
+	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 )
@@ -281,8 +282,7 @@ func (m *Manager) refreshLoop(ctx context.Context) {
 }
 
 func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "not found")
+	// engine.ErrNotFound wraps datasource.ErrNotFound; do not substring-match
+	// (that hides real failures whose messages mention "not found").
+	return errors.Is(err, datasource.ErrNotFound)
 }
