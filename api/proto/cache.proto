@@ -48,6 +48,8 @@ message PutManyRequest {
 message KeyError {
   string key = 1;
   string message = 2;
+  // Optional structured peer failures (e.g. DeleteMany wrapping MultiError).
+  repeated PeerFailure peer_failures = 3;
 }
 
 message PutManyResponse {

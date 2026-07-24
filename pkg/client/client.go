@@ -148,11 +148,15 @@ func (c *Client) DeleteMany(ctx context.Context, keyspace string, keys []string)
 
 // KeyError is a per-key batch failure.
 type KeyError struct {
-	Key     string
-	Message string
+	Key          string
+	Message      string
+	PeerFailures PeerFailures // set for DeleteMany when peers fail ApplyDelete
 }
 
 func (e KeyError) Error() string {
+	if len(e.PeerFailures) > 0 {
+		return fmt.Sprintf("key %q: %s (%s)", e.Key, e.Message, e.PeerFailures.Error())
+	}
 	return fmt.Sprintf("key %q: %s", e.Key, e.Message)
 }
 
@@ -183,7 +187,17 @@ func (e PeerFailures) Error() string {
 func keyErrorsFromProto(in []*cachev1.KeyError) error {
 	out := make(KeyErrors, 0, len(in))
 	for _, e := range in {
-		out = append(out, KeyError{Key: e.Key, Message: e.Message})
+		ke := KeyError{Key: e.Key, Message: e.Message}
+		if len(e.PeerFailures) > 0 {
+			ke.PeerFailures = make(PeerFailures, 0, len(e.PeerFailures))
+			for _, pf := range e.PeerFailures {
+				ke.PeerFailures = append(ke.PeerFailures, PeerFailure{
+					PeerID:  pf.PeerId,
+					Message: pf.Message,
+				})
+			}
+		}
+		out = append(out, ke)
 	}
 	return out
 }

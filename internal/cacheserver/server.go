@@ -110,7 +110,7 @@ func (s *Server) DeleteMany(ctx context.Context, req *cachev1.DeleteManyRequest)
 	}
 	var ke engine.KeyError
 	if errors.As(err, &ke) {
-		resp.Errors = append(resp.Errors, &cachev1.KeyError{Key: ke.Key, Message: ke.Err.Error()})
+		resp.Errors = append(resp.Errors, keyErrorToProto(ke))
 		return resp, nil
 	}
 	type multi interface{ Unwrap() []error }
@@ -118,7 +118,7 @@ func (s *Server) DeleteMany(ctx context.Context, req *cachev1.DeleteManyRequest)
 		for _, e := range m.Unwrap() {
 			var k engine.KeyError
 			if errors.As(e, &k) {
-				resp.Errors = append(resp.Errors, &cachev1.KeyError{Key: k.Key, Message: k.Err.Error()})
+				resp.Errors = append(resp.Errors, keyErrorToProto(k))
 			} else {
 				resp.Errors = append(resp.Errors, &cachev1.KeyError{Message: e.Error()})
 			}
@@ -126,6 +126,25 @@ func (s *Server) DeleteMany(ctx context.Context, req *cachev1.DeleteManyRequest)
 		return resp, nil
 	}
 	return nil, mapErr(err)
+}
+
+// keyErrorToProto maps engine.KeyError, preserving MultiError peer failures.
+func keyErrorToProto(ke engine.KeyError) *cachev1.KeyError {
+	out := &cachev1.KeyError{Key: ke.Key, Message: ke.Err.Error()}
+	var me *engine.MultiError
+	if errors.As(ke.Err, &me) {
+		for _, pe := range me.Errors {
+			msg := ""
+			if pe.Err != nil {
+				msg = pe.Err.Error()
+			}
+			out.PeerFailures = append(out.PeerFailures, &cachev1.PeerFailure{
+				PeerId:  pe.PeerID,
+				Message: msg,
+			})
+		}
+	}
+	return out
 }
 
 func mapErr(err error) error {

@@ -150,6 +150,74 @@ func TestClusterDeleteMultiPeer(t *testing.T) {
 	}
 }
 
+// DeleteMany must preserve MultiError peer failures under KeyError so callers
+// can errors.As to structured PeerError, not only a flat string.
+func TestDeleteManyPreservesMultiError(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19081"
+		addrB = "127.0.0.1:19082"
+	)
+	engA := engine.New()
+	defer engA.Close()
+	_ = engA.UpdateKeySpace(keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+
+	r := ring.New(16)
+	r.SetPeers([]ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: addrB}})
+	tr := peer.NewTransport(200 * time.Millisecond)
+	defer tr.Close()
+	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{Workers: 2, QueueSize: 10})
+	defer fo.Close()
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: r, Transport: tr, Fanout: fo})
+
+	ctx := context.Background()
+	_ = engA.PutLocal(ctx, "demo", "k1", []byte("v"))
+	_ = engA.PutLocal(ctx, "demo", "k2", []byte("v"))
+
+	err = engA.DeleteMany(ctx, "demo", []string{"k1", "k2"})
+	if err == nil {
+		t.Fatal("expected errors when peer B is down")
+	}
+	// Flatten Join → KeyError → MultiError
+	type multi interface{ Unwrap() []error }
+	var foundPeer bool
+	if m, ok := err.(multi); ok {
+		for _, e := range m.Unwrap() {
+			var ke engine.KeyError
+			if !errors.As(e, &ke) {
+				t.Fatalf("want KeyError, got %T %v", e, e)
+			}
+			var me *engine.MultiError
+			if !errors.As(ke.Err, &me) || len(me.Errors) == 0 {
+				t.Fatalf("key %q: want MultiError with peers, got %T %v", ke.Key, ke.Err, ke.Err)
+			}
+			for _, pe := range me.Errors {
+				if pe.PeerID == "b" {
+					foundPeer = true
+				}
+			}
+		}
+	} else {
+		// single key path
+		var ke engine.KeyError
+		if !errors.As(err, &ke) {
+			t.Fatalf("want joined KeyErrors, got %T %v", err, err)
+		}
+		var me *engine.MultiError
+		if !errors.As(ke.Err, &me) {
+			t.Fatalf("want MultiError, got %T", ke.Err)
+		}
+		foundPeer = true
+	}
+	if !foundPeer {
+		t.Fatalf("missing peer b in structured failures: %v", err)
+	}
+}
+
 func TestClusterDeletePeerDownMultiError(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19021"
