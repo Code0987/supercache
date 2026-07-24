@@ -26,6 +26,9 @@ type Metrics struct {
 	OwnerFallback  atomic.Uint64
 	FanoutErrors  atomic.Uint64
 	FanoutDropped atomic.Uint64
+	// RingGenMismatch counts ApplyPut/ApplyDelete whose wire ring_generation
+	// differs from the local ring generation (diagnostic; LWW still applies).
+	RingGenMismatch atomic.Uint64
 
 	tracer trace.Tracer
 
@@ -65,8 +68,9 @@ type Snapshot struct {
 	LoadErrors  uint64 `json:"load_errors"`
 	Unavailable    uint64 `json:"unavailable"`
 	OwnerFallback  uint64 `json:"owner_fallback_local"`
-	FanoutErrors  uint64 `json:"put_fanout_errors"`
-	FanoutDropped uint64 `json:"fanout_dropped"`
+	FanoutErrors    uint64 `json:"put_fanout_errors"`
+	FanoutDropped   uint64 `json:"fanout_dropped"`
+	RingGenMismatch uint64 `json:"ring_gen_mismatch"`
 }
 
 // Snapshot returns current counters.
@@ -85,9 +89,18 @@ func (m *Metrics) Snapshot() Snapshot {
 		LoadErrors:  m.LoadErrors.Load(),
 		Unavailable:    m.Unavailable.Load(),
 		OwnerFallback:  m.OwnerFallback.Load(),
-		FanoutErrors:  m.FanoutErrors.Load(),
-		FanoutDropped: m.FanoutDropped.Load(),
+		FanoutErrors:    m.FanoutErrors.Load(),
+		FanoutDropped:   m.FanoutDropped.Load(),
+		RingGenMismatch: m.RingGenMismatch.Load(),
 	}
+}
+
+// RecordRingGenMismatch increments the apply ring-generation mismatch counter.
+func (m *Metrics) RecordRingGenMismatch() {
+	if m == nil {
+		return
+	}
+	m.RingGenMismatch.Add(1)
 }
 
 func (m *Metrics) add(c metric.Int64Counter, n int64, attrs ...attribute.KeyValue) {

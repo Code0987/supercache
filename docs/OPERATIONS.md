@@ -28,6 +28,13 @@
 
 Set TTLs to your max acceptable staleness.
 
+### `ring_generation` on peer Apply*
+
+Peer `ApplyPut` / `ApplyDelete` carry the sender's hash-ring generation. **LWW version
+still decides whether the apply is stored.** A wire generation that differs from the
+local ring bumps admin metric `ring_gen_mismatch` (topology churn / delayed fan-out).
+Do not treat a mismatch as a hard error; use it for diagnostics.
+
 ## Anti-patterns
 
 - Linearizable locks / leader election

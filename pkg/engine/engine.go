@@ -437,7 +437,15 @@ func (e *Engine) DeleteMany(ctx context.Context, keyspaceName string, keys []str
 }
 
 // ApplyPut applies a remote/versioned put (LWW). Used by peer path and tests.
+// ringGeneration is the sender's ring generation (0 = unknown). Mismatches are
+// recorded for ops diagnostics; acceptance remains version LWW only.
 func (e *Engine) ApplyPut(keyspaceName, key string, ent store.Entry) (bool, error) {
+	return e.ApplyPutWithRingGen(keyspaceName, key, ent, 0)
+}
+
+// ApplyPutWithRingGen is ApplyPut with an optional wire ring generation.
+func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, ringGeneration uint64) (bool, error) {
+	e.noteRingGeneration(ringGeneration)
 	if err := e.validateKey(keyspaceName, key); err != nil {
 		return false, err
 	}
@@ -458,6 +466,12 @@ func (e *Engine) ApplyPut(keyspaceName, key string, ent store.Entry) (bool, erro
 
 // ApplyDelete applies a versioned delete.
 func (e *Engine) ApplyDelete(keyspaceName, key string, deleteVersion uint64) (bool, error) {
+	return e.ApplyDeleteWithRingGen(keyspaceName, key, deleteVersion, 0)
+}
+
+// ApplyDeleteWithRingGen is ApplyDelete with an optional wire ring generation.
+func (e *Engine) ApplyDeleteWithRingGen(keyspaceName, key string, deleteVersion, ringGeneration uint64) (bool, error) {
+	e.noteRingGeneration(ringGeneration)
 	if err := e.validateKey(keyspaceName, key); err != nil {
 		return false, err
 	}
@@ -467,6 +481,20 @@ func (e *Engine) ApplyDelete(keyspaceName, key string, deleteVersion uint64) (bo
 	}
 	ks.observeVersion(key, deleteVersion)
 	return ks.store.DeleteIfVersion(key, deleteVersion), nil
+}
+
+// noteRingGeneration records wire vs local ring generation mismatches (non-fatal).
+func (e *Engine) noteRingGeneration(wire uint64) {
+	if wire == 0 || e.metrics == nil {
+		return
+	}
+	local := e.RingGeneration()
+	if local == 0 {
+		return
+	}
+	if wire != local {
+		e.metrics.RecordRingGenMismatch()
+	}
 }
 
 // Stats returns store stats for a keyspace.

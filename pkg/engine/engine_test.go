@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Code0987/supercache/internal/ring"
 	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/engine"
 	"github.com/Code0987/supercache/pkg/keyspace"
@@ -552,6 +553,41 @@ func TestEngineNoResurrectionAfterDelete(t *testing.T) {
 	}
 	if _, err := e.Get(ctx, "c", "k"); !errors.Is(err, engine.ErrNotFound) {
 		t.Fatalf("resurrected: %v", err)
+	}
+}
+
+// ring_generation mismatches must not block LWW apply; they are metrics-only.
+func TestApplyPutRingGenMismatchStillApplies(t *testing.T) {
+	e := engine.New()
+	defer e.Close()
+	_ = e.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
+
+	// Attach a ring so RingGeneration() is non-zero.
+	r := ring.New(8)
+	r.SetPeers([]ring.Peer{{ID: "self", Addr: "127.0.0.1:1"}})
+	e.AttachCluster(&engine.Cluster{SelfID: "self", Ring: r})
+	localGen := e.RingGeneration()
+	if localGen == 0 {
+		t.Fatal("expected non-zero ring gen")
+	}
+
+	ok, err := e.ApplyPutWithRingGen("c", "k", store.Entry{Value: []byte("v"), Version: 3}, localGen+99)
+	if err != nil || !ok {
+		t.Fatalf("LWW apply must succeed despite gen mismatch: ok=%v err=%v", ok, err)
+	}
+	v, err := e.Get(context.Background(), "c", "k")
+	if err != nil || string(v) != "v" {
+		t.Fatalf("get: %v %s", err, v)
+	}
+	snap := e.Metrics()
+	if snap.RingGenMismatch < 1 {
+		t.Fatalf("expected ring_gen_mismatch metric, snap=%+v", snap)
+	}
+	// Matching gen does not increment further when equal.
+	before := snap.RingGenMismatch
+	_, _ = e.ApplyPutWithRingGen("c", "k2", store.Entry{Value: []byte("x"), Version: 1}, localGen)
+	if e.Metrics().RingGenMismatch != before {
+		t.Fatalf("matching gen should not bump mismatch counter")
 	}
 }
 

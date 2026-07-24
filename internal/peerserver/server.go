@@ -37,7 +37,8 @@ func (s *Server) ApplyPut(ctx context.Context, req *peerv1.ApplyPutRequest) (*pe
 			Flags:    req.Entry.Flags,
 		}
 	}
-	applied, err := s.eng.ApplyPut(req.Keyspace, req.Key, ent)
+	// ring_generation is diagnostic: LWW by version remains the apply gate.
+	applied, err := s.eng.ApplyPutWithRingGen(req.Keyspace, req.Key, ent, req.RingGeneration)
 	if err != nil {
 		return nil, mapPeerErr(err)
 	}
@@ -46,7 +47,7 @@ func (s *Server) ApplyPut(ctx context.Context, req *peerv1.ApplyPutRequest) (*pe
 
 // ApplyDelete implements Peer.
 func (s *Server) ApplyDelete(ctx context.Context, req *peerv1.ApplyDeleteRequest) (*peerv1.ApplyDeleteResponse, error) {
-	applied, err := s.eng.ApplyDelete(req.Keyspace, req.Key, req.DeleteVersion)
+	applied, err := s.eng.ApplyDeleteWithRingGen(req.Keyspace, req.Key, req.DeleteVersion, req.RingGeneration)
 	if err != nil {
 		return nil, mapPeerErr(err)
 	}
