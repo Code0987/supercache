@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	cachev1 "github.com/Code0987/supercache/api/gen/cache/v1"
@@ -28,6 +30,8 @@ type Client struct {
 }
 
 // Dial connects to a cache node application port (not the Peer mesh port).
+// With no DialOptions, uses insecure credentials (local/dev only).
+// Prefer DialTLS for production.
 func Dial(ctx context.Context, addr string, opts ...grpc.DialOption) (*Client, error) {
 	_ = ctx // reserved for future dial deadlines via caller-provided opts
 	if len(opts) == 0 {
@@ -38,6 +42,17 @@ func Dial(ctx context.Context, addr string, opts ...grpc.DialOption) (*Client, e
 		return nil, err
 	}
 	return &Client{conn: conn, api: cachev1.NewCacheClient(conn)}, nil
+}
+
+// DialTLS connects with TLS (and optional client certs for mTLS) to the Cache port.
+// tlsCfg must not be nil. ServerName should be set when dialing by IP.
+func DialTLS(ctx context.Context, addr string, tlsCfg *tls.Config, opts ...grpc.DialOption) (*Client, error) {
+	if tlsCfg == nil {
+		return nil, fmt.Errorf("supercache/client: tls config is required")
+	}
+	all := []grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg))}
+	all = append(all, opts...)
+	return Dial(ctx, addr, all...)
 }
 
 // Close closes the connection.

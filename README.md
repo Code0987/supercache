@@ -53,6 +53,17 @@ go run ./cmd/supercache-node -cluster -node-id n2 \
 
 Optional: `-gossip-secret <key>`.
 
+### TLS (production)
+
+```bash
+go run ./cmd/supercache-node -cluster -node-id n1 \
+  -tls-cert server.pem -tls-key server-key.pem \
+  -tls-client-ca ca.pem -peer-mtls \
+  ...
+```
+
+Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md`.
+
 ## Packages
 
 | Package | Role |
@@ -67,6 +78,7 @@ Optional: `-gossip-secret <key>`.
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology prefetch, refresh-ahead |
 | `pkg/client` | Application gRPC client |
+| `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `internal/ring` | Consistent hash |
 | `internal/peer` | Peer client pool + fan-out |
 | `internal/peerserver` | Peer gRPC service |

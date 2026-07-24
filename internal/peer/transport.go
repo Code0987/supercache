@@ -2,12 +2,15 @@ package peer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	peerv1 "github.com/Code0987/supercache/api/gen/peer/v1"
@@ -20,20 +23,38 @@ type Transport struct {
 	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
 	timeout time.Duration
+	tls     *tls.Config // nil = insecure (dev only)
 
 	FanoutErrors  atomic.Uint64
 	FanoutDropped atomic.Uint64
 }
 
+// TransportOption configures NewTransport.
+type TransportOption func(*Transport)
+
+// WithTLS enables TLS (and optional mTLS client certs) for peer dials.
+// The config is cloned per dial so ServerName can be set from the target address when empty.
+func WithTLS(cfg *tls.Config) TransportOption {
+	return func(t *Transport) {
+		if cfg != nil {
+			t.tls = cfg.Clone()
+		}
+	}
+}
+
 // NewTransport creates a peer client pool.
-func NewTransport(timeout time.Duration) *Transport {
+func NewTransport(timeout time.Duration, opts ...TransportOption) *Transport {
 	if timeout <= 0 {
 		timeout = 500 * time.Millisecond
 	}
-	return &Transport{
+	t := &Transport{
 		conns:   make(map[string]*grpc.ClientConn),
 		timeout: timeout,
 	}
+	for _, o := range opts {
+		o(t)
+	}
+	return t
 }
 
 // Timeout returns the per-peer RPC timeout.
@@ -74,12 +95,29 @@ func (t *Transport) client(addr string) (peerv1.PeerClient, error) {
 	if c, ok := t.conns[addr]; ok {
 		return peerv1.NewPeerClient(c), nil
 	}
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	var creds credentials.TransportCredentials
+	if t.tls != nil {
+		cfg := t.tls.Clone()
+		if cfg.ServerName == "" {
+			// Derive SNI from dial target host when not set explicitly.
+			if host, _, err := splitHostPort(addr); err == nil {
+				cfg.ServerName = host
+			}
+		}
+		creds = credentials.NewTLS(cfg)
+	} else {
+		creds = insecure.NewCredentials()
+	}
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, err
 	}
 	t.conns[addr] = conn
 	return peerv1.NewPeerClient(conn), nil
+}
+
+func splitHostPort(addr string) (host, port string, err error) {
+	return net.SplitHostPort(addr)
 }
 
 // ApplyPut sends ApplyPut to addr.

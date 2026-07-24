@@ -9,6 +9,28 @@
 | `-admin` (default `:8080`) | Diagnostics HTTP | Private / localhost |
 | `-gossip-port` | memberlist | Nodes only |
 
+## TLS / mTLS
+
+Plaintext is the default for local demos. Production should enable TLS.
+
+| Flag | Purpose |
+|------|---------|
+| `-tls-cert` / `-tls-key` | Server certificate and key for **both** Cache and Peer listeners |
+| `-tls-client-ca` | CA PEM used to verify peer (and optionally cache) client certs |
+| `-peer-mtls` | Require client certs on the Peer port (needs `-tls-client-ca`) |
+| `-peer-client-cert` / `-peer-client-key` | Outbound peer identity (default: server cert/key) |
+| `-peer-server-name` | TLS `ServerName` for peer dials when not using DNS names in peer addrs |
+| `-cache-client-ca` / `-cache-mtls` | Optional app-client mTLS on the Cache port |
+
+Apps:
+
+```go
+cfg, err := tlsconfig.ClientFiles("ca.pem", "cache.example", "", "")
+cli, err := client.DialTLS(ctx, "cache.example:9000", cfg)
+```
+
+Peer mesh with mTLS: every node uses the same CA; each node presents a cert signed by that CA.
+
 ## Keyspace config rollout
 
 `UpdateKeySpace` / `DeleteKeySpace` apply **only on the calling node**.

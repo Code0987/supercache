@@ -166,12 +166,13 @@ func mapErr(err error) error {
 }
 
 // ListenAndServe starts the Cache gRPC API on addr.
-func ListenAndServe(addr string, eng *engine.Engine) (*grpc.Server, net.Listener, error) {
+// Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS; omit for plaintext (dev only).
+func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, nil, err
 	}
-	gs := grpc.NewServer()
+	gs := grpc.NewServer(opts...)
 	cachev1.RegisterCacheServer(gs, New(eng))
 	go func() { _ = gs.Serve(lis) }()
 	return gs, lis, nil

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -13,9 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
-	"github.com/Code0987/supercache/internal/peer"
 	"github.com/Code0987/supercache/internal/cacheserver"
+	"github.com/Code0987/supercache/internal/peer"
 	"github.com/Code0987/supercache/internal/peerserver"
 	"github.com/Code0987/supercache/pkg/admin"
 	"github.com/Code0987/supercache/pkg/engine"
@@ -23,6 +26,7 @@ import (
 	"github.com/Code0987/supercache/pkg/membership"
 	"github.com/Code0987/supercache/pkg/protect"
 	"github.com/Code0987/supercache/pkg/telemetry"
+	"github.com/Code0987/supercache/pkg/tlsconfig"
 	"github.com/Code0987/supercache/pkg/warmup"
 )
 
@@ -40,6 +44,19 @@ func main() {
 		demoKS      = flag.Bool("demo-keyspace", true, "register demo CacheOnly keyspace")
 		globalRPS   = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
 		cluster     = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
+
+		// TLS (optional). Empty paths keep plaintext for local/dev.
+		tlsCert     = flag.String("tls-cert", "", "PEM certificate for Cache and Peer gRPC servers")
+		tlsKey      = flag.String("tls-key", "", "PEM private key for Cache and Peer gRPC servers")
+		tlsClientCA = flag.String("tls-client-ca", "", "PEM CA for verifying clients (Peer mTLS when set with -peer-mtls)")
+		peerMTLS    = flag.Bool("peer-mtls", false, "require client certs on Peer port (needs -tls-client-ca)")
+		// Peer dial identity (mTLS outbound). Defaults to server cert/key when peer-mtls is on.
+		peerClientCert = flag.String("peer-client-cert", "", "PEM client cert for outbound peer RPCs (default: -tls-cert)")
+		peerClientKey  = flag.String("peer-client-key", "", "PEM client key for outbound peer RPCs (default: -tls-key)")
+		peerServerName = flag.String("peer-server-name", "", "TLS ServerName for peer dials (optional; else host from peer addr)")
+		// Cache-only client CA (optional separate from peer). If empty, Cache uses no client auth.
+		cacheClientCA = flag.String("cache-client-ca", "", "PEM CA for optional Cache client cert verification")
+		cacheMTLS     = flag.Bool("cache-mtls", false, "require client certs on Cache port (needs -cache-client-ca or -tls-client-ca)")
 	)
 	flag.Parse()
 
@@ -72,21 +89,30 @@ func main() {
 		}
 	}
 
+	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(
+		*tlsCert, *tlsKey, *tlsClientCA, *peerMTLS,
+		*cacheClientCA, *cacheMTLS,
+		*peerClientCert, *peerClientKey, *peerServerName,
+	)
+	if err != nil {
+		log.Fatalf("tls: %v", err)
+	}
+
 	// Application Cache gRPC (clients) — separate from peer mesh.
-	cgs, clis, err := cacheserver.ListenAndServe(*cacheAddr, eng)
+	cgs, clis, err := cacheserver.ListenAndServe(*cacheAddr, eng, cacheSrvOpts...)
 	if err != nil {
 		log.Fatalf("cache listen: %v", err)
 	}
 	defer cgs.GracefulStop()
-	log.Printf("cache gRPC on %s", clis.Addr())
+	log.Printf("cache gRPC on %s tls=%v", clis.Addr(), len(cacheSrvOpts) > 0)
 
 	// Peer gRPC (mesh, internal).
-	gs, lis, err := peerserver.ListenAndServe(*peerAddr, eng)
+	gs, lis, err := peerserver.ListenAndServe(*peerAddr, eng, peerSrvOpts...)
 	if err != nil {
 		log.Fatalf("peer listen: %v", err)
 	}
 	defer gs.GracefulStop()
-	log.Printf("peer gRPC on %s", lis.Addr())
+	log.Printf("peer gRPC on %s tls=%v mtls=%v", lis.Addr(), len(peerSrvOpts) > 0, *peerMTLS)
 
 	var mem *membership.Membership
 	var transport *peer.Transport
@@ -121,7 +147,11 @@ func main() {
 		}
 		defer mem.Close()
 
-		transport = peer.NewTransport(500 * time.Millisecond)
+		var trOpts []peer.TransportOption
+		if peerDialTLS != nil {
+			trOpts = append(trOpts, peer.WithTLS(peerDialTLS))
+		}
+		transport = peer.NewTransport(500*time.Millisecond, trOpts...)
 		defer transport.Close()
 		fanout = peer.NewFanoutPool(transport, peer.FanoutConfig{Workers: 32, QueueSize: 10_000})
 		defer fanout.Close()
@@ -181,5 +211,73 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
 	fmt.Println("bye")
+}
+
+// buildTLS returns gRPC server options for cache/peer and optional peer client TLS.
+// Plaintext when cert/key are empty.
+func buildTLS(
+	certFile, keyFile, peerClientCA string, peerMTLS bool,
+	cacheClientCA string, cacheMTLS bool,
+	peerClientCert, peerClientKey, peerServerName string,
+) (cacheOpts, peerOpts []grpc.ServerOption, peerDial *tls.Config, err error) {
+	if certFile == "" && keyFile == "" {
+		if peerMTLS || cacheMTLS || peerClientCA != "" || cacheClientCA != "" {
+			return nil, nil, nil, fmt.Errorf("tls flags set but -tls-cert/-tls-key missing")
+		}
+		return nil, nil, nil, nil
+	}
+	if certFile == "" || keyFile == "" {
+		return nil, nil, nil, fmt.Errorf("both -tls-cert and -tls-key are required")
+	}
+
+	// Cache server: optional client auth via -cache-client-ca (fallback -tls-client-ca).
+	cacheCA := cacheClientCA
+	if cacheCA == "" && cacheMTLS {
+		cacheCA = peerClientCA
+	}
+	cacheTLS, err := tlsconfig.ServerFiles(certFile, keyFile, cacheCA, cacheMTLS && cacheCA != "")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("cache server tls: %w", err)
+	}
+	cacheOpts = []grpc.ServerOption{grpc.Creds(credentials.NewTLS(cacheTLS))}
+
+	// Peer server: mTLS when -peer-mtls and CA provided.
+	peerCA := peerClientCA
+	if peerMTLS && peerCA == "" {
+		return nil, nil, nil, fmt.Errorf("-peer-mtls requires -tls-client-ca")
+	}
+	peerTLS, err := tlsconfig.ServerFiles(certFile, keyFile, peerCA, peerMTLS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("peer server tls: %w", err)
+	}
+	peerOpts = []grpc.ServerOption{grpc.Creds(credentials.NewTLS(peerTLS))}
+
+	// Outbound peer dials: present client cert when mTLS is enabled.
+	if peerCA != "" || peerMTLS {
+		cCert, cKey := peerClientCert, peerClientKey
+		if cCert == "" {
+			cCert = certFile
+		}
+		if cKey == "" {
+			cKey = keyFile
+		}
+		peerDial, err = tlsconfig.ClientFiles(peerCA, peerServerName, cCert, cKey)
+		if err != nil {
+			// TLS without client CA still verifies server if we have a CA; if only server TLS
+			// without peer CA, dial with system-less RootCAs from server cert file is wrong.
+			// Require peer CA for dial when using TLS clustering.
+			return nil, nil, nil, fmt.Errorf("peer client tls: %w (set -tls-client-ca for cluster TLS)", err)
+		}
+	} else {
+		// Server TLS only: peers need a CA to verify. Use the server cert file as trust if it is a full chain;
+		// otherwise require -tls-client-ca. For simplicity, demand -tls-client-ca whenever TLS is on and cluster is used.
+		// Dial config without mTLS still needs RootCAs — use cert file as PEM pool when it includes CA,
+		// or the same -tls-cert if self-signed leaf is presented (clients verify leaf as CA via custom pool).
+		peerDial, err = tlsconfig.ClientFiles(certFile, peerServerName, "", "")
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("peer client tls (server-only): %w; provide -tls-client-ca with CA PEM", err)
+		}
+	}
+	return cacheOpts, peerOpts, peerDial, nil
 }
 
