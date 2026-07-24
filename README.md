@@ -53,6 +53,16 @@ go run ./cmd/supercache-node -cluster -node-id n2 \
 
 Optional: `-gossip-secret <key>`.
 
+### Bench vs Redis (simple)
+
+```bash
+# Redis (memory-only) + SuperCache node in other terminals, then:
+go run ./cmd/scbench -backend=redis      -op=get
+go run ./cmd/scbench -backend=supercache -op=get
+```
+
+See [cmd/scbench/README.md](./cmd/scbench/README.md).
+
 ### Music trending billboard (cluster demo)
 
 ```bash
