@@ -39,12 +39,24 @@ func (e *Engine) clusterSnapshot() *Cluster {
 	return e.cluster
 }
 
-// PutLocal applies a Put on this node as owner (no forward), then async fan-out.
-//
-// When clustered and this node is not the ring owner, PutLocal re-forwards to the
-// current owner so a mis-routed ForwardPut cannot silently stay local-only.
-// If the owner cannot be reached, it applies locally and force-fans-out.
+// maxForwardHops is the maximum number of ForwardPut re-routes allowed for one write.
+// hopCount on the wire is "prior hops"; we re-forward only while hopCount < maxForwardHops.
+// This is carried in the peer proto (not context) so it survives gRPC.
+const maxForwardHops uint32 = 1
+
+// PutLocal applies a Put on this node as owner (no prior forward hop), then async fan-out.
 func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value []byte, opts ...PutOption) error {
+	return e.PutLocalAtHop(ctx, keyspaceName, key, value, 0, opts...)
+}
+
+// PutLocalAtHop is PutLocal with a wire hop count from ForwardPut.
+//
+// When clustered and this node is not the ring owner:
+//   - if hopCount < maxForwardHops, re-forward once to the current owner (hop+1)
+//   - otherwise (or on forward failure) apply locally and force-fan-out
+//
+// hopCount must cross the network; context values do not.
+func (e *Engine) PutLocalAtHop(ctx context.Context, keyspaceName, key string, value []byte, hopCount uint32, opts ...PutOption) error {
 	ctx, end := e.startSpan(ctx, "engine.PutLocal")
 	defer end()
 
@@ -69,7 +81,7 @@ func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value [
 	c := e.clusterSnapshot()
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
-			if c.Transport != nil && owner.Addr != "" && !forwardDepthExceeded(ctx) {
+			if c.Transport != nil && owner.Addr != "" && hopCount < maxForwardHops {
 				pc := putConfig{}
 				for _, o := range opts {
 					o(&pc)
@@ -78,8 +90,8 @@ func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value [
 				if pc.ttlSet {
 					ttlNanos = int64(pc.ttl)
 				}
-				pctx, cancel := e.peerCtx(withForwardDepth(ctx), ks)
-				err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet)
+				pctx, cancel := e.peerCtx(ctx, ks)
+				err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet, hopCount+1)
 				cancel()
 				if err == nil {
 					return nil
@@ -127,18 +139,6 @@ func (e *Engine) putLocalApply(ctx context.Context, ks *ksRuntime, keyspaceName,
 	e.metrics.RecordPut(keyspaceName)
 	e.fanoutPut(keyspaceName, key, ent, forceFanout)
 	return nil
-}
-
-type forwardDepthKey struct{}
-
-func forwardDepthExceeded(ctx context.Context) bool {
-	n, _ := ctx.Value(forwardDepthKey{}).(int)
-	return n >= 1
-}
-
-func withForwardDepth(ctx context.Context) context.Context {
-	n, _ := ctx.Value(forwardDepthKey{}).(int)
-	return context.WithValue(ctx, forwardDepthKey{}, n+1)
 }
 
 func (e *Engine) fanoutPut(keyspaceName, key string, ent store.Entry, force bool) {
@@ -193,7 +193,8 @@ func (e *Engine) putViaCluster(ctx context.Context, keyspaceName, key string, va
 	}
 	pctx, cancel := e.peerCtx(ctx, ks)
 	defer cancel()
-	if err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet); err != nil {
+	// hop_count=0: first forward from a non-owner client-facing node.
+	if err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet, 0); err != nil {
 		return fmt.Errorf("%w: forward to owner %s: %v", ErrUnavailable, owner.ID, err)
 	}
 	// Metrics recorded on owner PutLocal only (avoid double-count).
@@ -284,13 +285,10 @@ func (e *Engine) deleteViaCluster(ctx context.Context, keyspaceName, key string)
 		// Owner unreachable for coordination: best-effort local + try peers ourselves.
 		return e.DeleteAsOwner(ctx, keyspaceName, key)
 	}
-	ks, ksErr := e.getKS(keyspaceName)
-	if ksErr != nil {
-		return ksErr
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	failures, err := c.Transport.ForwardDelete(pctx, owner.Addr, keyspaceName, key)
+	// Do NOT apply keyspace.PeerTimeout here. ForwardDelete coordinates multi-peer
+	// ApplyDelete on the owner and uses Transport's longer delete budget.
+	// A short PeerTimeout would abort deletes and force dual-coordinator fallback.
+	failures, err := c.Transport.ForwardDelete(ctx, owner.Addr, keyspaceName, key)
 	if err != nil {
 		// Owner down: best-effort local + all known peers (mirrors Get owner-down fallback).
 		return e.DeleteAsOwner(ctx, keyspaceName, key)

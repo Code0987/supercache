@@ -47,6 +47,9 @@ message ForwardPutRequest {
   bytes value = 3;
   int64 ttl_nanos = 4;
   bool ttl_set = 5;
+  // hop_count is how many ForwardPut hops already occurred (0 = first forward).
+  // Peers must not re-forward forever under ring disagreement (max 1 re-forward).
+  uint32 hop_count = 6;
 }
 
 message ForwardPutResponse {}

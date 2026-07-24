@@ -54,13 +54,13 @@ func (s *Server) ApplyDelete(ctx context.Context, req *peerv1.ApplyDeleteRequest
 	return &peerv1.ApplyDeleteResponse{Applied: applied}, nil
 }
 
-// ForwardPut implements Peer — owner-local Put without re-forward.
+// ForwardPut implements Peer — apply as owner when possible; hop_count limits re-forwards.
 func (s *Server) ForwardPut(ctx context.Context, req *peerv1.ForwardPutRequest) (*peerv1.ForwardPutResponse, error) {
 	var opts []engine.PutOption
 	if req.TtlSet {
 		opts = append(opts, engine.WithTTL(time.Duration(req.TtlNanos)))
 	}
-	if err := s.eng.PutLocal(ctx, req.Keyspace, req.Key, req.Value, opts...); err != nil {
+	if err := s.eng.PutLocalAtHop(ctx, req.Keyspace, req.Key, req.Value, req.GetHopCount(), opts...); err != nil {
 		return nil, mapPeerErr(err)
 	}
 	return &peerv1.ForwardPutResponse{}, nil

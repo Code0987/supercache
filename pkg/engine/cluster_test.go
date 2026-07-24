@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -554,6 +555,171 @@ func TestPeerTimeoutAppliedOnGetOrLoad(t *testing.T) {
 		// Sanity: we should have waited for the peer deadline at least roughly.
 		t.Logf("elapsed %v (ok if connect/fail path is faster)", elapsed)
 	}
+}
+
+// Disagreed ownership must not bounce ForwardPut forever (hop count is on the wire).
+func TestPutLocalNoForwardLoopOnRingDisagreement(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19201"
+		addrB = "127.0.0.1:19202"
+	)
+	engA := engine.New()
+	engB := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	for _, e := range []*engine.Engine{engA, engB} {
+		_ = e.UpdateKeySpace(keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Minute})
+	}
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+
+	// Inverted rings: each node believes the other owns every key.
+	rA, rB := ring.New(16), ring.New(16)
+	// Single peer "other" as sole ring member makes Owner always the other node.
+	rA.SetPeers([]ring.Peer{{ID: "b", Addr: addrB}})
+	rB.SetPeers([]ring.Peer{{ID: "a", Addr: addrA}})
+	// Also need self for PeersExcept fanout; Owner uses only "b" on A.
+	// PutLocal checks owner.ID != self — A's SelfID is "a", owner is "b" → re-forward.
+
+	trA := peer.NewTransport(200 * time.Millisecond)
+	trB := peer.NewTransport(200 * time.Millisecond)
+	defer trA.Close()
+	defer trB.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 4, QueueSize: 50})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 4, QueueSize: 50})
+	defer foA.Close()
+	defer foB.Close()
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	// Without wire hop limit this would ping-pong until transport timeouts * many hops.
+	if err := engA.PutLocal(ctx, "demo", "loop-key", []byte("v")); err != nil {
+		t.Fatalf("PutLocal: %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 800*time.Millisecond {
+		t.Fatalf("PutLocal looks like a forward loop: took %v", elapsed)
+	}
+	// Value should exist on at least one node after force-apply path.
+	_, errA := engA.Get(ctx, "demo", "loop-key")
+	_, errB := engB.Get(ctx, "demo", "loop-key")
+	if errA != nil && errB != nil {
+		t.Fatalf("value missing on both nodes: A=%v B=%v", errA, errB)
+	}
+}
+
+// PeerTimeout must not wrap ForwardDelete (multi-peer budget on the owner).
+func TestDeleteNotStarvedByShortPeerTimeout(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19211" // owner
+		addrB = "127.0.0.1:19212" // client node
+		addrC = "127.0.0.1:19213" // hanging peer (accept, no gRPC)
+	)
+	// Hang C so owner's ApplyDelete waits ~transport timeout.
+	lnC, err := net.Listen("tcp", addrC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lnC.Close()
+	go func() {
+		for {
+			c, err := lnC.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				time.Sleep(2 * time.Second)
+				_ = c.Close()
+			}(c)
+		}
+	}()
+
+	engA := engine.New()
+	engB := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	for _, e := range []*engine.Engine{engA, engB} {
+		_ = e.UpdateKeySpace(keyspace.Config{
+			Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Minute,
+			// Aggressive PeerTimeout — must NOT apply to ForwardDelete.
+			PeerTimeout: 40 * time.Millisecond,
+		})
+	}
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+
+	peers := []ring.Peer{
+		{ID: "a", Addr: addrA},
+		{ID: "b", Addr: addrB},
+		{ID: "c", Addr: addrC},
+	}
+	rA, rB := ring.New(32), ring.New(32)
+	rA.SetPeers(peers)
+	rB.SetPeers(peers)
+	// Transport timeout bounds each ApplyDelete to C (~150ms hang path).
+	trA := peer.NewTransport(150 * time.Millisecond)
+	trB := peer.NewTransport(150 * time.Millisecond)
+	defer trA.Close()
+	defer trB.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 4, QueueSize: 20})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 4, QueueSize: 20})
+	defer foA.Close()
+	defer foB.Close()
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	// Key owned by A.
+	var key string
+	for i := 0; i < 2000; i++ {
+		k := fmt.Sprintf("del-%d", i)
+		if o, ok := engB.OwnerOf(k); ok && o.ID == "a" {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no key owned by a")
+	}
+
+	ctx := context.Background()
+	if err := engA.PutLocal(ctx, "demo", key, []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	err = engB.Delete(ctx, "demo", key)
+	elapsed := time.Since(start)
+	// Owner must wait for ApplyDelete to C (~150ms). If PeerTimeout(40ms) wrapped
+	// ForwardDelete, B would give up ~40ms and fall back — elapsed would stay low
+	// but we specifically want owner-coordinated path to complete the slow peer wait.
+	if elapsed < 100*time.Millisecond {
+		t.Fatalf("Delete returned too fast (%v); PeerTimeout likely aborted ForwardDelete", elapsed)
+	}
+	// Local key gone on A (owner applied).
+	if _, err := engA.Get(ctx, "demo", key); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("owner should have deleted: %v", err)
+	}
+	// Expect MultiError mentioning peer c (or success if hang failed fast).
+	_ = err
 }
 
 // PutLocal on a non-owner must not silently keep the write local-only:

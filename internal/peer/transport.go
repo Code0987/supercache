@@ -146,7 +146,8 @@ func (t *Transport) ApplyPut(ctx context.Context, addr, keyspace, key string, en
 }
 
 // ForwardPut forwards a Put to the owner.
-func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, value []byte, ttlNanos int64, ttlSet bool) error {
+// hopCount is the number of prior forwards (0 = first hop from non-owner client path).
+func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, value []byte, ttlNanos int64, ttlSet bool, hopCount uint32) error {
 	cli, err := t.client(addr)
 	if err != nil {
 		return err
@@ -159,6 +160,7 @@ func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, 
 		Value:    value,
 		TtlNanos: ttlNanos,
 		TtlSet:   ttlSet,
+		HopCount: hopCount,
 	})
 	return err
 }
