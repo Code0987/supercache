@@ -245,21 +245,51 @@ func (m *Membership) emit(t EventType, p ring.Peer) {
 
 func peerFromNode(n *memberlist.Node) ring.Peer {
 	p := ring.Peer{ID: n.Name}
+	if len(n.Meta) == 0 {
+		return p
+	}
 	var meta metaPayload
-	if len(n.Meta) > 0 && json.Unmarshal(n.Meta, &meta) == nil {
+	if json.Unmarshal(n.Meta, &meta) == nil && meta.PeerGRPC != "" {
 		p.Addr = meta.PeerGRPC
+		return p
+	}
+	// Compact form: raw host:port (used when JSON does not fit Meta limit).
+	if s := string(n.Meta); looksLikeHostPort(s) {
+		p.Addr = s
 	}
 	return p
 }
 
+func looksLikeHostPort(s string) bool {
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	// Reject obvious truncated JSON.
+	if s[0] == '{' || s[0] == '[' {
+		return false
+	}
+	_, _, err := net.SplitHostPort(s)
+	return err == nil
+}
+
 type delegate struct{ m *Membership }
 
+// NodeMeta returns peer gRPC address metadata for memberlist.
+// Never returns truncated JSON (that would parse as empty Addr and drop the peer
+// from the ring). Falls back to a compact host:port encoding when JSON exceeds limit.
 func (d *delegate) NodeMeta(limit int) []byte {
-	b, _ := json.Marshal(metaPayload{PeerGRPC: d.m.cfg.PeerGRPCAddr})
-	if len(b) > limit {
-		return b[:limit]
+	addr := d.m.cfg.PeerGRPCAddr
+	b, err := json.Marshal(metaPayload{PeerGRPC: addr})
+	if err == nil && len(b) <= limit {
+		return b
 	}
-	return b
+	// Compact fallback.
+	raw := []byte(addr)
+	if len(raw) <= limit {
+		return raw
+	}
+	// Cannot fit a usable address — omit meta rather than send garbage.
+	return nil
 }
 func (d *delegate) NotifyMsg([]byte)                           {}
 func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte { return nil }
