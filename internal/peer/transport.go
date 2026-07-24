@@ -169,16 +169,34 @@ func NewFanoutPool(t *Transport, cfg FanoutConfig) *FanoutPool {
 func (p *FanoutPool) loop() {
 	defer p.wg.Done()
 	for job := range p.jobs {
-		for _, peer := range job.peers {
-			if peer.Addr == "" {
-				continue
+		p.applyJob(job)
+	}
+}
+
+// applyJob fans ApplyPut to all peers concurrently (no retry).
+func (p *FanoutPool) applyJob(job fanoutJob) {
+	var wg sync.WaitGroup
+	for _, peer := range job.peers {
+		if peer.Addr == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(peer ring.Peer) {
+			defer wg.Done()
+			// Copy entry bytes per peer so concurrent RPC marshaling is safe.
+			ent := store.Entry{
+				Value:    job.ent.CloneValue(),
+				Version:  job.ent.Version,
+				ExpireAt: job.ent.ExpireAt,
+				Flags:    job.ent.Flags,
 			}
-			_, err := p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, job.ent, job.ringGen)
+			_, err := p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, ent, job.ringGen)
 			if err != nil {
 				p.t.FanoutErrors.Add(1)
 			}
-		}
+		}(peer)
 	}
+	wg.Wait()
 }
 
 // Submit queues a fan-out. Drops if full (no retry).
