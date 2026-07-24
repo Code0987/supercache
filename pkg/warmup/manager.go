@@ -224,13 +224,14 @@ func (m *Manager) worker(ctx context.Context) {
 func (m *Manager) runJob(ctx context.Context, j job) {
 	var err error
 	if j.refresh {
-		// True refresh-ahead: force DataSource reload (not a cache hit).
+		// True refresh-ahead: SoT reload only makes sense on the owner.
+		if !m.ownsKey(j.key) {
+			return
+		}
 		err = m.cache.ForceLoad(ctx, j.keyspace, j.key)
 	} else {
 		// Prefer local owner fill when we own the key; else Get (may remote).
-		owner, ok := m.cache.OwnerOf(j.key)
-		self := m.cache.NodeID()
-		if !ok || owner.ID == "" || owner.ID == self {
+		if m.ownsKey(j.key) {
 			_, err = m.cache.GetOrLoadLocal(ctx, j.keyspace, j.key)
 		} else {
 			_, err = m.cache.Get(ctx, j.keyspace, j.key)
@@ -248,6 +249,17 @@ func (m *Manager) runJob(ctx context.Context, j job) {
 	} else {
 		m.Prefetches.Add(1)
 	}
+}
+
+// ownsKey reports whether this node should act as owner for key.
+// Single-node / empty ring → true (local is authoritative).
+func (m *Manager) ownsKey(key string) bool {
+	owner, ok := m.cache.OwnerOf(key)
+	if !ok || owner.ID == "" {
+		return true
+	}
+	self := m.cache.NodeID()
+	return self == "" || owner.ID == self
 }
 
 func (m *Manager) refreshLoop(ctx context.Context) {

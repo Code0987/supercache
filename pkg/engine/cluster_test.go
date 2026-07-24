@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,6 +241,152 @@ func TestGetOrLoadFromOwner(t *testing.T) {
 	v2, err := engB.Get(ctx, "lt", "only-on-src")
 	if err != nil || string(v2) != "loaded" {
 		t.Fatalf("B get: %v %s", err, v2)
+	}
+}
+
+// ForceLoad may only reload the source-of-truth on the ring owner.
+// Non-owners must not call their local DataSource (that would stampede SoT
+// and still not force the owner's cache).
+func TestForceLoadOnlyOwnerHitsDataSource(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19051"
+		addrB = "127.0.0.1:19052"
+	)
+	var loadsA, loadsB atomic.Int32
+	srcA := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		loadsA.Add(1)
+		return []byte("a:" + key), nil
+	})
+	srcB := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		loadsB.Add(1)
+		return []byte("b:" + key), nil
+	})
+
+	engA := engine.New()
+	engB := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	_ = engA.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcA,
+	})
+	_ = engB.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcB,
+	})
+
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+
+	peers := []ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: addrB}}
+	rA, rB := ring.New(32), ring.New(32)
+	rA.SetPeers(peers)
+	rB.SetPeers(peers)
+	trA, trB := peer.NewTransport(time.Second), peer.NewTransport(time.Second)
+	defer trA.Close()
+	defer trB.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 4, QueueSize: 100})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 4, QueueSize: 100})
+	defer foA.Close()
+	defer foB.Close()
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	// Find a key owned by A.
+	var key string
+	for i := 0; i < 1000; i++ {
+		k := fmt.Sprintf("fl-%d", i)
+		if o, ok := engA.OwnerOf(k); ok && o.ID == "a" {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no key owned by a")
+	}
+
+	ctx := context.Background()
+	// Prime owner cache.
+	if _, err := engA.Get(ctx, "lt", key); err != nil {
+		t.Fatal(err)
+	}
+	if loadsA.Load() != 1 {
+		t.Fatalf("prime loadsA=%d", loadsA.Load())
+	}
+
+	// Non-owner ForceLoad must not touch either DataSource (no local load, no fake SoT).
+	if err := engB.ForceLoad(ctx, "lt", key); err != nil {
+		t.Fatalf("non-owner ForceLoad: %v", err)
+	}
+	if loadsB.Load() != 0 {
+		t.Fatalf("non-owner must not call local DataSource, loadsB=%d", loadsB.Load())
+	}
+	if loadsA.Load() != 1 {
+		t.Fatalf("non-owner ForceLoad must not force owner SoT reload without owner RPC, loadsA=%d", loadsA.Load())
+	}
+
+	// Owner ForceLoad must bypass cache and reload SoT.
+	if err := engA.ForceLoad(ctx, "lt", key); err != nil {
+		t.Fatalf("owner ForceLoad: %v", err)
+	}
+	if loadsA.Load() != 2 {
+		t.Fatalf("owner ForceLoad should reload SoT, loadsA=%d", loadsA.Load())
+	}
+}
+
+// Non-owner ForceLoad must not fall back to a local DataSource load when the
+// owner is unreachable (that stampedes SoT and is not a true force-refresh).
+func TestForceLoadNonOwnerNoLocalFallback(t *testing.T) {
+	const addrA = "127.0.0.1:19061"
+	// B has no peer server / owner A is down.
+	var loadsB atomic.Int32
+	srcB := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		loadsB.Add(1)
+		return []byte("b"), nil
+	})
+	engB := engine.New()
+	defer engB.Close()
+	_ = engB.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcB,
+	})
+	r := ring.New(16)
+	// A owns everything if we pick carefully; put both peers, A never listens.
+	r.SetPeers([]ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: "127.0.0.1:19062"}})
+	tr := peer.NewTransport(100 * time.Millisecond)
+	defer tr.Close()
+	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{Workers: 2, QueueSize: 10})
+	defer fo.Close()
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: r, Transport: tr, Fanout: fo})
+
+	// Find key owned by A (not B).
+	var key string
+	for i := 0; i < 2000; i++ {
+		k := fmt.Sprintf("fb-%d", i)
+		if o, ok := engB.OwnerOf(k); ok && o.ID == "a" {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no key owned by a")
+	}
+
+	// Old broken behavior: Delete + Get → owner down → local loadThrough.
+	if err := engB.ForceLoad(context.Background(), "lt", key); err != nil {
+		// May return unavailable or not-found; must not have called local DS.
+		t.Logf("ForceLoad err (ok): %v", err)
+	}
+	if loadsB.Load() != 0 {
+		t.Fatalf("non-owner ForceLoad must not local-load when not owner, loadsB=%d", loadsB.Load())
 	}
 }
 

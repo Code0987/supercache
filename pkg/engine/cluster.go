@@ -429,7 +429,9 @@ func (e *Engine) OwnerOf(key string) (ring.Peer, bool) {
 }
 
 // ForceLoad reloads from DataSource (LoadThrough only), bypassing cache hits.
-// Used for refresh-ahead. Fans out when this node is owner.
+// Used for refresh-ahead. Only the ring owner performs a SoT reload and fan-out;
+// non-owners no-op (return nil) so refresh-ahead cannot stampede the backend via
+// owner-down Get fallbacks.
 func (e *Engine) ForceLoad(ctx context.Context, keyspaceName, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -448,19 +450,14 @@ func (e *Engine) ForceLoad(ctx context.Context, keyspaceName, key string) error 
 		_, err := e.Get(ctx, keyspaceName, key)
 		return err
 	}
-	// Owner-coordinated force load when clustered and we are not owner: route via Get
-	// would hit remote cache; still force by calling loadThrough locally only if owner.
 	c := e.clusterSnapshot()
-	allowFanout := true
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
-			// Non-owner: Get from owner (may be stale); for true refresh, only owners reload SoT.
-			// Drop local entry then GetOrLoad from owner.
-			_ = ks.store.Delete(key)
-			_, err := e.Get(ctx, keyspaceName, key)
-			return err
+			// Not the owner: do not local-load or re-Get (owner-down fallback would
+			// hit this node's DataSource without coordinating a true force-refresh).
+			return nil
 		}
 	}
-	_, err = e.loadThrough(ctx, ks, key, allowFanout)
+	_, err = e.loadThrough(ctx, ks, key, true)
 	return err
 }
