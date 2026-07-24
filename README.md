@@ -53,6 +53,15 @@ go run ./cmd/supercache-node -cluster -node-id n2 \
 
 Optional: `-gossip-secret <key>`.
 
+### Music trending billboard (cluster demo)
+
+```bash
+go run ./examples/billboard -hold=false   # 3-node cluster + scripted walkthrough
+# UI: http://127.0.0.1:18080/   (use -hold=true to keep serving)
+```
+
+See [examples/billboard/README.md](./examples/billboard/README.md).
+
 ### TLS (production)
 
 ```bash
