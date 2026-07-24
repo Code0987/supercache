@@ -1,70 +1,111 @@
-# scbench — SuperCache vs Redis (simple)
+# scbench — SuperCache vs Redis (reliable)
 
-Minimal Get/Set comparison harness. **One process, one backend per run.**
+Localhost Get/Set/Mixed comparison with **multiple trials** and **median** reporting so you can trust the headline numbers.
 
-## Prerequisites
+## Methodology (why this is more reliable)
 
-**Redis** (memory-only, no persistence):
+| Practice | Default / flag |
+|----------|----------------|
+| Warmup discarded | `-warmup=5s` |
+| Steady measure window | `-duration=15s` (use 20s+ for publishable) |
+| Independent trials | `-trials=5` → **median** ops/s & latencies |
+| Per-worker latency buffers | no mutex on hot path |
+| Reproducible RNG | `-seed=42` |
+| Key distributions | `-dist=uniform` or `-dist=zipf` |
+| Full matrix | `-suite` → get + set + mixed |
+| Both backends | `-compare` |
+| Machine snapshot | GOMAXPROCS, NumCPU, Go version in JSON |
+| JSON export | `-json=report.json` |
 
-```bash
-redis-server --port 6379 --save "" --appendonly no
-# or: docker run --rm -p 6379:6379 redis:7 redis-server --save "" --appendonly no
-```
+**Headline number = median ops/s across trials**, not a single 3-second blip.
 
-**SuperCache** (single node; default `demo` keyspace is CacheOnly):
-
-```bash
-go run ./cmd/supercache-node \
-  -cache 127.0.0.1:9000 \
-  -peer 127.0.0.1:9001 \
-  -admin 127.0.0.1:8080
-```
-
-## Run
-
-```bash
-# GET hit (prefill + measure)
-go run ./cmd/scbench -backend=redis      -addr=127.0.0.1:6379 -op=get
-go run ./cmd/scbench -backend=supercache -addr=127.0.0.1:9000 -op=get
-
-# SET
-go run ./cmd/scbench -backend=redis      -op=set
-go run ./cmd/scbench -backend=supercache -op=set
-
-# Mixed 95% GET / 5% SET
-go run ./cmd/scbench -backend=redis      -op=mixed -read-ratio=0.95
-go run ./cmd/scbench -backend=supercache -op=mixed -read-ratio=0.95
-```
-
-### Useful flags
-
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `-backend` | `supercache` | `redis` or `supercache` |
-| `-addr` | backend default | Redis `host:port` or SuperCache **cache** gRPC addr |
-| `-op` | `get` | `get` \| `set` \| `mixed` |
-| `-keys` | `10000` | key space size |
-| `-value-bytes` | `256` | payload size |
-| `-concurrency` | `64` | workers |
-| `-duration` | `20s` | measure window |
-| `-warmup` | `3s` | discarded warmup |
-| `-keyspace` | `demo` | SuperCache keyspace |
-| `-prefill` | `true` | fill keys before get/mixed |
-
-## Fairness
+### Fairness
 
 | | SuperCache | Redis |
 |--|------------|--------|
+| Setup | **one** `supercache-node` | **one** Redis, preferably **native** (not Docker) |
+| Persistence | none (CacheOnly) | disable RDB/AOF |
 | Protocol | gRPC | RESP |
-| Process | Go node | C server |
-| Consistency | eventual (single node: local) | single-instance atomic |
-| Put/SET | in-memory CacheOnly | in-memory (AOF/RDB off above) |
+| Consistency | single-node local | single-instance |
 
-Compare **single-node SuperCache** to **single Redis**. This is a rough localhost benchmark, not a product claim.
+Do **not** compare 3-node SuperCache to 1 Redis and call it “faster.”
 
-## Example output
+## Prerequisites
+
+```bash
+# Prefer native Redis for fairness
+redis-server --port 6379 --save "" --appendonly no
+
+# SuperCache (demo keyspace = CacheOnly "demo")
+go run ./cmd/supercache-node \
+  -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
+```
+
+## Recommended: full compare
+
+```bash
+go run ./cmd/scbench -reliable -json=bench-report.json
+```
+
+Equivalent to: `-compare -suite -trials=5 -duration=20s -warmup=5s -keys=50000`.
+
+Shorter but still multi-trial:
+
+```bash
+go run ./cmd/scbench -compare -suite -trials=3 -duration=10s -warmup=3s -json=out.json
+```
+
+## Single backend / single op
+
+```bash
+go run ./cmd/scbench -backend=redis      -op=get -trials=5 -duration=15s
+go run ./cmd/scbench -backend=supercache -op=get -trials=5 -duration=15s
+
+go run ./cmd/scbench -backend=redis -op=mixed -dist=zipf -zipf-s=1.2
+```
+
+## Flags
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-compare` | false | Run redis **and** supercache |
+| `-suite` | false | get + set + mixed |
+| `-reliable` | false | Opinionated full compare preset |
+| `-trials` | 5 | Measure repeats; report median |
+| `-duration` | 15s | Per-trial window |
+| `-warmup` | 5s | Discarded before each trial |
+| `-keys` | 50000 | Key space |
+| `-value-bytes` | 256 | Payload size |
+| `-concurrency` | 64 | Workers |
+| `-dist` | uniform | `uniform` \| `zipf` |
+| `-zipf-s` | 1.1 | Zipf exponent |
+| `-read-ratio` | 0.95 | Mixed GET fraction |
+| `-redis-addr` | 127.0.0.1:6379 | |
+| `-sc-addr` | 127.0.0.1:9000 | SuperCache **cache** port |
+| `-keyspace` | demo | SuperCache keyspace |
+| `-json` | | Write full report |
+
+## Interpreting output
 
 ```text
-RESULT backend=redis      op=get   ops=...  errors=0  ops/s=...
-       latency  p50=...  p95=...  p99=...  (n_samples=...)
+SUMMARY backend=redis      op=get   trials=5  median_ops/s=...
+         latency median-of-trials  p50=... p95=... p99=...
+
+COMPARISON
+backend    op      ops/s   p50   p95   p99
+...
+op=get  supercache/redis throughput ratio = 0.9x
 ```
+
+- **ratio > 1** → SuperCache higher median ops/s on that op  
+- Look at **min/max ops/s** across trials; wide spreads mean you need longer duration or quieter machine  
+- p99 from median-of-trials is stabler than one-shot p99  
+
+## What this does *not* prove
+
+- Production multi-AZ performance  
+- Redis Cluster vs SuperCache cluster  
+- Pipelined Redis vs unary gRPC (Redis can go much faster with pipelines)  
+- LoadThrough / SoT miss paths (CacheOnly hits only)
+
+See also [docs/BENCHMARKS.md](../../docs/BENCHMARKS.md).
