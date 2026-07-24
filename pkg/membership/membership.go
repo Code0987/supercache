@@ -17,15 +17,19 @@ import (
 
 // Config for gossip membership.
 type Config struct {
-	NodeID       string
-	BindAddr     string // host for gossip bind
-	BindPort     int
+	NodeID        string
+	BindAddr      string // host for gossip bind
+	BindPort      int
 	AdvertiseAddr string
 	AdvertisePort int
-	PeerGRPCAddr string // host:port for peer RPCs (meta)
-	Seeds        []string
-	GossipSecret []byte // optional symmetric key
-	Logger       *log.Logger
+	PeerGRPCAddr  string // host:port for peer RPCs (meta)
+	Seeds         []string
+	GossipSecret  []byte // optional symmetric key
+	Logger        *log.Logger
+	// LocalGossip forces memberlist.DefaultLocalConfig (loopback-friendly).
+	// When false (default), loopback bind/advertise still auto-selects Local;
+	// non-loopback addresses use DefaultLANConfig for production multi-host.
+	LocalGossip bool
 }
 
 // EventType for membership changes.
@@ -85,13 +89,7 @@ func New(cfg Config) (*Membership, error) {
 		events: make(chan Event, 64),
 	}
 
-	// LocalConfig is reliable on loopback; LANConfig often times out joining 127.0.0.1.
-	mlc := memberlist.DefaultLocalConfig()
-	mlc.Name = cfg.NodeID
-	mlc.BindAddr = cfg.BindAddr
-	mlc.BindPort = cfg.BindPort
-	mlc.AdvertiseAddr = cfg.AdvertiseAddr
-	mlc.AdvertisePort = cfg.AdvertisePort
+	mlc := baseMemberlistConfig(cfg)
 	mlc.Delegate = &delegate{m: m}
 	mlc.Events = &eventDelegate{m: m}
 	if len(cfg.GossipSecret) > 0 {
@@ -119,6 +117,48 @@ func New(cfg Config) (*Membership, error) {
 	}
 	m.rebuildRing()
 	return m, nil
+}
+
+// preferLocalGossip chooses DefaultLocalConfig for loopback demos/tests.
+// Multi-host (non-loopback advertise/bind) uses DefaultLANConfig.
+func preferLocalGossip(cfg Config) bool {
+	if cfg.LocalGossip {
+		return true
+	}
+	return isLoopbackHost(cfg.AdvertiseAddr) || isLoopbackHost(cfg.BindAddr)
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	// Strip port if present.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// baseMemberlistConfig builds the memberlist Config (timings + identity/bind).
+// Exported-to-test via same package.
+func baseMemberlistConfig(cfg Config) *memberlist.Config {
+	var mlc *memberlist.Config
+	if preferLocalGossip(cfg) {
+		// Reliable on 127.0.0.1; LANConfig often fails to join loopback quickly.
+		mlc = memberlist.DefaultLocalConfig()
+	} else {
+		mlc = memberlist.DefaultLANConfig()
+	}
+	mlc.Name = cfg.NodeID
+	mlc.BindAddr = cfg.BindAddr
+	mlc.BindPort = cfg.BindPort
+	mlc.AdvertiseAddr = cfg.AdvertiseAddr
+	mlc.AdvertisePort = cfg.AdvertisePort
+	return mlc
 }
 
 // Ring returns the consistent hash ring (shared, concurrency-safe).
