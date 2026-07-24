@@ -44,6 +44,16 @@ func (t *Transport) Timeout() time.Duration {
 	return t.timeout
 }
 
+// rpcContext applies the transport default timeout only when the parent context
+// has no deadline. Callers (e.g. engine with keyspace.PeerTimeout) can set a
+// tighter or looser bound on ctx and it will be respected.
+func (t *Transport) rpcContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, t.Timeout())
+}
+
 // Close closes all connections.
 func (t *Transport) Close() error {
 	t.mu.Lock()
@@ -78,7 +88,7 @@ func (t *Transport) ApplyPut(ctx context.Context, addr, keyspace, key string, en
 	if err != nil {
 		return false, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	ctx, cancel := t.rpcContext(ctx)
 	defer cancel()
 	resp, err := cli.ApplyPut(ctx, &peerv1.ApplyPutRequest{
 		Keyspace:       keyspace,
@@ -103,7 +113,7 @@ func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, 
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	ctx, cancel := t.rpcContext(ctx)
 	defer cancel()
 	_, err = cli.ForwardPut(ctx, &peerv1.ForwardPutRequest{
 		Keyspace: keyspace,
@@ -204,7 +214,7 @@ func (t *Transport) ApplyDelete(ctx context.Context, addr, keyspace, key string,
 	if err != nil {
 		return false, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	ctx, cancel := t.rpcContext(ctx)
 	defer cancel()
 	resp, err := cli.ApplyDelete(ctx, &peerv1.ApplyDeleteRequest{
 		Keyspace:       keyspace,
@@ -268,7 +278,7 @@ func (t *Transport) GetOrLoad(ctx context.Context, addr, keyspace, key string) (
 	if err != nil {
 		return GetOrLoadResult{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	ctx, cancel := t.rpcContext(ctx)
 	defer cancel()
 	resp, err := cli.GetOrLoad(ctx, &peerv1.GetOrLoadRequest{
 		Keyspace: keyspace,

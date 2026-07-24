@@ -78,8 +78,10 @@ func (e *Engine) PutLocal(ctx context.Context, keyspaceName, key string, value [
 				if pc.ttlSet {
 					ttlNanos = int64(pc.ttl)
 				}
-				fctx := withForwardDepth(ctx)
-				if err := c.Transport.ForwardPut(fctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet); err == nil {
+				pctx, cancel := e.peerCtx(withForwardDepth(ctx), ks)
+				err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet)
+				cancel()
+				if err == nil {
 					return nil
 				}
 				// Fall through: apply + force fan-out so the write still propagates.
@@ -185,7 +187,13 @@ func (e *Engine) putViaCluster(ctx context.Context, keyspaceName, key string, va
 	if pc.ttlSet {
 		ttlNanos = int64(pc.ttl)
 	}
-	if err := c.Transport.ForwardPut(ctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet); err != nil {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return err
+	}
+	pctx, cancel := e.peerCtx(ctx, ks)
+	defer cancel()
+	if err := c.Transport.ForwardPut(pctx, owner.Addr, keyspaceName, key, value, ttlNanos, pc.ttlSet); err != nil {
 		return fmt.Errorf("%w: forward to owner %s: %v", ErrUnavailable, owner.ID, err)
 	}
 	// Metrics recorded on owner PutLocal only (avoid double-count).
@@ -276,7 +284,13 @@ func (e *Engine) deleteViaCluster(ctx context.Context, keyspaceName, key string)
 		// Owner unreachable for coordination: best-effort local + try peers ourselves.
 		return e.DeleteAsOwner(ctx, keyspaceName, key)
 	}
-	failures, err := c.Transport.ForwardDelete(ctx, owner.Addr, keyspaceName, key)
+	ks, ksErr := e.getKS(keyspaceName)
+	if ksErr != nil {
+		return ksErr
+	}
+	pctx, cancel := e.peerCtx(ctx, ks)
+	defer cancel()
+	failures, err := c.Transport.ForwardDelete(pctx, owner.Addr, keyspaceName, key)
 	if err != nil {
 		// Owner down: best-effort local + all known peers (mirrors Get owner-down fallback).
 		return e.DeleteAsOwner(ctx, keyspaceName, key)
@@ -366,6 +380,14 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 	return v.(store.Entry), nil
 }
 
+// peerCtx applies keyspace.PeerTimeout when configured so peer RPCs honor per-ks deadlines.
+func (e *Engine) peerCtx(ctx context.Context, ks *ksRuntime) (context.Context, context.CancelFunc) {
+	if ks != nil && ks.cfg.PeerTimeout > 0 {
+		return context.WithTimeout(ctx, ks.cfg.PeerTimeout)
+	}
+	return ctx, func() {}
+}
+
 // getViaCluster handles LoadThrough miss with owner GetOrLoad + local fallback.
 func (e *Engine) getViaCluster(ctx context.Context, ks *ksRuntime, key string) ([]byte, error) {
 	c := e.clusterSnapshot()
@@ -382,7 +404,9 @@ func (e *Engine) getViaCluster(ctx context.Context, ks *ksRuntime, key string) (
 		return e.loadThrough(ctx, ks, key, false)
 	}
 
-	res, err := c.Transport.GetOrLoad(ctx, owner.Addr, ks.cfg.Name, key)
+	pctx, cancel := e.peerCtx(ctx, ks)
+	defer cancel()
+	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, key)
 	if err != nil {
 		// owner down / error → local-only fill, no fan-out
 		e.metrics.RecordOwnerFallback(ks.cfg.Name)

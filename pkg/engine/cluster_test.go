@@ -390,6 +390,104 @@ func TestForceLoadNonOwnerNoLocalFallback(t *testing.T) {
 	}
 }
 
+// keyspace.PeerTimeout must bound owner GetOrLoad RPCs (not the transport default alone).
+func TestPeerTimeoutAppliedOnGetOrLoad(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19071"
+		addrB = "127.0.0.1:19072"
+	)
+	// Owner DataSource blocks longer than PeerTimeout so the RPC must be cut short.
+	block := make(chan struct{})
+	defer close(block)
+	srcA := datasource.Func(func(ctx context.Context, key string) ([]byte, error) {
+		select {
+		case <-block:
+			return []byte("owner"), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return []byte("owner-late"), nil
+		}
+	})
+	var loadsB atomic.Int32
+	srcB := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		loadsB.Add(1)
+		return []byte("local"), nil
+	})
+
+	engA := engine.New()
+	engB := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	_ = engA.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcA,
+	})
+	_ = engB.UpdateKeySpace(keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 1 << 20,
+		TTL: time.Minute, DataSource: srcB,
+		// Much tighter than transport default used below.
+		PeerTimeout: 50 * time.Millisecond,
+	})
+
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+
+	peers := []ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: addrB}}
+	rA, rB := ring.New(32), ring.New(32)
+	rA.SetPeers(peers)
+	rB.SetPeers(peers)
+	// Large transport timeout so ignoring PeerTimeout is clearly slow.
+	trA := peer.NewTransport(3 * time.Second)
+	trB := peer.NewTransport(3 * time.Second)
+	defer trA.Close()
+	defer trB.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 2, QueueSize: 10})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 2, QueueSize: 10})
+	defer foA.Close()
+	defer foB.Close()
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	var key string
+	for i := 0; i < 2000; i++ {
+		k := fmt.Sprintf("pt-%d", i)
+		if o, ok := engB.OwnerOf(k); ok && o.ID == "a" {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no key owned by a")
+	}
+
+	start := time.Now()
+	v, err := engB.Get(context.Background(), "lt", key)
+	elapsed := time.Since(start)
+	if err != nil || string(v) != "local" {
+		t.Fatalf("want local fallback after peer timeout: v=%q err=%v", v, err)
+	}
+	if loadsB.Load() != 1 {
+		t.Fatalf("loadsB=%d", loadsB.Load())
+	}
+	// Without PeerTimeout, would wait ~3s on GetOrLoad before fallback.
+	if elapsed > 800*time.Millisecond {
+		t.Fatalf("PeerTimeout not applied: Get took %v", elapsed)
+	}
+	if elapsed < 30*time.Millisecond {
+		// Sanity: we should have waited for the peer deadline at least roughly.
+		t.Logf("elapsed %v (ok if connect/fail path is faster)", elapsed)
+	}
+}
+
 // PutLocal on a non-owner must not silently keep the write local-only:
 // either re-route to the owner or fan-out so the owner observes the value.
 func TestPutLocalNonOwnerPropagates(t *testing.T) {
