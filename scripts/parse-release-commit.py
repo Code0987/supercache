@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Parse SuperCache release metadata from a git commit message.
+"""Parse SuperCache release metadata from a git commit message and/or PR body.
 
 Only one pattern is allowed (own line, exact):
 
   release: v1.2.3
 
 - Keyword is `release:` (case-insensitive)
-- Version must be `v` + MAJOR.MINOR.PATCH (no optional prefix, no prerelease)
-- Optional notes = body after that line (git trailers stripped)
+- Version must be `v` + MAJOR.MINOR.PATCH
+- Optional notes = body after that line until a `---` ruler, a `##` heading,
+  or git trailers
+- Markdown fenced code blocks (``` ... ```) are ignored so PR template
+  examples do not trigger a release
 - No marker → should_release=false (not an error)
+
+Sources (first hit wins):
+  1. --message-file / --message / stdin (usually the push commit message)
+  2. --fallback-file (usually the merged PR body)
 
 Outputs GitHub Actions-style key=value lines to stdout / GITHUB_OUTPUT.
 """
@@ -25,11 +32,28 @@ MARKER = re.compile(r"(?i)^release:\s*(v\d+\.\d+\.\d+)\s*$")
 TRAILER = re.compile(
     r"(?i)^(signed-off-by|co-authored-by|reviewed-by|acked-by|suggested-by|reported-by|tested-by|merge-request|change-id)\s*:"
 )
+FENCE = re.compile(r"^```")
 
 
-def parse(msg: str) -> dict:
+def strip_fenced_blocks(text: str) -> str:
+    """Remove markdown fenced code blocks so template examples are ignored."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        if FENCE.match(line.strip()):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            out.append(line)
+    return "\n".join(out)
+
+
+def parse(msg: str, *, strip_fences: bool = True) -> dict:
+    if strip_fences:
+        msg = strip_fenced_blocks(msg)
     lines = msg.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    subject = lines[0].strip() if lines else ""
+    subject = next((ln.strip() for ln in lines if ln.strip()), "")
 
     tag = None
     marker_idx = None
@@ -48,9 +72,10 @@ def parse(msg: str) -> dict:
             "prerelease": "false",
             "notes": "",
             "subject": subject,
+            "source": "",
         }
 
-    version = tag[1:]  # strip leading v for display/ldflags consumers that want bare
+    version = tag[1:]
 
     body = lines[marker_idx + 1 :]
     while body and body[0].strip() == "":
@@ -58,7 +83,10 @@ def parse(msg: str) -> dict:
 
     trimmed: list[str] = []
     for line in body:
-        if TRAILER.match(line.strip()):
+        s = line.strip()
+        if TRAILER.match(s):
+            break
+        if s == "---" or s.startswith("## "):
             break
         trimmed.append(line)
     while trimmed and trimmed[-1].strip() == "":
@@ -75,6 +103,7 @@ def parse(msg: str) -> dict:
         "prerelease": "false",
         "notes": notes,
         "subject": subject,
+        "source": "",  # filled by main when known
     }
 
 
@@ -101,8 +130,12 @@ def write_output(result: dict, out_file: str | None) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--message-file", help="Read commit message from file")
-    ap.add_argument("--message", help="Commit message string")
+    ap.add_argument("--message-file", help="Primary text (commit message)")
+    ap.add_argument("--message", help="Primary text string")
+    ap.add_argument(
+        "--fallback-file",
+        help="Secondary text if primary has no release marker (e.g. PR body)",
+    )
     ap.add_argument(
         "--github-output",
         action="store_true",
@@ -111,13 +144,28 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.message_file:
-        msg = Path(args.message_file).read_text(encoding="utf-8")
+        primary = Path(args.message_file).read_text(encoding="utf-8")
+        primary_src = "commit"
     elif args.message is not None:
-        msg = args.message
+        primary = args.message
+        primary_src = "commit"
     else:
-        msg = sys.stdin.read()
+        primary = sys.stdin.read()
+        primary_src = "commit"
 
-    result = parse(msg)
+    result = parse(primary)
+    if result["should_release"] == "true":
+        result["source"] = primary_src
+    elif args.fallback_file and Path(args.fallback_file).is_file():
+        fallback = Path(args.fallback_file).read_text(encoding="utf-8")
+        result = parse(fallback)
+        if result["should_release"] == "true":
+            result["source"] = "pr_body"
+        else:
+            result["source"] = ""
+    else:
+        result["source"] = ""
+
     out = os.environ.get("GITHUB_OUTPUT") if args.github_output else None
     write_output(result, out)
     return 0

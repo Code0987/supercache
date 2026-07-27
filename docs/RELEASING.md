@@ -16,11 +16,16 @@ version line below. The **Release** GitHub Action then:
 release: v1.2.3
 ```
 
+Put it in either:
+
+1. The **squash / merge commit message** (preferred), or  
+2. The **PR description** (outside markdown code fences) — used as a fallback when the merge commit is GitHub’s default `Merge pull request #N…` text
+
 - Must include the **`v`** prefix (`release: 1.2.3` is ignored)
 - Must be `MAJOR.MINOR.PATCH` only (no `-rc` / prerelease)
 - Must be **strictly greater** than the latest existing git tag (`v0.2.0` is rejected if `v0.3.0` already exists)
-- Optional notes = everything **after** that line (git trailers like `Co-authored-by:` are stripped)
-- If notes are empty, the commit subject is used
+- Optional notes = lines **after** the marker until a `---` ruler or `##` heading (template examples inside ` ``` ` fences are ignored)
+- If notes are empty, the commit/PR subject is used
 
 ### Example
 

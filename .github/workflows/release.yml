@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -62,13 +63,20 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           else
             git log -1 --pretty=%B > /tmp/commit-msg.txt
+            # Merge commits often lack the release marker; fall back to the PR body
+            # (marker outside markdown code fences). Requires pull-requests: read.
+            : > /tmp/pr-body.txt
+            if command -v gh >/dev/null 2>&1; then
+              gh pr view --json body -q .body > /tmp/pr-body.txt 2>/dev/null || true
+            fi
             python3 scripts/parse-release-commit.py \
               --message-file /tmp/commit-msg.txt \
+              --fallback-file /tmp/pr-body.txt \
               --github-output
             grep -q '^should_release=' "$GITHUB_OUTPUT"
           fi
           echo "Plan:"
-          grep -E '^(should_release|version|tag)=' "$GITHUB_OUTPUT" || true
+          grep -E '^(should_release|version|tag|source)=' "$GITHUB_OUTPUT" || true
 
       - name: Guard version monotonicity
         if: steps.meta.outputs.should_release == 'true'
