@@ -12,22 +12,48 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 
-def test_commit_line():
-    r = mod.parse_commit("Ship it\n\nrelease: v0.3.0\n\n- note\n")
+def test_front_matter_after_subject():
+    msg = """Ship multi-seed CLI
+
+---
+release: v0.3.0
+---
+
+- CLI multi-seed
+- REPL
+"""
+    r = mod.parse_commit(msg)
     assert r["should_release"] == "true"
     assert r["tag"] == "v0.3.0"
-    assert "- note" in r["notes"]
+    assert "- CLI multi-seed" in r["notes"]
 
 
-def test_commit_requires_v():
-    assert mod.parse_commit("release: 1.0.0\n")["should_release"] == "false"
+def test_front_matter_leading():
+    msg = """---
+release: v1.0.0
+---
+
+Initial release notes here
+"""
+    r = mod.parse_commit(msg)
+    assert r["should_release"] == "true"
+    assert r["tag"] == "v1.0.0"
+    assert "Initial release notes" in r["notes"]
 
 
-def test_commit_rejects_unbracketed_with_extra():
-    assert mod.parse_commit("release: v0.3.0 ship it\n")["should_release"] == "false"
+def test_bare_line_rejected():
+    assert mod.parse_commit("summary\n\nrelease: v0.3.0\n")["should_release"] == "false"
 
 
-def test_merge_commit_embeds_bracket_title():
+def test_front_matter_requires_v():
+    msg = """---
+release: 1.0.0
+---
+"""
+    assert mod.parse_commit(msg)["should_release"] == "false"
+
+
+def test_merge_commit_bracket_title():
     msg = (
         "Merge pull request #4 from Code0987/feature\n"
         "\n"
@@ -44,17 +70,23 @@ def test_pr_title_bracket():
     assert r["tag"] == "v0.2.0"
 
 
-def test_pr_title_bracket_only():
-    r = mod.parse_pr_title("[release: v0.2.0]")
-    assert r["should_release"] == "true"
-    assert r["tag"] == "v0.2.0"
-
-
 def test_pr_title_rejects_unbracketed():
     assert mod.parse_pr_title("release: v0.2.0")["should_release"] == "false"
 
 
-def test_fallback_title_cli():
+def test_code_fence_example_ignored():
+    msg = """docs
+
+```markdown
+---
+release: v9.9.9
+---
+```
+"""
+    assert mod.parse_commit(msg)["should_release"] == "false"
+
+
+def test_cli_fallback_title():
     with tempfile.TemporaryDirectory() as d:
         commit = Path(d) / "c.txt"
         title = Path(d) / "t.txt"
@@ -78,12 +110,13 @@ def test_fallback_title_cli():
 
 
 if __name__ == "__main__":
-    test_commit_line()
-    test_commit_requires_v()
-    test_commit_rejects_unbracketed_with_extra()
-    test_merge_commit_embeds_bracket_title()
+    test_front_matter_after_subject()
+    test_front_matter_leading()
+    test_bare_line_rejected()
+    test_front_matter_requires_v()
+    test_merge_commit_bracket_title()
     test_pr_title_bracket()
-    test_pr_title_bracket_only()
     test_pr_title_rejects_unbracketed()
-    test_fallback_title_cli()
+    test_code_fence_example_ignored()
+    test_cli_fallback_title()
     print("ok")

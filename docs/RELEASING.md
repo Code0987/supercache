@@ -10,34 +10,44 @@ The **Release** GitHub Action then:
 
 ## Marker formats
 
-| Where | Format (exact) | Example |
-|-------|----------------|---------|
-| **Commit message** (own line) | `release: vX.Y.Z` | `release: v1.2.3` |
-| **PR title** | `[release: vX.Y.Z]` | `Add CLI [release: v1.2.3]` |
+| Where | Format | Example |
+|-------|--------|---------|
+| **Commit message** | Markdown **YAML front matter** | see below |
+| **PR title** | Square brackets | `Ship CLI [release: v1.2.3]` |
 
-Rules for both:
-
-- **`v` required** — `1.2.3` is ignored  
-- **Semver only** — no `-rc` / prerelease  
-- Must be **strictly greater** than the latest existing git tag  
-- **PR body is ignored**
-
-### Commit message (preferred for notes)
+### Commit message (YAML front matter)
 
 ```text
 Short summary of what this release is
 
+---
 release: v0.3.0
+---
 
 - Multi-seed CLI and REPL
 - OpenAPI /docs on admin port
 ```
 
-Optional notes = lines after the marker until `---` / `##` / git trailers.
+Or front matter first:
+
+```text
+---
+release: v0.3.0
+---
+
+Short summary / release notes
+```
+
+Rules:
+
+- Opening and closing `---` fences are required (Markdown metadata / YAML front matter)
+- Inside the block: exactly `release: vX.Y.Z` on its own line (`v` required, no prerelease)
+- A bare line `release: v1.2.3` **outside** front matter does **not** release
+- Optional notes = text **after** the closing `---` (until another `---` / `##` / git trailers)
+- Version must be **strictly greater** than the latest existing git tag
+- **PR body is ignored**
 
 ### PR title
-
-Put the bracketed marker in the title (alone or after a short summary):
 
 ```text
 [release: v0.3.0]
@@ -47,18 +57,20 @@ Put the bracketed marker in the title (alone or after a short summary):
 Ship multi-seed CLI [release: v0.3.0]
 ```
 
-Unbracketed titles (`release: v0.3.0`) are **not** accepted.
+Unbracketed titles (`release: v0.3.0`) are not accepted.
 
-GitHub merge commits embed the PR title as a second paragraph; that still matches via the bracket form.
+Merge commits that embed the PR title still match via the bracket form.
 
 ## How to ship
 
-### Option A — squash / commit message
+### Option A — commit front matter (preferred for notes)
 
 ```text
 Add sc CLI multi-seed and REPL
 
+---
 release: v0.3.0
+---
 
 - Sticky multi-seed failover
 ```

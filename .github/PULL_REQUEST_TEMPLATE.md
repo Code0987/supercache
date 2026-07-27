@@ -9,14 +9,22 @@ or **PR title** (PR description is ignored).
 
 | Where | Required format |
 |-------|-----------------|
-| Commit message (own line) | `release: vX.Y.Z` |
+| Commit message | Markdown YAML front matter (see below) |
 | PR title | `[release: vX.Y.Z]` |
 
-Examples:
+### Commit message
 
 ```text
+Short summary
+
+---
 release: v1.2.3
+---
+
+- Release note bullet
 ```
+
+### PR title
 
 ```text
 Ship multi-seed CLI [release: v1.2.3]
@@ -24,13 +32,13 @@ Ship multi-seed CLI [release: v1.2.3]
 
 - **`v` required**; no prerelease suffix  
 - Must be **greater than** the latest git tag  
-- Notes (optional) only from lines after a **commit** marker  
+- Bare `release: vX.Y.Z` outside front matter does **not** release  
 - Full rules: [docs/RELEASING.md](../docs/RELEASING.md)
 
 ### Shipping a version
 
 - [ ] This PR should **not** cut a release  
-- [ ] Release via **commit message** line `release: vX.Y.Z`  
+- [ ] Release via **commit front matter** (`--- / release: vX.Y.Z / ---`)  
 - [ ] Release via **PR title** containing `[release: vX.Y.Z]`  
 - [ ] Target version: `v`__.__.__
 

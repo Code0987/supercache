@@ -3,23 +3,25 @@
 
 Formats (exact):
 
-  Commit message line:   release: v1.2.3
-  PR title (or title
-  embedded in a merge
-  commit):               [release: v1.2.3]   (anywhere in the title)
+  Commit message — Markdown YAML front matter:
+
+      ---
+      release: v1.2.3
+      ---
+
+  PR title (or title embedded in a merge commit):
+
+      [release: v1.2.3]
 
 Sources (first hit wins):
   1. --message-file / --message / stdin  (git commit message)
   2. --fallback-file                     (PR title)
 
-Commit messages are scanned for:
-  - a full line  release: vX.Y.Z
-  - a line containing  [release: vX.Y.Z]  (merge commits often embed the PR title)
-
-PR titles (--fallback-file) only accept the bracket form.
+A bare line `release: vX.Y.Z` outside front matter does **not** release.
 
 - Version must be v + MAJOR.MINOR.PATCH (no prerelease)
-- Optional notes = lines after an unbracketed marker in the commit message
+- Optional notes = text after the closing `---` of front matter
+  (until another `---` / `##` / git trailers)
 - No marker → should_release=false
 
 Outputs GitHub Actions-style key=value lines to stdout / GITHUB_OUTPUT.
@@ -32,23 +34,25 @@ import re
 import sys
 from pathlib import Path
 
-# Commit message: whole line
-LINE_MARKER = re.compile(r"(?i)^release:\s*(v\d+\.\d+\.\d+)\s*$")
-# PR title / embedded title: square brackets
+FM_RELEASE = re.compile(r"(?i)^release:\s*(v\d+\.\d+\.\d+)\s*$")
 BRACKET_MARKER = re.compile(r"(?i)\[release:\s*(v\d+\.\d+\.\d+)\s*\]")
 TRAILER = re.compile(
     r"(?i)^(signed-off-by|co-authored-by|reviewed-by|acked-by|suggested-by|"
     r"reported-by|tested-by|merge-request|change-id)\s*:"
 )
-FENCE = re.compile(r"^```")
 
 
-def strip_fenced_blocks(text: str) -> str:
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+def _normalize(msg: str) -> str:
+    return msg.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove ``` fenced code blocks (not YAML --- front matter)."""
+    lines = text.split("\n")
     out: list[str] = []
     in_fence = False
     for line in lines:
-        if FENCE.match(line.strip()):
+        if line.strip().startswith("```"):
             in_fence = not in_fence
             continue
         if not in_fence:
@@ -56,8 +60,12 @@ def strip_fenced_blocks(text: str) -> str:
     return "\n".join(out)
 
 
-def _notes_from(lines: list[str], marker_idx: int, subject: str, tag: str) -> str:
-    body = lines[marker_idx + 1 :]
+def _subject(lines: list[str]) -> str:
+    return next((ln.strip() for ln in lines if ln.strip()), "")
+
+
+def _extract_notes(lines: list[str], start: int, subject: str, tag: str) -> str:
+    body = lines[start:]
     while body and body[0].strip() == "":
         body.pop(0)
     trimmed: list[str] = []
@@ -71,16 +79,51 @@ def _notes_from(lines: list[str], marker_idx: int, subject: str, tag: str) -> st
     while trimmed and trimmed[-1].strip() == "":
         trimmed.pop()
     notes = "\n".join(trimmed).strip()
-    if not notes:
-        notes = subject if subject and not LINE_MARKER.match(subject) else f"Release {tag}"
+    if not notes or BRACKET_MARKER.fullmatch(notes):
+        notes = subject if subject and not BRACKET_MARKER.search(subject) else f"Release {tag}"
+    if FM_RELEASE.match(notes):
+        notes = f"Release {tag}"
     return notes
 
 
+def find_front_matter(lines: list[str]) -> tuple[str, int] | None:
+    """Find first YAML front-matter block; return (tag, index_after_closing_fence).
+
+    Front matter is a `---` line, then body lines, then a closing `---` line.
+    The body must contain `release: vX.Y.Z` on its own line.
+    """
+    n = len(lines)
+    i = 0
+    while i < n:
+        if lines[i].strip() != "---":
+            i += 1
+            continue
+        # potential opening fence
+        j = i + 1
+        body: list[str] = []
+        while j < n and lines[j].strip() != "---":
+            body.append(lines[j])
+            j += 1
+        if j >= n:
+            return None  # unclosed
+        # closing fence at j
+        tag = None
+        for bl in body:
+            m = FM_RELEASE.match(bl.strip())
+            if m:
+                tag = m.group(1)
+                break
+        if tag:
+            return tag, j + 1
+        # not a release front matter; continue search after this block
+        i = j + 1
+    return None
+
+
 def parse_commit(msg: str) -> dict:
-    """Parse a git commit message (line form + bracket form for merge titles)."""
-    msg = strip_fenced_blocks(msg)
-    lines = msg.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    subject = next((ln.strip() for ln in lines if ln.strip()), "")
+    text = _strip_code_fences(_normalize(msg))
+    lines = text.split("\n")
+    subject = _subject(lines)
 
     empty = {
         "should_release": "false",
@@ -92,36 +135,30 @@ def parse_commit(msg: str) -> dict:
         "source": "",
     }
 
-    # Prefer unbracketed full-line marker (explicit release commits).
-    for i, line in enumerate(lines):
-        m = LINE_MARKER.match(line.strip())
-        if m:
-            tag = m.group(1)
-            return {
-                "should_release": "true",
-                "version": tag[1:],
-                "tag": tag,
-                "prerelease": "false",
-                "notes": _notes_from(lines, i, subject, tag),
-                "subject": subject,
-                "source": "",
-            }
+    fm = find_front_matter(lines)
+    if fm:
+        tag, after = fm
+        return {
+            "should_release": "true",
+            "version": tag[1:],
+            "tag": tag,
+            "prerelease": "false",
+            "notes": _extract_notes(lines, after, subject, tag),
+            "subject": subject,
+            "source": "",
+        }
 
-    # Bracket form: PR title often appears as a line in a merge commit.
+    # Bracket form: PR title embedded in merge commit
     for i, line in enumerate(lines):
         m = BRACKET_MARKER.search(line)
         if m:
             tag = m.group(1)
-            # Notes from bracket-only title lines are usually empty; use default.
-            notes = _notes_from(lines, i, subject, tag)
-            # If the only content on the line is the bracket marker (+ whitespace),
-            # subject may be the merge first line — fine.
             return {
                 "should_release": "true",
                 "version": tag[1:],
                 "tag": tag,
                 "prerelease": "false",
-                "notes": notes,
+                "notes": _extract_notes(lines, i + 1, subject, tag),
                 "subject": subject,
                 "source": "",
             }
@@ -130,8 +167,7 @@ def parse_commit(msg: str) -> dict:
 
 
 def parse_pr_title(title: str) -> dict:
-    """PR title must include [release: vX.Y.Z] (unbracketed form is rejected)."""
-    title = title.replace("\r\n", "\n").replace("\r", "\n").strip()
+    title = _normalize(title).strip()
     subject = title.split("\n")[0].strip() if title else ""
     empty = {
         "should_release": "false",
@@ -142,10 +178,6 @@ def parse_pr_title(title: str) -> dict:
         "subject": subject,
         "source": "",
     }
-    # Reject unbracketed title-only form
-    if LINE_MARKER.match(subject) and not BRACKET_MARKER.search(subject):
-        return empty
-
     m = BRACKET_MARKER.search(title)
     if not m:
         return empty
@@ -206,20 +238,14 @@ def main() -> int:
 
     result = parse_commit(primary)
     if result["should_release"] == "true":
-        # Bracket form in commit is typically the embedded PR title (merge).
-        if BRACKET_MARKER.search(primary) and not any(
-            LINE_MARKER.match(ln.strip()) for ln in primary.splitlines()
-        ):
-            result["source"] = "commit_title_embed"
-        else:
+        has_fm = find_front_matter(_strip_code_fences(_normalize(primary)).split("\n"))
+        if has_fm:
             result["source"] = "commit"
-    elif args.fallback_file and Path(args.fallback_file).is_file():
-        title = Path(args.fallback_file).read_text(encoding="utf-8")
-        result = parse_pr_title(title)
-        if result["should_release"] == "true":
-            result["source"] = "pr_title"
         else:
-            result["source"] = ""
+            result["source"] = "commit_title_embed"
+    elif args.fallback_file and Path(args.fallback_file).is_file():
+        result = parse_pr_title(Path(args.fallback_file).read_text(encoding="utf-8"))
+        result["source"] = "pr_title" if result["should_release"] == "true" else ""
     else:
         result["source"] = ""
 

@@ -63,8 +63,8 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           else
             git log -1 --pretty=%B > /tmp/commit-msg.txt
-            # Sources: commit message first (line "release: vX.Y.Z" or embedded
-            # "[release: vX.Y.Z]" from a merge title), then PR title (brackets only).
+            # Sources: commit message first (YAML front matter release: vX.Y.Z, or
+            # embedded "[release: vX.Y.Z]" from a merge title), then PR title (brackets).
             # PR description/body is intentionally ignored.
             : > /tmp/pr-title.txt
             if command -v gh >/dev/null 2>&1; then
