@@ -1,0 +1,171 @@
+name: Release
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. v0.3.0 or 0.3.0)"
+        required: true
+        type: string
+      notes:
+        description: "Release notes (optional)"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark as prerelease"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan release
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.meta.outputs.should_release }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      notes: ${{ steps.meta.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse commit / inputs
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NOTES: ${{ inputs.notes }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VER="${INPUT_VERSION#v}"
+            if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+              echo "Invalid version: $INPUT_VERSION" >&2
+              exit 1
+            fi
+            TAG="v${VER}"
+            NOTES="${INPUT_NOTES:-Release ${TAG}}"
+            PRE=false
+            if [ "${INPUT_PRERELEASE}" = "true" ] || echo "$VER" | grep -q '-'; then
+              PRE=true
+            fi
+            {
+              echo "should_release=true"
+              echo "version=${VER}"
+              echo "tag=${TAG}"
+              echo "prerelease=${PRE}"
+              echo "notes<<RELEASE_EOF"
+              printf '%s\n' "$NOTES"
+              echo "RELEASE_EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            git log -1 --pretty=%B > /tmp/commit-msg.txt
+            python3 scripts/parse-release-commit.py \
+              --message-file /tmp/commit-msg.txt \
+              --github-output
+            grep -q '^should_release=' "$GITHUB_OUTPUT"
+          fi
+          echo "Plan:"
+          grep -E '^(should_release|version|tag|prerelease)=' "$GITHUB_OUTPUT" || true
+
+      - name: Guard existing tag
+        if: steps.meta.outputs.should_release == 'true'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists locally — refusing to re-release." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin — refusing to re-release." >&2
+            exit 1
+          fi
+          echo "Tag ${TAG} is free."
+
+  release:
+    name: Build & publish
+    needs: plan
+    if: needs.plan.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./... -race -count=1
+          python3 scripts/parse-release-commit_test.py
+
+      - name: Build release artifacts
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          LDFLAGS="-s -w -X main.version=${TAG}"
+          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
+          for target in $targets; do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+            for cmd in supercache-node sc; do
+              out="dist/${cmd}_${TAG}_${GOOS}_${GOARCH}"
+              echo "building ${out}"
+              GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
+                go build -trimpath -ldflags "$LDFLAGS" -o "$out" "./cmd/${cmd}"
+              (cd dist && zip -q "${cmd}_${TAG}_${GOOS}_${GOARCH}.zip" "${cmd}_${TAG}_${GOOS}_${GOARCH}")
+              rm -f "$out"
+            done
+          done
+          (cd dist && sha256sum *.zip > checksums.txt)
+          ls -la dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          NOTES: ${{ needs.plan.outputs.notes }}
+          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+          PRE_ARGS=()
+          if [ "$PRERELEASE" = "true" ]; then
+            PRE_ARGS+=(--prerelease)
+          fi
+
+          printf '%s\n' "$NOTES" > /tmp/release-notes.md
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            "${PRE_ARGS[@]}" \
+            dist/*.zip \
+            dist/checksums.txt
+
+          echo "Published https://github.com/${{ github.repository }}/releases/tag/${TAG}"

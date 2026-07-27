@@ -30,6 +30,9 @@ import (
 	"github.com/Code0987/supercache/pkg/warmup"
 )
 
+// version is set at link time for releases: -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
+
 func main() {
 	var (
 		adminAddr   = flag.String("admin", "127.0.0.1:8080", "admin HTTP listen address")
@@ -44,6 +47,7 @@ func main() {
 		demoKS      = flag.Bool("demo-keyspace", true, "register demo CacheOnly keyspace")
 		globalRPS   = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
 		cluster     = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
+		showVersion = flag.Bool("version", false, "print version and exit")
 
 		// TLS (optional). Empty paths keep plaintext for local/dev.
 		tlsCert     = flag.String("tls-cert", "", "PEM certificate for Cache and Peer gRPC servers")
@@ -59,6 +63,10 @@ func main() {
 		cacheMTLS     = flag.Bool("cache-mtls", false, "require client certs on Cache port (needs -cache-client-ca or -tls-client-ca)")
 	)
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("supercache-node %s\n", version)
+		return
+	}
 
 	metrics := telemetry.New()
 	var opts []engine.Option

@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+// version is set at link time for releases: -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:]))

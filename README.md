@@ -3,8 +3,7 @@
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
 **Status:** Milestone 6 — polish (client API, docs, chaos tests)  
-See [PLAN.md](./PLAN.md) for architecture, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, and [docs/API.md](./docs/API.md) for **Swagger-style API docs**.
-## Module
+See [PLAN.md](./PLAN.md) for architecture, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, [docs/API.md](./docs/API.md) for **API docs**, and [docs/RELEASING.md](./docs/RELEASING.md) for **versioned GitHub Releases**.## Module
 
 ```text
 github.com/Code0987/supercache
@@ -124,12 +123,27 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 
 SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads. Details: `PLAN.md` §3 and `docs/OPERATIONS.md`.
 
+## Releases
+
+Merges to `main` that include a version marker in the commit message publish a GitHub Release
+(binaries + notes). Example squash message:
+
+```text
+Ship multi-seed CLI
+
+release: v0.3.0
+
+- Sticky multi-seed failover
+- Interactive REPL
+```
+
+See [docs/RELEASING.md](./docs/RELEASING.md). Downloads: [GitHub Releases](https://github.com/Code0987/supercache/releases).
+
 ## Test
 
 ```bash
 go test ./... -race
 ```
-
 ## Design notes
 
 - Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
