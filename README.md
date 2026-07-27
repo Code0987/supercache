@@ -53,6 +53,24 @@ go run ./cmd/supercache-node -cluster -node-id n2 \
 
 Optional: `-gossip-secret <key>`.
 
+### CLI (`sc`)
+
+```bash
+# With supercache-node running on defaults:
+go run ./cmd/sc put greeting "hello"
+go run ./cmd/sc get greeting
+go run ./cmd/sc del greeting
+go run ./cmd/sc peers          # admin HTTP
+
+# Multi-seed (failover entry points; owner routing is still server-side)
+go run ./cmd/sc -addr 127.0.0.1:9000,127.0.0.1:9010 ping
+
+# Interactive REPL
+go run ./cmd/sc
+```
+
+Install: `go install ./cmd/sc`. See [cmd/sc/README.md](./cmd/sc/README.md).
+
 ### Bench vs Redis
 
 ```bash
@@ -61,7 +79,6 @@ go run ./cmd/scbench -reliable -json=bench-report.json
 ```
 
 Multi-trial medians, get/set/mixed suite, comparison table. See [cmd/scbench/README.md](./cmd/scbench/README.md) and [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
-
 ### Music trending billboard (cluster demo)
 
 ```bash
@@ -102,7 +119,8 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 | `internal/peerserver` | Peer gRPC service |
 | `internal/cacheserver` | Application Cache gRPC service |
 | `cmd/supercache-node` | Node binary |
-
+| `cmd/sc` | CLI for get/put/del + admin diagnostics |
+| `cmd/scbench` | SuperCache vs Redis load harness |
 ## Consistency (short)
 
 SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads. Details: `PLAN.md` §3 and `docs/OPERATIONS.md`.
