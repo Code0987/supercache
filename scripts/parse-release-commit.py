@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Parse SuperCache release metadata from a git commit message and/or PR body.
+"""Parse SuperCache release metadata from a commit message or PR title.
 
-Only one pattern is allowed (own line, exact):
+Only one pattern is allowed (own line / entire PR title, exact):
 
   release: v1.2.3
 
-- Keyword is `release:` (case-insensitive)
-- Version must be `v` + MAJOR.MINOR.PATCH
-- Optional notes = body after that line until a `---` ruler, a `##` heading,
-  or git trailers
-- Markdown fenced code blocks (``` ... ```) are ignored so PR template
-  examples do not trigger a release
-- No marker → should_release=false (not an error)
-
 Sources (first hit wins):
-  1. --message-file / --message / stdin (usually the push commit message)
-  2. --fallback-file (usually the merged PR body)
+  1. --message-file / --message / stdin  (git commit message)
+  2. --fallback-file                     (PR title only — not PR body)
+
+- Keyword is `release:` (case-insensitive)
+- Version must be `v` + MAJOR.MINOR.PATCH (no prerelease)
+- Optional notes = lines after the marker in the commit message until a
+  `---` ruler, a `##` heading, or git trailers
+- Markdown fenced code blocks are ignored (so accidental fence lines do not match)
+- No marker → should_release=false
 
 Outputs GitHub Actions-style key=value lines to stdout / GITHUB_OUTPUT.
 """
@@ -27,16 +26,15 @@ import re
 import sys
 from pathlib import Path
 
-# Single allowed form: release: v1.2.3
 MARKER = re.compile(r"(?i)^release:\s*(v\d+\.\d+\.\d+)\s*$")
 TRAILER = re.compile(
-    r"(?i)^(signed-off-by|co-authored-by|reviewed-by|acked-by|suggested-by|reported-by|tested-by|merge-request|change-id)\s*:"
+    r"(?i)^(signed-off-by|co-authored-by|reviewed-by|acked-by|suggested-by|"
+    r"reported-by|tested-by|merge-request|change-id)\s*:"
 )
 FENCE = re.compile(r"^```")
 
 
 def strip_fenced_blocks(text: str) -> str:
-    """Remove markdown fenced code blocks so template examples are ignored."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     in_fence = False
@@ -64,19 +62,19 @@ def parse(msg: str, *, strip_fences: bool = True) -> dict:
             marker_idx = i
             break
 
+    empty = {
+        "should_release": "false",
+        "version": "",
+        "tag": "",
+        "prerelease": "false",
+        "notes": "",
+        "subject": subject,
+        "source": "",
+    }
     if not tag:
-        return {
-            "should_release": "false",
-            "version": "",
-            "tag": "",
-            "prerelease": "false",
-            "notes": "",
-            "subject": subject,
-            "source": "",
-        }
+        return empty
 
     version = tag[1:]
-
     body = lines[marker_idx + 1 :]
     while body and body[0].strip() == "":
         body.pop(0)
@@ -103,7 +101,7 @@ def parse(msg: str, *, strip_fences: bool = True) -> dict:
         "prerelease": "false",
         "notes": notes,
         "subject": subject,
-        "source": "",  # filled by main when known
+        "source": "",
     }
 
 
@@ -134,7 +132,7 @@ def main() -> int:
     ap.add_argument("--message", help="Primary text string")
     ap.add_argument(
         "--fallback-file",
-        help="Secondary text if primary has no release marker (e.g. PR body)",
+        help="Secondary text if primary has no marker (PR title only)",
     )
     ap.add_argument(
         "--github-output",
@@ -157,10 +155,11 @@ def main() -> int:
     if result["should_release"] == "true":
         result["source"] = primary_src
     elif args.fallback_file and Path(args.fallback_file).is_file():
-        fallback = Path(args.fallback_file).read_text(encoding="utf-8")
-        result = parse(fallback)
+        fallback = Path(args.fallback_file).read_text(encoding="utf-8").strip()
+        # PR title is a single line; same format required.
+        result = parse(fallback, strip_fences=False)
         if result["should_release"] == "true":
-            result["source"] = "pr_body"
+            result["source"] = "pr_title"
         else:
             result["source"] = ""
     else:

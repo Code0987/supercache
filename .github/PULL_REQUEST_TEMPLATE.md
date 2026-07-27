@@ -4,33 +4,43 @@
 
 ## Release
 
-Merging to `main` **does not** create a release unless this **exact** line appears in the
-**commit message** or at the **top of this PR description** (not inside a code fence):
+A release is cut only when this **exact** line appears as:
+
+1. A line in the **git commit message** on `main`, or  
+2. The entire **PR title**
 
 ```text
 release: vX.Y.Z
 ```
 
-- **`v` is required** — `release: 1.2.3` is ignored  
-- **Semver only** — `v1.2.3`, not `v1.2.3-rc.1`  
-- **Must be greater than the current latest tag** — downgrades / equals are rejected  
-- Optional notes = lines after the marker until `---` or a `##` heading  
+| Allowed | Not allowed |
+|---------|-------------|
+| `release: v1.2.3` | `release: 1.2.3` (missing `v`) |
+| | `release: v1.2.3-rc.1` |
+| | `release: v1.2.3 ship it` (extra text) |
+| | Marker only in the PR **description** |
+
+- Version must be **greater than** the latest git tag  
+- Notes (optional) come from lines after the marker in the **commit message**  
 - Full rules: [docs/RELEASING.md](../docs/RELEASING.md)
 
-### If this PR should ship a version
+### Shipping a version
 
-Put this **above** the rest of the description (or in the squash commit message):
+**Option A — commit message (preferred):** include in squash/merge commit:
 
 ```text
+Short summary
+
 release: v0.3.0
 
-- Bullet one for the GitHub Release notes
-- Bullet two
+- Release note bullet
 ```
 
-- [ ] This PR should **not** cut a release (omit any live `release: v…` line outside fences)
-- [ ] This PR **should** cut a release — live `release: vX.Y.Z` is in the PR body or squash message
-- [ ] Target version: `v`__.__.__  (fill in if releasing)
+**Option B — PR title:** set title to exactly `release: v0.3.0` (summary stays in this description).
+
+- [ ] This PR should **not** cut a release
+- [ ] This PR **should** cut a release via commit message or PR title
+- [ ] Target version: `v`__.__.__
 
 ## Test plan
 

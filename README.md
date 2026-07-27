@@ -125,14 +125,14 @@ SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. De
 
 ## Releases
 
-Merges to `main` that include **exactly** this line in the commit message publish a GitHub Release
-(binaries + notes):
+Merges to `main` publish a GitHub Release when **exactly** this line appears in the
+**commit message** or as the entire **PR title**:
 
 ```text
 release: v1.2.3
 ```
 
-Example:
+Example (commit message):
 
 ```text
 Ship multi-seed CLI

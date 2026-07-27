@@ -63,15 +63,15 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           else
             git log -1 --pretty=%B > /tmp/commit-msg.txt
-            # Merge commits often lack the release marker; fall back to the PR body
-            # (marker outside markdown code fences). Requires pull-requests: read.
-            : > /tmp/pr-body.txt
+            # Sources: commit message first, then PR title (exact "release: vX.Y.Z").
+            # PR description/body is intentionally ignored.
+            : > /tmp/pr-title.txt
             if command -v gh >/dev/null 2>&1; then
-              gh pr view --json body -q .body > /tmp/pr-body.txt 2>/dev/null || true
+              gh pr view --json title -q .title > /tmp/pr-title.txt 2>/dev/null || true
             fi
             python3 scripts/parse-release-commit.py \
               --message-file /tmp/commit-msg.txt \
-              --fallback-file /tmp/pr-body.txt \
+              --fallback-file /tmp/pr-title.txt \
               --github-output
             grep -q '^should_release=' "$GITHUB_OUTPUT"
           fi

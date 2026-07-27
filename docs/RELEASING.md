@@ -8,26 +8,30 @@ version line below. The **Release** GitHub Action then:
 3. Builds `sc` and `supercache-node` for linux/darwin × amd64/arm64
 4. Publishes a [GitHub Release](https://github.com/Code0987/supercache/releases) with notes + archives
 
-## Commit message format
+## Marker format
 
-**Only one pattern is accepted** — a full line:
+**Only one pattern is accepted** — an entire line (or the entire PR title):
 
 ```text
 release: v1.2.3
 ```
 
-Put it in either:
-
-1. The **squash / merge commit message** (preferred), or  
-2. The **PR description** (outside markdown code fences) — used as a fallback when the merge commit is GitHub’s default `Merge pull request #N…` text
-
 - Must include the **`v`** prefix (`release: 1.2.3` is ignored)
 - Must be `MAJOR.MINOR.PATCH` only (no `-rc` / prerelease)
-- Must be **strictly greater** than the latest existing git tag (`v0.2.0` is rejected if `v0.3.0` already exists)
-- Optional notes = lines **after** the marker until a `---` ruler or `##` heading (template examples inside ` ``` ` fences are ignored)
-- If notes are empty, the commit/PR subject is used
+- No extra text on the same line (`release: v1.2.3 ship it` is ignored)
+- Must be **strictly greater** than the latest existing git tag
 
-### Example
+## Where it is read
+
+| Source | Used? |
+|--------|--------|
+| **Git commit message** on `main` | Yes (first) |
+| **PR title** | Yes (fallback if commit has no marker) |
+| PR description / body | **No** |
+
+Optional release notes = lines **after** the marker in the **commit message** (until `---` / `##` / trailers). If the only hit is a PR title with no commit notes, the notes default to `Release vX.Y.Z`.
+
+### Example — commit message (preferred)
 
 ```text
 Short summary of what this release is
@@ -36,18 +40,27 @@ release: v0.3.0
 
 - Multi-seed CLI and REPL
 - OpenAPI /docs on admin port
-- GitHub Pages API docs
 ```
+
+### Example — PR title
+
+Set the PR title to exactly:
+
+```text
+release: v0.3.0
+```
+
+(Use the description for human context; it does not drive the version.)
 
 ### Non-release commits
 
-Commits without that exact line **do not** create a release (CI still runs).
+No matching line in the commit message **and** PR title is not exactly `release: vX.Y.Z` → no release (CI still runs).
 
 ## How to ship
 
-### Option A — squash-merge a PR
+### Option A — squash-merge
 
-In the **squash commit message**:
+Squash commit message:
 
 ```text
 Add sc CLI multi-seed and REPL
@@ -55,22 +68,12 @@ Add sc CLI multi-seed and REPL
 release: v0.3.0
 
 - Sticky multi-seed failover
-- Interactive REPL
 ```
 
-### Option B — direct commit on main
+### Option B — merge commit + PR title
 
-```bash
-git commit -m "$(cat <<'EOF'
-Polish admin OpenAPI schemas
-
-release: v0.3.1
-
-- Fix PeerInfo JSON field names
-EOF
-)"
-git push origin main
-```
+1. Set PR **title** to `release: v0.3.0`
+2. Merge (merge commit is fine)
 
 ### Option C — manual dispatch
 
