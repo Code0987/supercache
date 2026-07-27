@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """Parse SuperCache release metadata from a git commit message.
 
-Supported markers (case-insensitive, line must match):
+Only one pattern is allowed (own line, exact):
 
   release: v1.2.3
-  release: 1.2.3
-  Release-As: v1.2.3
-  Release-Version: v1.2.3
-  version: v1.2.3
 
-Optional notes = body after the release marker line (excluding git trailers).
-If notes are empty, falls back to the subject line (first line).
+- Keyword is `release:` (case-insensitive)
+- Version must be `v` + MAJOR.MINOR.PATCH (no optional prefix, no prerelease)
+- Optional notes = body after that line (git trailers stripped)
+- No marker → should_release=false (not an error)
 
-Outputs GitHub Actions-style key=value lines to stdout (and optionally GITHUB_OUTPUT).
-When no release marker is found, prints should_release=false and exits 0.
+Outputs GitHub Actions-style key=value lines to stdout / GITHUB_OUTPUT.
 """
 from __future__ import annotations
 
@@ -23,9 +20,8 @@ import re
 import sys
 from pathlib import Path
 
-MARKER = re.compile(
-    r"(?im)^(?:release(?:-as|-version)?|version)\s*:\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$"
-)
+# Single allowed form: release: v1.2.3
+MARKER = re.compile(r"(?i)^release:\s*(v\d+\.\d+\.\d+)\s*$")
 TRAILER = re.compile(
     r"(?i)^(signed-off-by|co-authored-by|reviewed-by|acked-by|suggested-by|reported-by|tested-by|merge-request|change-id)\s*:"
 )
@@ -35,16 +31,16 @@ def parse(msg: str) -> dict:
     lines = msg.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     subject = lines[0].strip() if lines else ""
 
-    version = None
+    tag = None
     marker_idx = None
     for i, line in enumerate(lines):
         m = MARKER.match(line.strip())
         if m:
-            version = m.group(1)
+            tag = m.group(1)
             marker_idx = i
             break
 
-    if not version:
+    if not tag:
         return {
             "should_release": "false",
             "version": "",
@@ -54,8 +50,7 @@ def parse(msg: str) -> dict:
             "subject": subject,
         }
 
-    tag = f"v{version}"
-    prerelease = "true" if "-" in version else "false"
+    version = tag[1:]  # strip leading v for display/ldflags consumers that want bare
 
     body = lines[marker_idx + 1 :]
     while body and body[0].strip() == "":
@@ -77,7 +72,7 @@ def parse(msg: str) -> dict:
         "should_release": "true",
         "version": version,
         "tag": tag,
-        "prerelease": prerelease,
+        "prerelease": "false",
         "notes": notes,
         "subject": subject,
     }

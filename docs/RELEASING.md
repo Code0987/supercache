@@ -1,7 +1,7 @@
 # Releasing SuperCache
 
-Releases are **automatic** when a commit lands on `main` (or `master`) whose
-message includes a version marker. The **Release** GitHub Action then:
+Releases are **automatic** when a commit lands on `main` (or `master`) with the
+version line below. The **Release** GitHub Action then:
 
 1. Runs tests
 2. Creates git tag `vX.Y.Z`
@@ -10,7 +10,18 @@ message includes a version marker. The **Release** GitHub Action then:
 
 ## Commit message format
 
-Put the version on its **own line** (subject or body). Optional notes follow.
+**Only one pattern is accepted** — a full line:
+
+```text
+release: v1.2.3
+```
+
+- Must include the **`v`** prefix (`release: 1.2.3` is ignored)
+- Must be `MAJOR.MINOR.PATCH` only (no `-rc` / prerelease)
+- Optional notes = everything **after** that line (git trailers like `Co-authored-by:` are stripped)
+- If notes are empty, the commit subject is used
+
+### Example
 
 ```text
 Short summary of what this release is
@@ -22,30 +33,15 @@ release: v0.3.0
 - GitHub Pages API docs
 ```
 
-### Accepted markers
-
-| Line | Example |
-|------|---------|
-| `release:` | `release: v1.2.3` |
-| `Release-As:` | `Release-As: 1.2.3` |
-| `Release-Version:` | `Release-Version: v1.2.3-rc.1` |
-| `version:` | `version: v1.0.0` |
-
-- Leading `v` is optional (`1.2.3` → tag `v1.2.3`)
-- Semver core `MAJOR.MINOR.PATCH` required; optional prerelease suffix (`-rc.1`) marks the GitHub release as **prerelease**
-- Everything **after** the marker line becomes the release body (git trailers like `Co-authored-by:` are stripped)
-- If notes are empty, the commit subject is used
-
 ### Non-release commits
 
-Normal commits without a marker **do not** create a release (CI still runs).
+Commits without that exact line **do not** create a release (CI still runs).
 
-## How to ship (recommended)
+## How to ship
 
 ### Option A — squash-merge a PR
 
-1. Open a PR with your changes
-2. In the **squash commit message** (GitHub UI), set:
+In the **squash commit message**:
 
 ```text
 Add sc CLI multi-seed and REPL
@@ -55,8 +51,6 @@ release: v0.3.0
 - Sticky multi-seed failover
 - Interactive REPL
 ```
-
-3. Merge to `main` → Release workflow runs
 
 ### Option B — direct commit on main
 
@@ -74,12 +68,9 @@ git push origin main
 
 ### Option C — manual dispatch
 
-**Actions → Release → Run workflow** with `version` (and optional `notes`) inputs.
-Use this if you need to re-cut or publish without a special commit.
+**Actions → Release → Run workflow** with version `v1.2.3` (and optional notes).
 
 ## Artifacts
-
-Each release attaches zip archives named like:
 
 ```text
 supercache-node_v0.3.0_linux_amd64.zip
@@ -87,17 +78,15 @@ sc_v0.3.0_darwin_arm64.zip
 checksums.txt
 ```
 
-Binaries are stamped with the version via `-ldflags` (`sc version`, `supercache-node -version`).
+Binaries are stamped via `-ldflags` (`sc version`, `supercache-node -version`).
 
 ## Go modules
-
-Tagging `vX.Y.Z` on the default branch is enough for consumers:
 
 ```bash
 go get github.com/Code0987/supercache@v0.3.0
 ```
 
-## Local dry-run of the parser
+## Local dry-run
 
 ```bash
 python3 scripts/parse-release-commit.py --message "$(git log -1 --pretty=%B)"
@@ -109,5 +98,5 @@ python3 scripts/parse-release-commit_test.py
 | Situation | Behavior |
 |-----------|----------|
 | Tag `vX.Y.Z` already exists | Job fails (no overwrite) |
-| Invalid / missing marker | No release (success skip) |
+| Missing / wrong pattern | No release (success skip) |
 | Tests fail | No tag / no release |

@@ -6,18 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g. v0.3.0 or 0.3.0)"
+        description: "Version to release (must be v1.2.3 form)"
         required: true
         type: string
       notes:
         description: "Release notes (optional)"
         required: false
         type: string
-      prerelease:
-        description: "Mark as prerelease"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -34,7 +29,6 @@ jobs:
       should_release: ${{ steps.meta.outputs.should_release }}
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
-      prerelease: ${{ steps.meta.outputs.prerelease }}
       notes: ${{ steps.meta.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
@@ -47,26 +41,21 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_NOTES: ${{ inputs.notes }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            VER="${INPUT_VERSION#v}"
-            if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
-              echo "Invalid version: $INPUT_VERSION" >&2
+            # Strict: vMAJOR.MINOR.PATCH only
+            if ! echo "$INPUT_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Invalid version: $INPUT_VERSION (use v1.2.3)" >&2
               exit 1
             fi
-            TAG="v${VER}"
+            TAG="$INPUT_VERSION"
+            VER="${TAG#v}"
             NOTES="${INPUT_NOTES:-Release ${TAG}}"
-            PRE=false
-            if [ "${INPUT_PRERELEASE}" = "true" ] || echo "$VER" | grep -q '-'; then
-              PRE=true
-            fi
             {
               echo "should_release=true"
               echo "version=${VER}"
               echo "tag=${TAG}"
-              echo "prerelease=${PRE}"
               echo "notes<<RELEASE_EOF"
               printf '%s\n' "$NOTES"
               echo "RELEASE_EOF"
@@ -79,7 +68,7 @@ jobs:
             grep -q '^should_release=' "$GITHUB_OUTPUT"
           fi
           echo "Plan:"
-          grep -E '^(should_release|version|tag|prerelease)=' "$GITHUB_OUTPUT" || true
+          grep -E '^(should_release|version|tag)=' "$GITHUB_OUTPUT" || true
 
       - name: Guard existing tag
         if: steps.meta.outputs.should_release == 'true'
@@ -146,7 +135,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.plan.outputs.tag }}
           NOTES: ${{ needs.plan.outputs.notes }}
-          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -154,17 +142,11 @@ jobs:
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
-          PRE_ARGS=()
-          if [ "$PRERELEASE" = "true" ]; then
-            PRE_ARGS+=(--prerelease)
-          fi
-
           printf '%s\n' "$NOTES" > /tmp/release-notes.md
 
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file /tmp/release-notes.md \
-            "${PRE_ARGS[@]}" \
             dist/*.zip \
             dist/checksums.txt
 

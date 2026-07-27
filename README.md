@@ -125,8 +125,14 @@ SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. De
 
 ## Releases
 
-Merges to `main` that include a version marker in the commit message publish a GitHub Release
-(binaries + notes). Example squash message:
+Merges to `main` that include **exactly** this line in the commit message publish a GitHub Release
+(binaries + notes):
+
+```text
+release: v1.2.3
+```
+
+Example:
 
 ```text
 Ship multi-seed CLI
@@ -138,7 +144,6 @@ release: v0.3.0
 ```
 
 See [docs/RELEASING.md](./docs/RELEASING.md). Downloads: [GitHub Releases](https://github.com/Code0987/supercache/releases).
-
 ## Test
 
 ```bash
