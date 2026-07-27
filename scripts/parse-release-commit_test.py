@@ -10,48 +10,56 @@ spec = importlib.util.spec_from_file_location(
 )
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-parse = mod.parse
 
 
-def test_basic():
-    r = parse("Ship multi-seed CLI\n\nrelease: v0.3.0\n\n- CLI multi-seed\n")
+def test_commit_line():
+    r = mod.parse_commit("Ship it\n\nrelease: v0.3.0\n\n- note\n")
     assert r["should_release"] == "true"
     assert r["tag"] == "v0.3.0"
-    assert "- CLI multi-seed" in r["notes"]
+    assert "- note" in r["notes"]
 
 
-def test_requires_v_prefix():
-    assert parse("release: 1.0.0\n")["should_release"] == "false"
+def test_commit_requires_v():
+    assert mod.parse_commit("release: 1.0.0\n")["should_release"] == "false"
 
 
-def test_rejects_other_markers():
-    assert parse("version: v0.1.0\n")["should_release"] == "false"
+def test_commit_rejects_unbracketed_with_extra():
+    assert mod.parse_commit("release: v0.3.0 ship it\n")["should_release"] == "false"
 
 
-def test_pr_title_exact():
-    r = parse("release: v0.3.0", strip_fences=False)
+def test_merge_commit_embeds_bracket_title():
+    msg = (
+        "Merge pull request #4 from Code0987/feature\n"
+        "\n"
+        "Add probe [release: v0.2.0]\n"
+    )
+    r = mod.parse_commit(msg)
     assert r["should_release"] == "true"
-    assert r["tag"] == "v0.3.0"
+    assert r["tag"] == "v0.2.0"
 
 
-def test_pr_title_with_extra_text_rejected():
-    # Format must be exact full line — no trailing description on same line.
-    assert parse("release: v0.3.0 add feature", strip_fences=False)["should_release"] == "false"
+def test_pr_title_bracket():
+    r = mod.parse_pr_title("Add probe [release: v0.2.0]")
+    assert r["should_release"] == "true"
+    assert r["tag"] == "v0.2.0"
 
 
-def test_ignores_fenced_in_commit():
-    msg = "summary\n\n```text\nrelease: v0.3.0\n```\n"
-    assert parse(msg)["should_release"] == "false"
+def test_pr_title_bracket_only():
+    r = mod.parse_pr_title("[release: v0.2.0]")
+    assert r["should_release"] == "true"
+    assert r["tag"] == "v0.2.0"
 
 
-def test_fallback_is_title_not_body():
+def test_pr_title_rejects_unbracketed():
+    assert mod.parse_pr_title("release: v0.2.0")["should_release"] == "false"
+
+
+def test_fallback_title_cli():
     with tempfile.TemporaryDirectory() as d:
         commit = Path(d) / "c.txt"
         title = Path(d) / "t.txt"
-        body = Path(d) / "b.txt"
-        commit.write_text("Merge pull request #2\n\nno marker\n")
-        title.write_text("release: v0.4.0\n")
-        body.write_text("release: v9.9.9\n\nshould not be used\n")
+        commit.write_text("Merge pull request #9\n\nsome title without marker\n")
+        title.write_text("Cool feature [release: v0.5.0]\n")
         r = subprocess.run(
             [
                 sys.executable,
@@ -65,18 +73,17 @@ def test_fallback_is_title_not_body():
             text=True,
             check=True,
         )
-        assert "tag=v0.4.0" in r.stdout
+        assert "tag=v0.5.0" in r.stdout
         assert "source=pr_title" in r.stdout
-        # body file is not passed — ensure we don't invent 9.9.9
-        assert "v9.9.9" not in r.stdout
 
 
 if __name__ == "__main__":
-    test_basic()
-    test_requires_v_prefix()
-    test_rejects_other_markers()
-    test_pr_title_exact()
-    test_pr_title_with_extra_text_rejected()
-    test_ignores_fenced_in_commit()
-    test_fallback_is_title_not_body()
+    test_commit_line()
+    test_commit_requires_v()
+    test_commit_rejects_unbracketed_with_extra()
+    test_merge_commit_embeds_bracket_title()
+    test_pr_title_bracket()
+    test_pr_title_bracket_only()
+    test_pr_title_rejects_unbracketed()
+    test_fallback_title_cli()
     print("ok")

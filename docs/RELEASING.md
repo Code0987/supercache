@@ -1,37 +1,28 @@
 # Releasing SuperCache
 
-Releases are **automatic** when a commit lands on `main` (or `master`) with the
-version line below. The **Release** GitHub Action then:
+Releases are **automatic** when a qualifying marker lands on `main` (or `master`).
+The **Release** GitHub Action then:
 
 1. Runs tests
 2. Creates git tag `vX.Y.Z`
 3. Builds `sc` and `supercache-node` for linux/darwin × amd64/arm64
 4. Publishes a [GitHub Release](https://github.com/Code0987/supercache/releases) with notes + archives
 
-## Marker format
+## Marker formats
 
-**Only one pattern is accepted** — an entire line (or the entire PR title):
+| Where | Format (exact) | Example |
+|-------|----------------|---------|
+| **Commit message** (own line) | `release: vX.Y.Z` | `release: v1.2.3` |
+| **PR title** | `[release: vX.Y.Z]` | `Add CLI [release: v1.2.3]` |
 
-```text
-release: v1.2.3
-```
+Rules for both:
 
-- Must include the **`v`** prefix (`release: 1.2.3` is ignored)
-- Must be `MAJOR.MINOR.PATCH` only (no `-rc` / prerelease)
-- No extra text on the same line (`release: v1.2.3 ship it` is ignored)
-- Must be **strictly greater** than the latest existing git tag
+- **`v` required** — `1.2.3` is ignored  
+- **Semver only** — no `-rc` / prerelease  
+- Must be **strictly greater** than the latest existing git tag  
+- **PR body is ignored**
 
-## Where it is read
-
-| Source | Used? |
-|--------|--------|
-| **Git commit message** on `main` | Yes (first) |
-| **PR title** | Yes (fallback if commit has no marker) |
-| PR description / body | **No** |
-
-Optional release notes = lines **after** the marker in the **commit message** (until `---` / `##` / trailers). If the only hit is a PR title with no commit notes, the notes default to `Release vX.Y.Z`.
-
-### Example — commit message (preferred)
+### Commit message (preferred for notes)
 
 ```text
 Short summary of what this release is
@@ -42,25 +33,27 @@ release: v0.3.0
 - OpenAPI /docs on admin port
 ```
 
-### Example — PR title
+Optional notes = lines after the marker until `---` / `##` / git trailers.
 
-Set the PR title to exactly:
+### PR title
+
+Put the bracketed marker in the title (alone or after a short summary):
 
 ```text
-release: v0.3.0
+[release: v0.3.0]
 ```
 
-(Use the description for human context; it does not drive the version.)
+```text
+Ship multi-seed CLI [release: v0.3.0]
+```
 
-### Non-release commits
+Unbracketed titles (`release: v0.3.0`) are **not** accepted.
 
-No matching line in the commit message **and** PR title is not exactly `release: vX.Y.Z` → no release (CI still runs).
+GitHub merge commits embed the PR title as a second paragraph; that still matches via the bracket form.
 
 ## How to ship
 
-### Option A — squash-merge
-
-Squash commit message:
+### Option A — squash / commit message
 
 ```text
 Add sc CLI multi-seed and REPL
@@ -70,10 +63,10 @@ release: v0.3.0
 - Sticky multi-seed failover
 ```
 
-### Option B — merge commit + PR title
+### Option B — PR title
 
-1. Set PR **title** to `release: v0.3.0`
-2. Merge (merge commit is fine)
+1. Title: `Something descriptive [release: v0.3.0]`
+2. Merge to `main`
 
 ### Option C — manual dispatch
 

@@ -4,42 +4,34 @@
 
 ## Release
 
-A release is cut only when this **exact** line appears as:
+A release is cut only when the version marker appears in the **commit message**
+or **PR title** (PR description is ignored).
 
-1. A line in the **git commit message** on `main`, or  
-2. The entire **PR title**
+| Where | Required format |
+|-------|-----------------|
+| Commit message (own line) | `release: vX.Y.Z` |
+| PR title | `[release: vX.Y.Z]` |
+
+Examples:
 
 ```text
-release: vX.Y.Z
+release: v1.2.3
 ```
 
-| Allowed | Not allowed |
-|---------|-------------|
-| `release: v1.2.3` | `release: 1.2.3` (missing `v`) |
-| | `release: v1.2.3-rc.1` |
-| | `release: v1.2.3 ship it` (extra text) |
-| | Marker only in the PR **description** |
+```text
+Ship multi-seed CLI [release: v1.2.3]
+```
 
-- Version must be **greater than** the latest git tag  
-- Notes (optional) come from lines after the marker in the **commit message**  
+- **`v` required**; no prerelease suffix  
+- Must be **greater than** the latest git tag  
+- Notes (optional) only from lines after a **commit** marker  
 - Full rules: [docs/RELEASING.md](../docs/RELEASING.md)
 
 ### Shipping a version
 
-**Option A — commit message (preferred):** include in squash/merge commit:
-
-```text
-Short summary
-
-release: v0.3.0
-
-- Release note bullet
-```
-
-**Option B — PR title:** set title to exactly `release: v0.3.0` (summary stays in this description).
-
-- [ ] This PR should **not** cut a release
-- [ ] This PR **should** cut a release via commit message or PR title
+- [ ] This PR should **not** cut a release  
+- [ ] Release via **commit message** line `release: vX.Y.Z`  
+- [ ] Release via **PR title** containing `[release: vX.Y.Z]`  
 - [ ] Target version: `v`__.__.__
 
 ## Test plan

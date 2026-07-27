@@ -125,22 +125,12 @@ SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. De
 
 ## Releases
 
-Merges to `main` publish a GitHub Release when **exactly** this line appears in the
-**commit message** or as the entire **PR title**:
+Merges to `main` publish a GitHub Release when the version marker appears in the
+**commit message** or **PR title**:
 
 ```text
-release: v1.2.3
-```
-
-Example (commit message):
-
-```text
-Ship multi-seed CLI
-
-release: v0.3.0
-
-- Sticky multi-seed failover
-- Interactive REPL
+release: v1.2.3                 # commit message (own line)
+Ship feature [release: v1.2.3]  # PR title (brackets required)
 ```
 
 See [docs/RELEASING.md](./docs/RELEASING.md). Downloads: [GitHub Releases](https://github.com/Code0987/supercache/releases).
