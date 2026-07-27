@@ -29,3 +29,7 @@ Thumbs.db
 # Logs / local runtime
 *.log
 /tmp/
+
+# Python
+__pycache__/
+*.py[cod]
