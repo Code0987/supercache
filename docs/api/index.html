@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SuperCache API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" crossorigin />
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --text: #e8eefc;
+      --muted: #9aabc9;
+      --accent: #5b9dff;
+      --border: #243049;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #121a2b 0%, #0b1220 100%);
+      padding: 1rem 1.25rem 0.75rem;
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.25rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      max-width: 70rem;
+      line-height: 1.45;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .tabs button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0.4rem 0.9rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      border-color: var(--accent);
+      background: rgba(91, 157, 255, 0.15);
+      color: #dceaff;
+    }
+    .links a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+      margin-right: 0.85rem;
+    }
+    .links a:hover { text-decoration: underline; }
+    .note {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    #swagger-ui { background: #fff; min-height: 70vh; }
+    .swagger-ui .topbar { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SuperCache API</h1>
+    <p>
+      Interactive OpenAPI docs. <strong>Admin HTTP</strong> supports Try it out against this node.
+      <strong>Cache gRPC</strong> is a schema reference (use <code>pkg/client</code> or <code>sc</code> CLI).
+    </p>
+    <div class="row tabs">
+      <button type="button" id="tab-admin" class="active">Admin HTTP</button>
+      <button type="button" id="tab-cache">Cache gRPC (reference)</button>
+    </div>
+    <div class="row links">
+      <a id="link-yaml" href="admin.openapi.yaml">OpenAPI YAML</a>
+      <a href="https://github.com/Code0987/supercache" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Code0987/supercache/blob/main/docs/OPERATIONS.md" target="_blank" rel="noopener">Operations</a>
+      <span class="note" id="mode-note">Try it out uses this node's admin base URL.</span>
+    </div>
+  </header>
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js" crossorigin></script>
+  <script>
+    (function () {
+      // Relative to /docs/ so node-hosted and GitHub Pages both work.
+      var specs = {
+        admin: {
+          url: "admin.openapi.yaml",
+          note: "Try it out uses this node's admin base URL.",
+          tryIt: true
+        },
+        cache: {
+          url: "cache.openapi.yaml",
+          note: "gRPC reference only — not HTTP. Use sc or pkg/client.",
+          tryIt: false
+        }
+      };
+      var current = "admin";
+      var ui;
+
+      function load(name) {
+        current = name;
+        var spec = specs[name];
+        document.getElementById("tab-admin").classList.toggle("active", name === "admin");
+        document.getElementById("tab-cache").classList.toggle("active", name === "cache");
+        document.getElementById("link-yaml").href = spec.url;
+        document.getElementById("mode-note").textContent = spec.note;
+
+        ui = SwaggerUIBundle({
+          url: spec.url,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis],
+          layout: "BaseLayout",
+          tryItOutEnabled: spec.tryIt,
+          supportedSubmitMethods: spec.tryIt ? ["get", "put", "post", "delete", "options", "head", "patch", "trace"] : [],
+          defaultModelsExpandDepth: 1,
+          docExpansion: "list"
+        });
+      }
+
+      document.getElementById("tab-admin").addEventListener("click", function () { load("admin"); });
+      document.getElementById("tab-cache").addEventListener("click", function () { load("cache"); });
+      load("admin");
+    })();
+  </script>
+</body>
+</html>

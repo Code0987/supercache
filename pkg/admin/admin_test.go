@@ -2,8 +2,10 @@ package admin_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,5 +74,53 @@ func TestPeersJSON(t *testing.T) {
 	}
 	if body.NodeID != "n1" || len(body.Peers) != 1 {
 		t.Fatalf("%+v", body)
+	}
+}
+
+func TestDocsAndOpenAPI(t *testing.T) {
+	s := admin.New(nil)
+	h := s.Handler()
+
+	// /docs redirects to /docs/
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("/docs status %d", rr.Code)
+	}
+	if loc := rr.Header().Get("Location"); loc != "/docs/" {
+		t.Fatalf("Location=%q", loc)
+	}
+
+	// HTML shell
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/docs/ %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("content-type %q", ct)
+	}
+	body, _ := io.ReadAll(rr.Body)
+	if !strings.Contains(string(body), "swagger-ui") {
+		t.Fatalf("expected swagger-ui in HTML")
+	}
+
+	for _, path := range []string{
+		"/docs/admin.openapi.yaml",
+		"/docs/cache.openapi.yaml",
+		"/openapi.yaml",
+		"/openapi/admin.yaml",
+		"/openapi/cache.yaml",
+	} {
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, rr.Code, rr.Body.String())
+		}
+		b := rr.Body.String()
+		if !strings.Contains(b, "openapi:") {
+			t.Fatalf("%s: missing openapi header", path)
+		}
 	}
 }

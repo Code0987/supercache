@@ -1,0 +1,287 @@
+openapi: 3.0.3
+info:
+  title: SuperCache Admin HTTP API
+  version: 0.2.0
+  description: |
+    Diagnostics surface for a SuperCache node (`-admin` listen address).
+
+    **Not** the application data plane. Apps should use the **Cache gRPC** service
+    (`pkg/client` or `sc` CLI) on the `-cache` port.
+
+    | Port | Role |
+    |------|------|
+    | Admin HTTP | health, peers, keyspaces, metrics, this docs UI |
+    | Cache gRPC | Get / Put / Delete |
+    | Peer gRPC | mesh internal only |
+
+    Open this UI on a running node: `http://127.0.0.1:8080/docs`
+  contact:
+    name: SuperCache
+    url: https://github.com/Code0987/supercache
+  license:
+    name: MIT
+    url: https://github.com/Code0987/supercache/blob/main/LICENSE
+
+servers:
+  - url: /
+    description: This SuperCache node (relative to the admin base URL)
+
+tags:
+  - name: Health
+    description: Liveness and readiness probes
+  - name: Cluster
+    description: Membership and keyspace config drift detection
+  - name: Diagnostics
+    description: Keyspace snapshots and process counters
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: getHealthz
+      summary: Liveness probe
+      description: Always returns 200 if the admin HTTP server is up.
+      responses:
+        "200":
+          description: Node process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+                uptime: 1m2s
+                node_id: node-1
+
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: getReadyz
+      summary: Readiness probe
+      description: |
+        200 when the engine is ready to serve; 503 when not ready
+        (e.g. shutting down).
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+              example:
+                status: ready
+                ready: true
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+              example:
+                status: not ready
+                ready: false
+
+  /peers:
+    get:
+      tags: [Cluster]
+      operationId: getPeers
+      summary: Ring peers and keyspace config hashes
+      description: |
+        Lists known ring members, ring generation, and per-keyspace config hashes.
+
+        `UpdateKeySpace` / `DeleteKeySpace` are **local to each node**. Compare
+        `keyspace_hashes` across nodes to detect drift.
+      responses:
+        "200":
+          description: Peer snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeersResponse"
+
+  /keyspaces:
+    get:
+      tags: [Diagnostics]
+      operationId: getKeyspaces
+      summary: Keyspace snapshots
+      description: Mode, TTL, max bytes, store stats, breaker state, and hot keys.
+      responses:
+        "200":
+          description: Keyspace list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyspacesResponse"
+
+  /metrics:
+    get:
+      tags: [Diagnostics]
+      operationId: getMetrics
+      summary: Process counters
+      description: |
+        Best-effort in-process counters (hits, misses, fan-out errors, etc.).
+        OpenTelemetry instruments are separate when configured.
+      responses:
+        "200":
+          description: Metrics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSnapshot"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        uptime:
+          type: string
+          description: Human-readable duration since admin server start
+        node_id:
+          type: string
+
+    ReadyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        ready:
+          type: boolean
+
+    PeerInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        address:
+          type: string
+          description: Peer gRPC address (mesh), not the Cache app port
+
+    PeersResponse:
+      type: object
+      properties:
+        node_id:
+          type: string
+        ring_generation:
+          type: integer
+          format: int64
+        peers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerInfo"
+        keyspace_hashes:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of keyspace name → config hash
+        config_note:
+          type: string
+
+    StoreStats:
+      type: object
+      properties:
+        Hits:
+          type: integer
+          format: int64
+        Misses:
+          type: integer
+          format: int64
+        Evictions:
+          type: integer
+          format: int64
+        Items:
+          type: integer
+          format: int64
+        Bytes:
+          type: integer
+          format: int64
+        StaleSkip:
+          type: integer
+          format: int64
+          description: ApplyPut rejected as stale (LWW)
+
+    KeySpaceSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [CacheOnly, LoadThrough]
+        config_hash:
+          type: string
+        max_bytes:
+          type: integer
+          format: int64
+        ttl:
+          type: string
+        negative_ttl:
+          type: string
+        stats:
+          $ref: "#/components/schemas/StoreStats"
+        breaker_state:
+          type: string
+        rate_limited:
+          type: integer
+          format: int64
+        breaker_opens:
+          type: integer
+          format: int64
+        hot_keys:
+          type: array
+          items:
+            type: string
+
+    KeyspacesResponse:
+      type: object
+      properties:
+        keyspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeySpaceSnapshot"
+
+    MetricsSnapshot:
+      type: object
+      properties:
+        gets:
+          type: integer
+          format: int64
+        hits:
+          type: integer
+          format: int64
+        misses:
+          type: integer
+          format: int64
+        negative_hits:
+          type: integer
+          format: int64
+        puts:
+          type: integer
+          format: int64
+        deletes:
+          type: integer
+          format: int64
+        loads:
+          type: integer
+          format: int64
+        load_errors:
+          type: integer
+          format: int64
+        unavailable:
+          type: integer
+          format: int64
+        owner_fallback_local:
+          type: integer
+          format: int64
+        put_fanout_errors:
+          type: integer
+          format: int64
+        fanout_dropped:
+          type: integer
+          format: int64
+        ring_gen_mismatch:
+          type: integer
+          format: int64

@@ -3,8 +3,7 @@
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
 **Status:** Milestone 6 — polish (client API, docs, chaos tests)  
-See [PLAN.md](./PLAN.md) for architecture and [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops.
-
+See [PLAN.md](./PLAN.md) for architecture, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, and [docs/API.md](./docs/API.md) for **Swagger-style API docs**.
 ## Module
 
 ```text
@@ -29,11 +28,11 @@ v, err := e.Get(ctx, "demo", "k")
 
 ```bash
 go run ./cmd/supercache-node -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
+# API docs (Swagger UI): http://127.0.0.1:8080/docs
 ```
 
 ```go
-cli, _ := client.Dial(ctx, "127.0.0.1:9000")
-defer cli.Close()
+cli, _ := client.Dial(ctx, "127.0.0.1:9000")defer cli.Close()
 _ = cli.Put(ctx, "demo", "k", []byte("v"), client.WithTTL(time.Minute))
 v, err := cli.Get(ctx, "demo", "k")
 ```
@@ -108,8 +107,8 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 | `pkg/keyspace` | Config, `LoadThrough` / `CacheOnly` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
-| `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` |
-| `pkg/telemetry` | Counters + OpenTelemetry |
+| `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
+| `api/openapi` | OpenAPI 3 specs (Admin + Cache gRPC reference) || `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology prefetch, refresh-ahead |
 | `pkg/client` | Application gRPC client |

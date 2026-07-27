@@ -1,0 +1,57 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "api/openapi/**"
+      - "pkg/admin/docsui/**"
+      - "docs/api/**"
+      - "docs/API.md"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          # Source of truth → published site root
+          cp api/openapi/admin.openapi.yaml _site/admin.openapi.yaml
+          cp api/openapi/cache.openapi.yaml _site/cache.openapi.yaml
+          cp pkg/admin/docsui/index.html _site/index.html
+          touch _site/.nojekyll
+          # Optional: keep a short landing note
+          cat > _site/README.txt <<'TXT'
+          SuperCache API docs (Swagger UI).
+          https://github.com/Code0987/supercache
+          TXT
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

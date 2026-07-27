@@ -1,0 +1,278 @@
+openapi: 3.0.3
+info:
+  title: SuperCache Cache API (gRPC reference)
+  version: 0.2.0
+  description: |
+    **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
+    node **`-cache`** port (default `9000`).
+
+    This document is a **reference** for request/response shapes. It is **not** an
+    HTTP API. Try-it-out will not work here.
+
+    ### How to call it
+
+    | Client | Example |
+    |--------|---------|
+    | Go | `pkg/client` — `client.Dial` / `DialTLS` |
+    | CLI | `sc get` / `sc put` / `sc del` |
+    | Proto | `api/proto/cache.proto` |
+
+    ### Consistency (short)
+
+    - **Get** — value observed on the **queried node** (may lag peers until fan-out)
+    - **Put** — ACK after **ring owner** accepts; async fan-out to peers (no retry)
+    - **Delete** — best-effort to owner + all peers; peer failures returned
+
+    Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
+  contact:
+    name: SuperCache
+    url: https://github.com/Code0987/supercache
+  license:
+    name: MIT
+
+servers:
+  - url: grpc://{host}:{port}
+    description: Cache gRPC (not HTTP)
+    variables:
+      host:
+        default: 127.0.0.1
+      port:
+        default: "9000"
+
+tags:
+  - name: Cache
+    description: Application-facing gRPC RPCs
+
+paths:
+  /supercache.cache.v1.Cache/Get:
+    post:
+      tags: [Cache]
+      operationId: Cache_Get
+      summary: Get a key
+      description: |
+        gRPC `Get(GetRequest) returns (GetResponse)`.
+
+        Returns `found=false` when missing or negative-cached (client maps to not found).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GetRequest"
+            example:
+              keyspace: demo
+              key: greeting
+      responses:
+        "200":
+          description: RPC response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetResponse"
+
+  /supercache.cache.v1.Cache/Put:
+    post:
+      tags: [Cache]
+      operationId: Cache_Put
+      summary: Put a key
+      description: |
+        gRPC `Put(PutRequest) returns (PutResponse)`.
+
+        `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
+        When `ttl_set=false`, the keyspace default TTL is used.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutRequest"
+            example:
+              keyspace: demo
+              key: greeting
+              value: aGVsbG8=  # base64 "hello" in JSON mapping
+              ttl_nanos: 60000000000
+              ttl_set: true
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PutResponse"
+
+  /supercache.cache.v1.Cache/PutMany:
+    post:
+      tags: [Cache]
+      operationId: Cache_PutMany
+      summary: Put many keys (not atomic)
+      description: Partial failures returned as `errors[]`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutManyRequest"
+      responses:
+        "200":
+          description: Per-key errors if any
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PutManyResponse"
+
+  /supercache.cache.v1.Cache/Delete:
+    post:
+      tags: [Cache]
+      operationId: Cache_Delete
+      summary: Delete a key (cluster best-effort)
+      description: Peer apply failures appear in `peer_failures`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteRequest"
+      responses:
+        "200":
+          description: Delete attempted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /supercache.cache.v1.Cache/DeleteMany:
+    post:
+      tags: [Cache]
+      operationId: Cache_DeleteMany
+      summary: Delete many keys (not atomic)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteManyRequest"
+      responses:
+        "200":
+          description: Per-key errors if any
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteManyResponse"
+
+components:
+  schemas:
+    GetRequest:
+      type: object
+      required: [keyspace, key]
+      properties:
+        keyspace:
+          type: string
+        key:
+          type: string
+    GetResponse:
+      type: object
+      properties:
+        found:
+          type: boolean
+        value:
+          type: string
+          format: byte
+          description: Raw bytes (base64 in JSON mapping)
+    PutRequest:
+      type: object
+      required: [keyspace, key, value]
+      properties:
+        keyspace:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+          format: byte
+        ttl_nanos:
+          type: integer
+          format: int64
+        ttl_set:
+          type: boolean
+    PutResponse:
+      type: object
+    KV:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+          format: byte
+    PutManyRequest:
+      type: object
+      required: [keyspace, items]
+      properties:
+        keyspace:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KV"
+        ttl_nanos:
+          type: integer
+          format: int64
+        ttl_set:
+          type: boolean
+    PeerFailure:
+      type: object
+      properties:
+        peer_id:
+          type: string
+        message:
+          type: string
+    KeyError:
+      type: object
+      properties:
+        key:
+          type: string
+        message:
+          type: string
+        peer_failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerFailure"
+    PutManyResponse:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyError"
+    DeleteRequest:
+      type: object
+      required: [keyspace, key]
+      properties:
+        keyspace:
+          type: string
+        key:
+          type: string
+    DeleteResponse:
+      type: object
+      properties:
+        peer_failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeerFailure"
+    DeleteManyRequest:
+      type: object
+      required: [keyspace, keys]
+      properties:
+        keyspace:
+          type: string
+        keys:
+          type: array
+          items:
+            type: string
+    DeleteManyResponse:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyError"

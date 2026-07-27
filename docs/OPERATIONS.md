@@ -6,9 +6,25 @@
 |-----------|---------|----------|
 | `-cache` (default `:9000`) | Application gRPC (`Cache` service) | Apps / mesh internal |
 | `-peer` (default `:9001`) | Peer mesh gRPC (`Peer` service) | **Nodes only** — do not expose to apps |
-| `-admin` (default `:8080`) | Diagnostics HTTP | Private / localhost |
+| `-admin` (default `:8080`) | Diagnostics HTTP + **API docs** (`/docs`) | Private / localhost |
 | `-gossip-port` | memberlist | Nodes only |
 
+## API documentation (Swagger)
+
+Each node hosts interactive OpenAPI docs on the admin port:
+
+| Path | Purpose |
+|------|---------|
+| `/docs` | Swagger UI (Admin try-it-out + Cache gRPC reference) |
+| `/openapi.yaml` | Admin OpenAPI YAML |
+| `/openapi/cache.yaml` | Cache gRPC reference OpenAPI YAML |
+
+```bash
+# with default admin bind
+open http://127.0.0.1:8080/docs
+```
+
+Public static copy (GitHub Pages): see [docs/API.md](./API.md). Specs live in `api/openapi/`.
 ## TLS / mTLS
 
 Plaintext is the default for local demos. Production should enable TLS.

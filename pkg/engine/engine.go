@@ -39,8 +39,8 @@ const (
 
 // PeerInfo describes a ring member.
 type PeerInfo struct {
-	ID      string
-	Address string
+	ID      string `json:"id"`
+	Address string `json:"address"`
 }
 
 // DefaultMaxVersionKeys caps per-keyspace version counters (high-cardinality safety).

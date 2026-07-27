@@ -39,6 +39,9 @@ func New(p StatusProvider) *Server {
 func (s *Server) SetReady(v bool) { s.ready.Store(v) }
 
 // Handler returns the HTTP mux.
+//
+// Routes include diagnostics (/healthz, /readyz, /peers, /keyspaces, /metrics)
+// and hosted OpenAPI docs (/docs, /openapi.yaml).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -46,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/peers", s.handlePeers)
 	mux.HandleFunc("/keyspaces", s.handleKeyspaces)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mountDocs(mux)
 	return mux
 }
 
