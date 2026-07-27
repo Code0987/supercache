@@ -18,6 +18,7 @@ release: v1.2.3
 
 - Must include the **`v`** prefix (`release: 1.2.3` is ignored)
 - Must be `MAJOR.MINOR.PATCH` only (no `-rc` / prerelease)
+- Must be **strictly greater** than the latest existing git tag (`v0.2.0` is rejected if `v0.3.0` already exists)
 - Optional notes = everything **after** that line (git trailers like `Co-authored-by:` are stripped)
 - If notes are empty, the commit subject is used
 
@@ -90,7 +91,9 @@ go get github.com/Code0987/supercache@v0.3.0
 
 ```bash
 python3 scripts/parse-release-commit.py --message "$(git log -1 --pretty=%B)"
+python3 scripts/check-release-version.py --tag v0.3.0
 python3 scripts/parse-release-commit_test.py
+python3 scripts/check-release-version_test.py
 ```
 
 ## Failure modes
@@ -98,5 +101,6 @@ python3 scripts/parse-release-commit_test.py
 | Situation | Behavior |
 |-----------|----------|
 | Tag `vX.Y.Z` already exists | Job fails (no overwrite) |
+| Version ≤ latest existing tag | Job fails (must bump higher) |
 | Missing / wrong pattern | No release (success skip) |
 | Tests fail | No tag / no release |

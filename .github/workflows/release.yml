@@ -70,21 +70,17 @@ jobs:
           echo "Plan:"
           grep -E '^(should_release|version|tag)=' "$GITHUB_OUTPUT" || true
 
-      - name: Guard existing tag
+      - name: Guard version monotonicity
         if: steps.meta.outputs.should_release == 'true'
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-            echo "Tag ${TAG} already exists locally — refusing to re-release." >&2
-            exit 1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists on origin — refusing to re-release." >&2
-            exit 1
-          fi
-          echo "Tag ${TAG} is free."
+          # Ensure remote tags are visible (checkout fetch-depth: 0 should already
+          # have them; fetch again for safety on shallow / partial clones).
+          git fetch --tags --force origin 2>/dev/null || true
+          # Must be strictly greater than latest existing vMAJOR.MINOR.PATCH tag.
+          python3 scripts/check-release-version.py --tag "$TAG"
 
   release:
     name: Build & publish
@@ -105,6 +101,7 @@ jobs:
           go vet ./...
           go test ./... -race -count=1
           python3 scripts/parse-release-commit_test.py
+          python3 scripts/check-release-version_test.py
 
       - name: Build release artifacts
         env:

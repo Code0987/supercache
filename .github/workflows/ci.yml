@@ -18,5 +18,7 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./... -race -count=1
-      - name: Release parser tests
-        run: python3 scripts/parse-release-commit_test.py
+      - name: Release scripts tests
+        run: |
+          python3 scripts/parse-release-commit_test.py
+          python3 scripts/check-release-version_test.py

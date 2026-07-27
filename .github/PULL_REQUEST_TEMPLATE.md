@@ -12,6 +12,7 @@ release: vX.Y.Z
 
 - **`v` is required** — `release: 1.2.3` is ignored  
 - **Semver only** — `v1.2.3`, not `v1.2.3-rc.1`  
+- **Must be greater than the current latest tag** — downgrades / equals are rejected  
 - Optional release notes = lines **after** that marker  
 - Full rules: [docs/RELEASING.md](../docs/RELEASING.md)
 
