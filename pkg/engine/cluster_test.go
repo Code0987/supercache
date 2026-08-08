@@ -951,15 +951,8 @@ func TestNextVersionSeedsFromStore(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Join topology handoff (async warmup) — additional focused cases.
-// Full original-problem regression: TestJoinHandoffCoversOriginalProblem
-// in join_handoff_test.go (mirrors examples/join-sim).
-// ---------------------------------------------------------------------------
-
-// TestJoinTopologyHandoffFillsNewNode seeds a 2-node cluster, joins empty C,
-// and expects async handoff so C eventually hits for keys peers already hold.
-// Hot keys (tracked hits) are enqueued before the rest.
+// TestJoinTopologyHandoffFillsNewNode: after join + topology notify, empty node C
+// receives peer inventory (hot keys prioritized).
 func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19301"
@@ -984,7 +977,6 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 		}
 	}
 
-	// Warmup managers: push inventory on topology change.
 	wmA := warmup.NewManager(engA, warmup.Config{Workers: 8, TopN: 32, JobQueueSize: 8192})
 	wmB := warmup.NewManager(engB, warmup.Config{Workers: 8, TopN: 32, JobQueueSize: 8192})
 	wmC := warmup.NewManager(engC, warmup.Config{Workers: 4, TopN: 32, JobQueueSize: 8192})
@@ -1047,7 +1039,6 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 			t.Fatalf("put %s: %v", k, err)
 		}
 	}
-	// Mark a subset hot on A so handoff prioritizes them.
 	for i := 0; i < 20; i++ {
 		k := joinKey(i)
 		for j := 0; j < 5; j++ {
@@ -1056,7 +1047,6 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 	}
 	waitFanoutHits(t, engB, "demo", nKeys, joinKey, nKeys/2, 3*time.Second)
 
-	// Join C: expand ring; attach cluster; topology notify on all nodes.
 	three := []ring.Peer{
 		{ID: "a", Addr: addrA},
 		{ID: "b", Addr: addrB},
@@ -1067,16 +1057,14 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 	rC.SetPeers(three)
 	engC.AttachCluster(&engine.Cluster{SelfID: "c", Ring: rC, Transport: trC, Fanout: foC})
 
-	// Immediately after join, C should still be cold (handoff is async).
 	if _, err := engC.Get(ctx, "demo", joinKey(0)); !errors.Is(err, engine.ErrNotFound) {
-		t.Fatalf("expected immediate cold miss on C before handoff, got %v", err)
+		t.Fatalf("expected cold miss on C before handoff, got %v", err)
 	}
 
 	engA.NotifyTopologyChange()
 	engB.NotifyTopologyChange()
 	engC.NotifyTopologyChange()
 
-	// Wait for handoff: C should hold a large majority of keys present on A.
 	deadline := time.Now().Add(5 * time.Second)
 	var hits, ownedByC, ownedHits int
 	for time.Now().Before(deadline) {
@@ -1093,7 +1081,6 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 				}
 			}
 		}
-		// Hot keys (0..19) should fill first; require all of them, plus most of rest.
 		hotHits := 0
 		for i := 0; i < 20; i++ {
 			if _, err := engC.Get(ctx, "demo", joinKey(i)); err == nil {
@@ -1101,8 +1088,6 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 			}
 		}
 		if hotHits == 20 && hits >= int(float64(nKeys)*0.85) && ownedHits >= ownedByC*8/10 {
-			t.Logf("handoff ok: hits=%d/%d ownedByC=%d ownedHits=%d handoffs A/B=%d/%d",
-				hits, nKeys, ownedByC, ownedHits, wmA.HandoffStats(), wmB.HandoffStats())
 			return
 		}
 		time.Sleep(40 * time.Millisecond)
@@ -1111,8 +1096,8 @@ func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
 		hits, nKeys, ownedByC, ownedHits, wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
 }
 
-// TestJoinHandoffAvoidsDataSourceReload: after topology handoff, Get on the new
-// owner must not re-hit DataSource when peers already pushed the live entry.
+// TestJoinHandoffAvoidsDataSourceReload: after handoff, Get on new owner does not
+// re-hit DataSource when peers already hold the entry.
 func TestJoinHandoffAvoidsDataSourceReload(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19311"
@@ -1221,7 +1206,6 @@ func TestJoinHandoffAvoidsDataSourceReload(t *testing.T) {
 	rC.SetPeers(three)
 	engC.AttachCluster(&engine.Cluster{SelfID: "c", Ring: rC, Transport: trC, Fanout: foC})
 
-	// Find a key now owned by C that still hits on A.
 	var key string
 	for i := 0; i < nKeys; i++ {
 		k := joinKey(i)
@@ -1242,12 +1226,9 @@ func TestJoinHandoffAvoidsDataSourceReload(t *testing.T) {
 	engB.NotifyTopologyChange()
 	engC.NotifyTopologyChange()
 
-	// Wait until C has the key from handoff (no Get yet — that would load from DS).
+	// Wait via LocalEntries so Get does not itself trigger a DataSource load.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		// LocalEntries is the inventory probe without counting as a client Get path;
-		// use a non-loading check via ApplyPut presence: Get is OK if we track loads.
-		// Prefer scanning LocalEntries on C.
 		for _, e := range engC.LocalEntries("lt") {
 			if e.Key == key && !e.Entry.IsNegative() {
 				goto filled
@@ -1268,7 +1249,6 @@ filled:
 	if extra := loads.Load() - loadsBefore; extra != 0 {
 		t.Fatalf("expected no DataSource load after handoff; extra_loads=%d", extra)
 	}
-	t.Logf("handoff avoided DS reload for key=%s", key)
 }
 
 // waitFanoutHits waits until eng has at least wantHits local hits for keys

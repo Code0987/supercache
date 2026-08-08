@@ -17,12 +17,9 @@ import (
 	"github.com/Code0987/supercache/pkg/warmup"
 )
 
-// TestJoinHandoffCoversOriginalProblem is the regression suite for:
-// "new node joins → empty store → cache miss / DataSource reload even when peers hold data".
-//
-// Mirrors examples/join-sim: cold before handoff, warm after (hot first, then rest),
-// C-owned keys filled, LoadThrough without extra SoT load.
-func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
+// TestJoinHandoffEndToEnd: join empty node C; cold before handoff, warm after
+// (hot then rest); LoadThrough Get does not re-hit DataSource after fill.
+func TestJoinHandoffEndToEnd(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19501"
 		addrB = "127.0.0.1:19502"
@@ -117,7 +114,6 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 		return fmt.Sprintf("k-%04d-%x", i, uint32(i)*0x9e3779b1)
 	}
 
-	// --- Phase 1: seed 2-node cluster ---
 	for i := 0; i < nKeys; i++ {
 		k := keyAt(i)
 		if err := engA.Put(ctx, "demo", k, []byte("v-"+k)); err != nil {
@@ -136,7 +132,6 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 	seedLoads := loads.Load()
 	waitFanoutHits(t, engB, "demo", nKeys, keyAt, nKeys/2, 3*time.Second)
 
-	// --- Phase 2: join C, no handoff yet ---
 	three := []ring.Peer{
 		{ID: "a", Addr: addrA},
 		{ID: "b", Addr: addrB},
@@ -150,7 +145,7 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 	t.Run("before_handoff_joiner_is_cold", func(t *testing.T) {
 		hits := countLocalHits(engC, "demo", nKeys, keyAt)
 		if hits != 0 {
-			t.Fatalf("original problem precondition: C must be cold before handoff, hits=%d/%d", hits, nKeys)
+			t.Fatalf("C must be cold before handoff, hits=%d/%d", hits, nKeys)
 		}
 		var ownedByC int
 		for i := 0; i < nKeys; i++ {
@@ -161,7 +156,6 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 		if ownedByC == 0 {
 			t.Fatal("expected some keys to remap ownership to C")
 		}
-		// C-owned key still lives on A but misses on C.
 		var sample string
 		for i := 0; i < nKeys; i++ {
 			k := keyAt(i)
@@ -182,7 +176,6 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 		}
 	})
 
-	// --- Phase 3: topology handoff ---
 	engA.NotifyTopologyChange()
 	engB.NotifyTopologyChange()
 	engC.NotifyTopologyChange()
@@ -252,13 +245,13 @@ func TestJoinHandoffCoversOriginalProblem(t *testing.T) {
 			t.Fatalf("value=%q", v)
 		}
 		if extra := loads.Load() - before; extra != 0 {
-			t.Fatalf("original problem: Get on new node re-hit DataSource; extra_loads=%d", extra)
+			t.Fatalf("Get on C re-hit DataSource after handoff; extra_loads=%d", extra)
 		}
 	})
 }
 
-// TestJoinWithoutHandoffStaysCold locks the original gap when handoff is disabled:
-// joiner remains empty for peer-held CacheOnly keys after topology notify.
+// TestJoinWithoutHandoffStaysCold: with DisableHandoff, joiner stays empty for
+// peer-held CacheOnly keys after topology notify.
 func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19511"
@@ -285,7 +278,6 @@ func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 		}
 	}
 
-	// DisableHandoff on existing nodes — documents cold-joiner without the fix path.
 	cfgOff := warmup.Config{Workers: 4, TopN: 16, DisableHandoff: true, JobQueueSize: 1024}
 	wmA := warmup.NewManager(engA, cfgOff)
 	wmB := warmup.NewManager(engB, cfgOff)
@@ -359,7 +351,6 @@ func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 	engB.NotifyTopologyChange()
 	engC.NotifyTopologyChange()
 
-	// Allow async prefetch (no-op push) to settle; C must stay cold for CacheOnly.
 	time.Sleep(200 * time.Millisecond)
 	hits := countLocalHits(engC, "demo", nKeys, keyAt)
 	if hits != 0 {

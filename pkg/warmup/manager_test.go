@@ -78,25 +78,21 @@ func TestHotKeyTracking(t *testing.T) {
 	}
 }
 
-// Compile-time check: Engine satisfies warmup.Cache (handoff APIs included).
 var _ warmup.Cache = (*engine.Engine)(nil)
 
-// TestHandoffSchedulesHotBeforeRest ensures topology handoff enqueues tracked hot
-// keys on the high-priority path before remaining inventory (ordering contract).
-func TestHandoffSchedulesHotBeforeRest(t *testing.T) {
+// TestHandoffSchedulesInventory runs topology handoff jobs for local keys.
+func TestHandoffSchedulesInventory(t *testing.T) {
 	eng := engine.New()
 	defer eng.Close()
 	_ = eng.UpdateKeySpace(keyspace.Config{
 		Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Minute,
 	})
-	// Single-node: ReplicateToPeers is a no-op (no peers), but handoff jobs still run.
 	wm := warmup.NewManager(eng, warmup.Config{Workers: 1, TopN: 4, JobQueueSize: 256})
 	eng.AttachWarmup(wm, wm)
 	wm.Start(context.Background())
 	defer wm.Stop()
 
 	ctx := context.Background()
-	// rest keys + one hot
 	for _, k := range []string{"rest-a", "rest-b", "rest-c", "hot-key"} {
 		if err := eng.Put(ctx, "c", k, []byte(k)); err != nil {
 			t.Fatal(err)

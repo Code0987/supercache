@@ -25,6 +25,7 @@ open http://127.0.0.1:8080/docs
 ```
 
 Public static copy (GitHub Pages): see [docs/API.md](./API.md). Specs live in `api/openapi/`.
+
 ## TLS / mTLS
 
 Plaintext is the default for local demos. Production should enable TLS.
@@ -72,6 +73,17 @@ Peer `ApplyPut` / `ApplyDelete` carry the sender's hash-ring generation. **LWW v
 still decides whether the apply is stored.** A wire generation that differs from the
 local ring bumps admin metric `ring_gen_mismatch` (topology churn / delayed fan-out).
 Do not treat a mismatch as a hard error; use it for diagnostics.
+
+## Topology change / join
+
+On membership join/leave, every node rebuilds the hash ring and runs warmup:
+
+1. Prefetch configured `WarmKeys` and tracked hot keys.
+2. **Handoff:** push local live entries to peers — **hot first, then the rest** (async `ApplyPut`).
+
+A new node starts empty and warms from peers; there is a short cold window before handoff completes. Keys nobody holds stay cold until Put or LoadThrough traffic.
+
+Disable or cap via `warmup.Config` (`DisableHandoff`, `HandoffMaxEntries`). Flow diagrams: [CLUSTER_FLOWS.md](./CLUSTER_FLOWS.md).
 
 ## Anti-patterns
 

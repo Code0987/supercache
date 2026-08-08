@@ -1,8 +1,5 @@
-// Simulate join cold-miss problem and async handoff fix.
-//
-// Automated coverage (keep in sync when changing handoff behavior):
-//   go test ./pkg/engine/ -run 'TestJoinHandoffCoversOriginalProblem|TestJoinWithoutHandoff|TestJoinTopologyHandoff|TestJoinHandoffAvoids' -v
-//   go test ./pkg/warmup/ -run 'TestHandoff' -v
+// Command join-sim demos 2→3 node join handoff (hot keys then rest).
+// Automated coverage: go test ./pkg/engine/ -run TestJoin -v
 package main
 
 import (
@@ -100,8 +97,7 @@ func main() {
 	}
 
 	fmt.Println("=== SuperCache join handoff simulation ===")
-	fmt.Println()
-	fmt.Println("Phase 1: 2-node cluster (A,B) — seed CacheOnly + LoadThrough keys")
+	fmt.Println("1) Seed 2-node cluster (A,B)")
 
 	for i := 0; i < nKeys; i++ {
 		k := keyAt(i)
@@ -109,22 +105,17 @@ func main() {
 			fail("put: %v", err)
 		}
 	}
-	// Hot subset
 	for i := 0; i < 15; i++ {
 		for j := 0; j < 8; j++ {
 			_, _ = engA.Get(ctx, "demo", keyAt(i))
 		}
 	}
-	// LoadThrough seed
 	ltKey := keyAt(3)
-	v, err := engA.Get(ctx, "lt", ltKey)
-	if err != nil {
+	if _, err := engA.Get(ctx, "lt", ltKey); err != nil {
 		fail("lt seed: %v", err)
 	}
-	_ = v
 	seedLoads := dsLoads
 
-	// Wait fan-out majority on B
 	deadline := time.Now().Add(3 * time.Second)
 	var bHits int
 	for time.Now().Before(deadline) {
@@ -139,11 +130,9 @@ func main() {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Printf("  seeded %d CacheOnly keys; B local hits=%d/%d; DS loads so far=%d\n", nKeys, bHits, nKeys, seedLoads)
-	fmt.Printf("  hot keys tracked on A (top 5): %v\n", engA.HotKeys("demo", 5))
+	fmt.Printf("   seeded %d keys; B hits=%d/%d; DS loads=%d\n", nKeys, bHits, nKeys, seedLoads)
 
-	fmt.Println()
-	fmt.Println("Phase 2: Join empty node C — expand ring (NO handoff yet)")
+	fmt.Println("2) Join empty node C (ring expand only)")
 	three := []ring.Peer{
 		{ID: "a", Addr: addrA},
 		{ID: "b", Addr: addrB},
@@ -156,7 +145,6 @@ func main() {
 	defer foC.Close()
 	defer trC.Close()
 
-	// Ownership shift
 	var ownedByC int
 	for i := 0; i < nKeys; i++ {
 		if o, ok := engC.OwnerOf(keyAt(i)); ok && o.ID == "c" {
@@ -164,11 +152,8 @@ func main() {
 		}
 	}
 	cold := countHits(engC, "demo", nKeys, keyAt)
-	fmt.Printf("  ring remapped: keys owned by C = %d/%d\n", ownedByC, nKeys)
-	fmt.Printf("  C local hits BEFORE handoff = %d/%d  ← ORIGINAL PROBLEM (cold joiner)\n", cold, nKeys)
+	fmt.Printf("   owned by C=%d/%d; C hits before handoff=%d/%d\n", ownedByC, nKeys, cold, nKeys)
 
-	// Without waiting: if we Get LoadThrough on C as owner, would hit DS
-	// Find C-owned key present on A
 	var sample string
 	for i := 0; i < nKeys; i++ {
 		k := keyAt(i)
@@ -184,16 +169,13 @@ func main() {
 	if sample == "" {
 		fail("no C-owned key on A")
 	}
-	fmt.Printf("  sample C-owned key present on A: %q\n", sample)
 
-	fmt.Println()
-	fmt.Println("Phase 3: Trigger topology handoff (hot first, then rest)")
+	fmt.Println("3) Topology handoff (hot first, then rest)")
 	t0 := time.Now()
 	engA.NotifyTopologyChange()
 	engB.NotifyTopologyChange()
 	engC.NotifyTopologyChange()
 
-	// Poll until C is warm
 	var hotHits, allHits int
 	for time.Now().Before(t0.Add(5 * time.Second)) {
 		hotHits = 0
@@ -210,9 +192,7 @@ func main() {
 	}
 	elapsed := time.Since(t0)
 
-	// Check sample + LT key filled without extra DS if LT was handed off
 	_, sampleErr := engC.Get(ctx, "demo", sample)
-	// Wait for LT handoff entry
 	ltFilled := false
 	for time.Now().Before(t0.Add(5 * time.Second)) {
 		for _, e := range engC.LocalEntries("lt") {
@@ -230,52 +210,37 @@ func main() {
 	ltVal, ltErr := engC.Get(ctx, "lt", ltKey)
 	extraLT := dsLoads - loadsBeforeLTGet
 
-	fmt.Printf("  handoff elapsed: %v\n", elapsed.Round(time.Millisecond))
-	fmt.Printf("  C local hits AFTER handoff: hot=%d/15 total=%d/%d\n", hotHits, allHits, nKeys)
-	fmt.Printf("  handoff jobs completed: A=%d B=%d C=%d\n", wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
-	fmt.Printf("  sample key on C: err=%v (want nil)\n", sampleErr)
-	fmt.Printf("  LoadThrough key %q on C: filled_via_handoff=%v get_err=%v val_ok=%v extra_ds_loads=%d (want 0)\n",
-		ltKey, ltFilled, ltErr, ltErr == nil && string(ltVal) == "ds:"+ltKey, extraLT)
+	fmt.Printf("   handoff %v; C hits hot=%d/15 total=%d/%d; jobs A/B/C=%d/%d/%d\n",
+		elapsed.Round(time.Millisecond), hotHits, allHits, nKeys,
+		wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
+	fmt.Printf("   sample on C err=%v; LT filled=%v extra_ds=%d\n",
+		sampleErr, ltFilled, extraLT)
 
-	fmt.Println()
-	fmt.Println("=== Verdict ===")
 	ok := true
-	if cold == 0 {
-		fmt.Printf("PASS pre-condition: C was fully cold before handoff (%d hits)\n", cold)
-	} else if cold <= nKeys/10 {
-		fmt.Printf("PASS pre-condition: C mostly cold before handoff (%d hits)\n", cold)
-	} else {
-		fmt.Printf("WARN: expected C mostly cold before handoff, hits=%d\n", cold)
+	if cold != 0 {
+		fmt.Printf("FAIL: C should be cold before handoff (hits=%d)\n", cold)
+		ok = false
 	}
 	if allHits < int(float64(nKeys)*0.9) {
 		fmt.Printf("FAIL: C not warm enough after handoff (%d/%d)\n", allHits, nKeys)
 		ok = false
-	} else {
-		fmt.Printf("PASS: C warm after async handoff (%d/%d)\n", allHits, nKeys)
 	}
 	if hotHits < 15 {
-		fmt.Printf("FAIL: hot keys not fully handed off (%d/15)\n", hotHits)
+		fmt.Printf("FAIL: hot keys incomplete (%d/15)\n", hotHits)
 		ok = false
-	} else {
-		fmt.Printf("PASS: hot keys filled first/complete (%d/15)\n", hotHits)
 	}
 	if sampleErr != nil {
-		fmt.Printf("FAIL: C-owned sample still missing: %v\n", sampleErr)
+		fmt.Printf("FAIL: C-owned sample missing: %v\n", sampleErr)
 		ok = false
-	} else {
-		fmt.Printf("PASS: C-owned key present on C (ownership shift no longer means permanent miss)\n")
 	}
-	if !ltFilled || extraLT != 0 {
-		fmt.Printf("FAIL: LoadThrough should be served from handoff without DS reload (filled=%v extra_ds=%d)\n", ltFilled, extraLT)
+	if !ltFilled || extraLT != 0 || ltErr != nil || string(ltVal) != "ds:"+ltKey {
+		fmt.Printf("FAIL: LoadThrough handoff (filled=%v extra_ds=%d err=%v)\n", ltFilled, extraLT, ltErr)
 		ok = false
-	} else {
-		fmt.Printf("PASS: LoadThrough served from handoff with 0 extra DataSource loads\n")
 	}
 	if !ok {
 		os.Exit(1)
 	}
-	fmt.Println()
-	fmt.Println("Original problem verified fixed under simulation.")
+	fmt.Println("OK: join handoff warm complete")
 }
 
 func countHits(e *engine.Engine, ks string, n int, keyAt func(int) string) int {

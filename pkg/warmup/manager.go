@@ -167,14 +167,12 @@ func (m *Manager) OnTopologyChange() {
 		return
 	}
 	for _, t := range m.cache.WarmTargets() {
-		// Phase 1a: pull-side warm/hot (hot priority queue).
 		for _, k := range m.prefetchSet(t) {
 			m.enqueueHot(job{kind: jobPrefetch, keyspace: t.Name, key: k})
 		}
 		if m.cfg.DisableHandoff {
 			continue
 		}
-		// Phase 1b+2: push local inventory — hot first, then remaining keys.
 		m.scheduleHandoff(t)
 	}
 }

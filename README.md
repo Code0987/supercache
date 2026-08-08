@@ -2,8 +2,11 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-**Status:** Milestone 6 — polish (client API, docs, chaos tests)  
-See [PLAN.md](./PLAN.md) for architecture, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, [docs/API.md](./docs/API.md) for **API docs**, and [docs/RELEASING.md](./docs/RELEASING.md) for **versioned GitHub Releases**.## Module
+**Status:** Milestone 6 — polish (client API, docs, chaos tests)
+
+See [PLAN.md](./PLAN.md) for architecture, [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md) for cluster Mermaid flows, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, [docs/API.md](./docs/API.md) for API docs, and [docs/RELEASING.md](./docs/RELEASING.md) for versioned GitHub Releases.
+
+## Module
 
 ```text
 github.com/Code0987/supercache
@@ -31,7 +34,8 @@ go run ./cmd/supercache-node -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 1
 ```
 
 ```go
-cli, _ := client.Dial(ctx, "127.0.0.1:9000")defer cli.Close()
+cli, _ := client.Dial(ctx, "127.0.0.1:9000")
+defer cli.Close()
 _ = cli.Put(ctx, "demo", "k", []byte("v"), client.WithTTL(time.Minute))
 v, err := cli.Get(ctx, "demo", "k")
 ```
@@ -77,6 +81,7 @@ go run ./cmd/scbench -reliable -json=bench-report.json
 ```
 
 Multi-trial medians, get/set/mixed suite, comparison table. See [cmd/scbench/README.md](./cmd/scbench/README.md) and [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
+
 ### Music trending billboard (cluster demo)
 
 ```bash
@@ -107,9 +112,10 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
-| `api/openapi` | OpenAPI 3 specs (Admin + Cache gRPC reference) || `pkg/telemetry` | Counters + OpenTelemetry |
+| `api/openapi` | OpenAPI 3 specs (Admin + Cache gRPC reference) |
+| `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
-| `pkg/warmup` | Hot keys, topology prefetch, refresh-ahead |
+| `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `internal/ring` | Consistent hash |
@@ -119,6 +125,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 | `cmd/supercache-node` | Node binary |
 | `cmd/sc` | CLI for get/put/del + admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness |
+
 ## Consistency (short)
 
 SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads. Details: `PLAN.md` §3 and `docs/OPERATIONS.md`.
@@ -138,13 +145,16 @@ Ship feature [release: v1.2.3]   # PR title
 ```
 
 See [docs/RELEASING.md](./docs/RELEASING.md). Downloads: [GitHub Releases](https://github.com/Code0987/supercache/releases).
+
 ## Test
 
 ```bash
 go test ./... -race
 ```
+
 ## Design notes
 
 - Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
 - Peer port and Cache port are separate; do not expose Peer to applications.
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
+- Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See `docs/CLUSTER_FLOWS.md`.
