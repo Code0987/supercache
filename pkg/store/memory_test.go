@@ -160,6 +160,38 @@ func TestMemoryDeleteTombstoneWhenMissing(t *testing.T) {
 	}
 }
 
+func TestMemoryRangeSkipsTombstonesAndExpired(t *testing.T) {
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	now := base
+	m := NewMemory(0, WithClock(func() time.Time { return now }))
+	defer m.Close()
+
+	_ = m.Set("live", Entry{Value: []byte("v"), Version: 1})
+	_ = m.Set("neg", Entry{Version: 2, Flags: FlagNegative, ExpireAt: base.Add(time.Hour).UnixNano()})
+	_ = m.Set("exp", Entry{Value: []byte("old"), Version: 1, ExpireAt: base.Add(-time.Second).UnixNano()})
+	_ = m.DeleteIfVersion("dead", 3)
+
+	var keys []string
+	m.Range(func(k string, e Entry) bool {
+		keys = append(keys, k)
+		if k == "neg" && !e.IsNegative() {
+			t.Fatalf("neg entry flags: %+v", e)
+		}
+		return true
+	})
+	// exp may be purged on Peek inside Range; tombstone "dead" must be skipped.
+	seen := map[string]bool{}
+	for _, k := range keys {
+		seen[k] = true
+	}
+	if !seen["live"] || !seen["neg"] {
+		t.Fatalf("want live+neg, got %v", keys)
+	}
+	if seen["dead"] || seen["exp"] {
+		t.Fatalf("tombstone/expired should be skipped: %v", keys)
+	}
+}
+
 // Tombstones expire so they do not pin memory forever.
 func TestMemoryTombstoneExpiry(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

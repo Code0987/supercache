@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/Code0987/supercache/pkg/store"
 	"github.com/Code0987/supercache/pkg/warmup"
 )
 
@@ -46,6 +47,35 @@ func (e *Engine) WarmTargets() []warmup.WarmTarget {
 		})
 	}
 	return out
+}
+
+// LocalEntries returns live non-tombstone entries for a keyspace (positives + negatives).
+// Implements warmup.Cache for topology handoff.
+func (e *Engine) LocalEntries(keyspaceName string) []warmup.LocalEntry {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return nil
+	}
+	var out []warmup.LocalEntry
+	ks.store.Range(func(key string, ent store.Entry) bool {
+		out = append(out, warmup.LocalEntry{
+			Key: key,
+			Entry: store.Entry{
+				Value:    ent.CloneValue(),
+				Version:  ent.Version,
+				ExpireAt: ent.ExpireAt,
+				Flags:    ent.Flags,
+			},
+		})
+		return true
+	})
+	return out
+}
+
+// ReplicateToPeers force-fans an entry to all known peers (async, no retry).
+// Used for topology handoff so non-owners can still seed a joining node.
+func (e *Engine) ReplicateToPeers(keyspaceName, key string, ent store.Entry) {
+	e.fanoutPut(keyspaceName, key, ent, true)
 }
 
 // HotKeys returns tracked hot keys when a warmup.Manager is attached.

@@ -48,6 +48,12 @@ type Store interface {
 	// Stats returns a snapshot of counters.
 	Stats() Stats
 
+	// Range visits live (non-expired) entries that are not tombstones.
+	// Positives and negatives are included. Does not update LRU order.
+	// fn must not call back into the store. Return false from fn to stop early.
+	// Expired entries encountered during the walk may be removed.
+	Range(fn func(key string, e Entry) bool)
+
 	// Close releases resources.
 	Close()
 }

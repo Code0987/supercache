@@ -295,6 +295,32 @@ func (m *Memory) Stats() Stats {
 	}
 }
 
+// Range visits live non-tombstone entries (positives and negatives).
+// Snapshot keys under lock, then re-Peek each so the callback never runs under
+// the store mutex (avoids re-entrancy if fn later calls Get/Set).
+func (m *Memory) Range(fn func(key string, e Entry) bool) {
+	if m == nil || fn == nil {
+		return
+	}
+	m.mu.Lock()
+	keys := make([]string, 0, len(m.items))
+	for k := range m.items {
+		keys = append(keys, k)
+	}
+	m.mu.Unlock()
+
+	for _, k := range keys {
+		ent, ok := m.Peek(k)
+		if !ok || ent.IsTombstone() {
+			continue
+		}
+		// Peek already drops expired; tombstones are not useful for handoff fills.
+		if !fn(k, ent) {
+			return
+		}
+	}
+}
+
 func (m *Memory) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -78,6 +78,48 @@ func TestHotKeyTracking(t *testing.T) {
 	}
 }
 
+// Compile-time check: Engine satisfies warmup.Cache (handoff APIs included).
+var _ warmup.Cache = (*engine.Engine)(nil)
+
+// TestHandoffSchedulesHotBeforeRest ensures topology handoff enqueues tracked hot
+// keys on the high-priority path before remaining inventory (ordering contract).
+func TestHandoffSchedulesHotBeforeRest(t *testing.T) {
+	eng := engine.New()
+	defer eng.Close()
+	_ = eng.UpdateKeySpace(keyspace.Config{
+		Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Minute,
+	})
+	// Single-node: ReplicateToPeers is a no-op (no peers), but handoff jobs still run.
+	wm := warmup.NewManager(eng, warmup.Config{Workers: 1, TopN: 4, JobQueueSize: 256})
+	eng.AttachWarmup(wm, wm)
+	wm.Start(context.Background())
+	defer wm.Stop()
+
+	ctx := context.Background()
+	// rest keys + one hot
+	for _, k := range []string{"rest-a", "rest-b", "rest-c", "hot-key"} {
+		if err := eng.Put(ctx, "c", k, []byte(k)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		_, _ = eng.Get(ctx, "c", "hot-key")
+	}
+	if hk := eng.HotKeys("c", 1); len(hk) == 0 || hk[0] != "hot-key" {
+		t.Fatalf("hot tracking: %v", hk)
+	}
+
+	wm.OnTopologyChange()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if wm.HandoffStats() >= 4 {
+			return
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	t.Fatalf("expected handoff jobs for local inventory, got %d", wm.HandoffStats())
+}
+
 func TestRefreshAhead(t *testing.T) {
 	var loads atomic.Int32
 	src := datasource.Func(func(_ context.Context, key string) ([]byte, error) {

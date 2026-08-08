@@ -16,6 +16,7 @@ import (
 	"github.com/Code0987/supercache/pkg/engine"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
+	"github.com/Code0987/supercache/pkg/warmup"
 )
 
 func TestClusterPutFanout(t *testing.T) {
@@ -948,4 +949,349 @@ func TestNextVersionSeedsFromStore(t *testing.T) {
 	if err != nil || string(v) != "new" {
 		t.Fatalf("got %v %s", err, v)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Join topology handoff (async warmup) — additional focused cases.
+// Full original-problem regression: TestJoinHandoffCoversOriginalProblem
+// in join_handoff_test.go (mirrors examples/join-sim).
+// ---------------------------------------------------------------------------
+
+// TestJoinTopologyHandoffFillsNewNode seeds a 2-node cluster, joins empty C,
+// and expects async handoff so C eventually hits for keys peers already hold.
+// Hot keys (tracked hits) are enqueued before the rest.
+func TestJoinTopologyHandoffFillsNewNode(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19301"
+		addrB = "127.0.0.1:19302"
+		addrC = "127.0.0.1:19303"
+	)
+	engA := engine.New()
+	engB := engine.New()
+	engC := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	defer engC.Close()
+	engA.SetNodeInfo("a", addrA)
+	engB.SetNodeInfo("b", addrB)
+	engC.SetNodeInfo("c", addrC)
+
+	for _, e := range []*engine.Engine{engA, engB, engC} {
+		if err := e.UpdateKeySpace(keyspace.Config{
+			Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 4 << 20, TTL: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Warmup managers: push inventory on topology change.
+	wmA := warmup.NewManager(engA, warmup.Config{Workers: 8, TopN: 32, JobQueueSize: 8192})
+	wmB := warmup.NewManager(engB, warmup.Config{Workers: 8, TopN: 32, JobQueueSize: 8192})
+	wmC := warmup.NewManager(engC, warmup.Config{Workers: 4, TopN: 32, JobQueueSize: 8192})
+	engA.AttachWarmup(wmA, wmA)
+	engB.AttachWarmup(wmB, wmB)
+	engC.AttachWarmup(wmC, wmC)
+	bg := context.Background()
+	wmA.Start(bg)
+	wmB.Start(bg)
+	wmC.Start(bg)
+	defer wmA.Stop()
+	defer wmB.Stop()
+	defer wmC.Stop()
+
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+	gsC, _, err := peerserver.ListenAndServe(addrC, engC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsC.Stop()
+
+	rA, rB, rC := ring.New(32), ring.New(32), ring.New(32)
+	two := []ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: addrB}}
+	rA.SetPeers(two)
+	rB.SetPeers(two)
+
+	trA := peer.NewTransport(time.Second)
+	trB := peer.NewTransport(time.Second)
+	trC := peer.NewTransport(time.Second)
+	defer trA.Close()
+	defer trB.Close()
+	defer trC.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	foC := peer.NewFanoutPool(trC, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	defer foA.Close()
+	defer foB.Close()
+	defer foC.Close()
+
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	ctx := context.Background()
+	const nKeys = 200
+	joinKey := func(i int) string {
+		return fmt.Sprintf("seed-%04d-%x", i, uint32(i)*0x9e3779b1)
+	}
+	for i := 0; i < nKeys; i++ {
+		k := joinKey(i)
+		if err := engA.Put(ctx, "demo", k, []byte("v-"+k)); err != nil {
+			t.Fatalf("put %s: %v", k, err)
+		}
+	}
+	// Mark a subset hot on A so handoff prioritizes them.
+	for i := 0; i < 20; i++ {
+		k := joinKey(i)
+		for j := 0; j < 5; j++ {
+			_, _ = engA.Get(ctx, "demo", k)
+		}
+	}
+	waitFanoutHits(t, engB, "demo", nKeys, joinKey, nKeys/2, 3*time.Second)
+
+	// Join C: expand ring; attach cluster; topology notify on all nodes.
+	three := []ring.Peer{
+		{ID: "a", Addr: addrA},
+		{ID: "b", Addr: addrB},
+		{ID: "c", Addr: addrC},
+	}
+	rA.SetPeers(three)
+	rB.SetPeers(three)
+	rC.SetPeers(three)
+	engC.AttachCluster(&engine.Cluster{SelfID: "c", Ring: rC, Transport: trC, Fanout: foC})
+
+	// Immediately after join, C should still be cold (handoff is async).
+	if _, err := engC.Get(ctx, "demo", joinKey(0)); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("expected immediate cold miss on C before handoff, got %v", err)
+	}
+
+	engA.NotifyTopologyChange()
+	engB.NotifyTopologyChange()
+	engC.NotifyTopologyChange()
+
+	// Wait for handoff: C should hold a large majority of keys present on A.
+	deadline := time.Now().Add(5 * time.Second)
+	var hits, ownedByC, ownedHits int
+	for time.Now().Before(deadline) {
+		hits, ownedByC, ownedHits = 0, 0, 0
+		for i := 0; i < nKeys; i++ {
+			k := joinKey(i)
+			if o, ok := engC.OwnerOf(k); ok && o.ID == "c" {
+				ownedByC++
+			}
+			if _, err := engC.Get(ctx, "demo", k); err == nil {
+				hits++
+				if o, ok := engC.OwnerOf(k); ok && o.ID == "c" {
+					ownedHits++
+				}
+			}
+		}
+		// Hot keys (0..19) should fill first; require all of them, plus most of rest.
+		hotHits := 0
+		for i := 0; i < 20; i++ {
+			if _, err := engC.Get(ctx, "demo", joinKey(i)); err == nil {
+				hotHits++
+			}
+		}
+		if hotHits == 20 && hits >= int(float64(nKeys)*0.85) && ownedHits >= ownedByC*8/10 {
+			t.Logf("handoff ok: hits=%d/%d ownedByC=%d ownedHits=%d handoffs A/B=%d/%d",
+				hits, nKeys, ownedByC, ownedHits, wmA.HandoffStats(), wmB.HandoffStats())
+			return
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	t.Fatalf("handoff incomplete: hits=%d/%d ownedByC=%d ownedHits=%d handoffs A/B/C=%d/%d/%d",
+		hits, nKeys, ownedByC, ownedHits, wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
+}
+
+// TestJoinHandoffAvoidsDataSourceReload: after topology handoff, Get on the new
+// owner must not re-hit DataSource when peers already pushed the live entry.
+func TestJoinHandoffAvoidsDataSourceReload(t *testing.T) {
+	const (
+		addrA = "127.0.0.1:19311"
+		addrB = "127.0.0.1:19312"
+		addrC = "127.0.0.1:19313"
+	)
+
+	var loads atomic.Int64
+	src := datasource.Func(func(_ context.Context, key string) ([]byte, error) {
+		loads.Add(1)
+		return []byte("from-ds:" + key), nil
+	})
+
+	engA := engine.New()
+	engB := engine.New()
+	engC := engine.New()
+	defer engA.Close()
+	defer engB.Close()
+	defer engC.Close()
+	engA.SetNodeInfo("a", addrA)
+	engB.SetNodeInfo("b", addrB)
+	engC.SetNodeInfo("c", addrC)
+
+	ksCfg := keyspace.Config{
+		Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 4 << 20,
+		TTL: time.Minute, DataSource: src, LoadTimeout: 2 * time.Second,
+	}
+	for _, e := range []*engine.Engine{engA, engB, engC} {
+		if err := e.UpdateKeySpace(ksCfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wmA := warmup.NewManager(engA, warmup.Config{Workers: 8, TopN: 64, JobQueueSize: 8192})
+	wmB := warmup.NewManager(engB, warmup.Config{Workers: 8, TopN: 64, JobQueueSize: 8192})
+	wmC := warmup.NewManager(engC, warmup.Config{Workers: 4, TopN: 64, JobQueueSize: 8192})
+	engA.AttachWarmup(wmA, wmA)
+	engB.AttachWarmup(wmB, wmB)
+	engC.AttachWarmup(wmC, wmC)
+	bg := context.Background()
+	wmA.Start(bg)
+	wmB.Start(bg)
+	wmC.Start(bg)
+	defer wmA.Stop()
+	defer wmB.Stop()
+	defer wmC.Stop()
+
+	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsA.Stop()
+	gsB, _, err := peerserver.ListenAndServe(addrB, engB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsB.Stop()
+	gsC, _, err := peerserver.ListenAndServe(addrC, engC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gsC.Stop()
+
+	rA, rB, rC := ring.New(32), ring.New(32), ring.New(32)
+	two := []ring.Peer{{ID: "a", Addr: addrA}, {ID: "b", Addr: addrB}}
+	rA.SetPeers(two)
+	rB.SetPeers(two)
+
+	trA := peer.NewTransport(time.Second)
+	trB := peer.NewTransport(time.Second)
+	trC := peer.NewTransport(time.Second)
+	defer trA.Close()
+	defer trB.Close()
+	defer trC.Close()
+	foA := peer.NewFanoutPool(trA, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	foB := peer.NewFanoutPool(trB, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	foC := peer.NewFanoutPool(trC, peer.FanoutConfig{Workers: 16, QueueSize: 2000})
+	defer foA.Close()
+	defer foB.Close()
+	defer foC.Close()
+
+	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
+	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
+
+	ctx := context.Background()
+	const nKeys = 200
+	joinKey := func(i int) string {
+		return fmt.Sprintf("lt-%04d-%x", i, uint32(i)*0x9e3779b1)
+	}
+	for i := 0; i < nKeys; i++ {
+		k := joinKey(i)
+		v, err := engA.Get(ctx, "lt", k)
+		if err != nil || string(v) != "from-ds:"+k {
+			t.Fatalf("seed get %s: %v %q", k, err, v)
+		}
+	}
+	waitFanoutHits(t, engB, "lt", nKeys, joinKey, nKeys/3, 3*time.Second)
+
+	three := []ring.Peer{
+		{ID: "a", Addr: addrA},
+		{ID: "b", Addr: addrB},
+		{ID: "c", Addr: addrC},
+	}
+	rA.SetPeers(three)
+	rB.SetPeers(three)
+	rC.SetPeers(three)
+	engC.AttachCluster(&engine.Cluster{SelfID: "c", Ring: rC, Transport: trC, Fanout: foC})
+
+	// Find a key now owned by C that still hits on A.
+	var key string
+	for i := 0; i < nKeys; i++ {
+		k := joinKey(i)
+		o, ok := engC.OwnerOf(k)
+		if !ok || o.ID != "c" {
+			continue
+		}
+		if _, err := engA.Get(ctx, "lt", k); err == nil {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no C-owned key still present on A after join")
+	}
+
+	engA.NotifyTopologyChange()
+	engB.NotifyTopologyChange()
+	engC.NotifyTopologyChange()
+
+	// Wait until C has the key from handoff (no Get yet — that would load from DS).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		// LocalEntries is the inventory probe without counting as a client Get path;
+		// use a non-loading check via ApplyPut presence: Get is OK if we track loads.
+		// Prefer scanning LocalEntries on C.
+		for _, e := range engC.LocalEntries("lt") {
+			if e.Key == key && !e.Entry.IsNegative() {
+				goto filled
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("C never received handoff for key %s (handoffs A/B=%d/%d)", key, wmA.HandoffStats(), wmB.HandoffStats())
+filled:
+	loadsBefore := loads.Load()
+	v, err := engC.Get(ctx, "lt", key)
+	if err != nil {
+		t.Fatalf("Get on C after handoff: %v", err)
+	}
+	if string(v) != "from-ds:"+key {
+		t.Fatalf("value=%q", v)
+	}
+	if extra := loads.Load() - loadsBefore; extra != 0 {
+		t.Fatalf("expected no DataSource load after handoff; extra_loads=%d", extra)
+	}
+	t.Logf("handoff avoided DS reload for key=%s", key)
+}
+
+// waitFanoutHits waits until eng has at least wantHits local hits for keys
+// produced by keyAt(0..nKeys-1). Prefer CacheOnly keyspaces so Get does not
+// mask missing fan-out via owner GetOrLoad.
+func waitFanoutHits(t *testing.T, eng *engine.Engine, ks string, nKeys int, keyAt func(int) string, wantHits int, timeout time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+	var hits int
+	for time.Now().Before(deadline) {
+		hits = 0
+		for i := 0; i < nKeys; i++ {
+			k := keyAt(i)
+			if _, err := eng.Get(ctx, ks, k); err == nil {
+				hits++
+			}
+		}
+		if hits >= wantHits {
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	errN, dropN := eng.FanoutStats()
+	t.Fatalf("fan-out wait: hits=%d want>=%d; fanout err/drop=%d/%d", hits, wantHits, errN, dropN)
 }
