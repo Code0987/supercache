@@ -78,3 +78,5 @@ See [BENCH_MATRIX.md](./BENCH_MATRIX.md) for the staged plan:
 - Cluster read-QPS (1 / 3 / 10 in-process nodes)  
 - CacheOnly / LoadThrough miss cells  
 - Pipeline Redis profile (labeled unfair vs unary gRPC)
+
+<!-- bench comment retest -->
