@@ -56,6 +56,8 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 - **LoadThrough miss** is DS + failed fill every op, not `ForceLoad` refresh-ahead.
 - Cluster3 Engine benches are local-only (PR 8); not in CI.
 
+In-process N-node mesh (no gossip) lives in `internal/testcluster` (`Start` N=1 or 3, `PrefillAll` + `VerifyLocalHits` for get-hit setup).
+
 ### Fairness
 
 | OK | Not OK |
