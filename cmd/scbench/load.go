@@ -22,17 +22,19 @@ const (
 )
 
 type loadConfig struct {
-	op          string
-	prefix      string
-	keys        int
-	value       []byte
-	concurrency int
-	duration    time.Duration
-	readRatio   float64
+	op             string
+	prefix         string
+	keys           int
+	value          []byte
+	concurrency    int
+	duration       time.Duration
+	readRatio      float64
 	dist           distKind
 	zipfS          float64
 	seed           uint64
 	collectRuntime bool
+	requireHit     bool
+	sampleCap      int
 }
 
 type trialResult struct {
@@ -60,7 +62,7 @@ func prefillKeys(ctx context.Context, store kvStore, prefix string, n int, value
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				if err := store.Set(ctx, fmt.Sprintf("%s%d", prefix, i), value); err != nil {
+				if err := store.Set(ctx, 0, fmt.Sprintf("%s%d", prefix, i), value); err != nil {
 					select {
 					case errCh <- err:
 					default:
@@ -89,14 +91,47 @@ func prefillKeys(ctx context.Context, store kvStore, prefix string, n int, value
 	}
 }
 
+// sampleCapPerWorker splits cap samples across concurrency workers so
+// sum(out) == cap. Workers may receive 0 if cap < concurrency.
+func sampleCapPerWorker(cap, concurrency int) []int {
+	if concurrency < 1 {
+		return nil
+	}
+	if cap < 0 {
+		cap = 0
+	}
+	out := make([]int, concurrency)
+	base := cap / concurrency
+	rem := cap % concurrency
+	for i := 0; i < concurrency; i++ {
+		out[i] = base
+		if i < rem {
+			out[i]++
+		}
+	}
+	return out
+}
+
+func isNotFound(err error) bool {
+	return err != nil && (errors.Is(err, redis.Nil) || errors.Is(err, client.ErrNotFound))
+}
+
 func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, error) {
 	type workerBuf struct {
 		lats []time.Duration
 		ops  int64
 		errs int64
 	}
+	if cfg.concurrency < 1 {
+		return trialResult{}, fmt.Errorf("concurrency must be >= 1")
+	}
+	sampleCap := cfg.sampleCap
+	if sampleCap <= 0 {
+		sampleCap = 262144
+	}
+	caps := sampleCapPerWorker(sampleCap, cfg.concurrency)
+
 	bufs := make([]workerBuf, cfg.concurrency)
-	const maxPerWorker = 50_000
 
 	var zipf *zipfGen
 	if cfg.dist == distZipf {
@@ -115,8 +150,12 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 		go func(worker int) {
 			defer wg.Done()
 			wb := &bufs[worker]
-			wb.lats = make([]time.Duration, 0, 4096)
+			capN := caps[worker]
+			if capN > 0 {
+				wb.lats = make([]time.Duration, 0, min(4096, capN))
+			}
 			rng := newRNG(cfg.seed ^ uint64(worker+1)*0x9e3779b97f4a7c15)
+			var deletes int
 
 			for time.Now().Before(stopAt) {
 				if ctx.Err() != nil {
@@ -129,18 +168,31 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 					idx = int(rng.Uint64() % uint64(cfg.keys))
 				}
 				key := fmt.Sprintf("%s%d", cfg.prefix, idx)
-				doGet := cfg.op == "get" ||
-					(cfg.op == "mixed" && float64(rng.Uint64()%10000)/10000.0 < cfg.readRatio)
 
 				t0 := time.Now()
 				var err error
-				if doGet {
-					_, err = store.Get(ctx, key)
-					if err != nil && (errors.Is(err, redis.Nil) || errors.Is(err, client.ErrNotFound)) {
+				switch cfg.op {
+				case "miss", "get":
+					_, err = store.Get(ctx, worker, key)
+					if isNotFound(err) && !cfg.requireHit {
 						err = nil
 					}
-				} else {
-					err = store.Set(ctx, key, cfg.value)
+				case "mixed":
+					if float64(rng.Uint64()%10000)/10000.0 < cfg.readRatio {
+						_, err = store.Get(ctx, worker, key)
+						if isNotFound(err) {
+							err = nil // mixed never uses requireHit
+						}
+					} else {
+						err = store.Set(ctx, worker, key, cfg.value)
+					}
+				case "delete":
+					err = store.Delete(ctx, worker, key)
+					if isNotFound(err) {
+						err = nil
+					}
+				default: // set
+					err = store.Set(ctx, worker, key, cfg.value)
 				}
 				d := time.Since(t0)
 				if err != nil {
@@ -148,8 +200,14 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 					continue
 				}
 				wb.ops++
-				if len(wb.lats) < maxPerWorker {
+				if capN > 0 && len(wb.lats) < capN {
 					wb.lats = append(wb.lats, d)
+				}
+				if cfg.op == "delete" {
+					deletes++
+					if cfg.keys > 0 && deletes%cfg.keys == 0 {
+						_ = prefillKeys(ctx, store, cfg.prefix, cfg.keys, cfg.value)
+					}
 				}
 			}
 		}(w)

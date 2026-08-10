@@ -29,10 +29,14 @@ func main() {
 		scAddr      = flag.String("sc-addr", "127.0.0.1:9000", "SuperCache cache gRPC address for -compare")
 		compare     = flag.Bool("compare", false, "run both redis and supercache with identical params")
 		suite       = flag.Bool("suite", false, "run get + set + mixed (recommended)")
-		op          = flag.String("op", "get", "get | set | mixed (if not -suite)")
+		op          = flag.String("op", "get", "get | set | mixed | delete | miss (if not -suite)")
+		missMode    = flag.String("miss-mode", "cacheonly", "cacheonly | loadthrough (only with -op=miss)")
 		keys        = flag.Int("keys", 50_000, "key space size")
 		valueBytes  = flag.Int("value-bytes", 256, "value size bytes")
 		concurrency = flag.Int("concurrency", 64, "parallel workers")
+		conns       = flag.Int("conns", 1, "SuperCache gRPC clients per address")
+		sampleCap   = flag.Int("sample-cap", 262144, "max latency samples per trial (exact global sum)")
+		requireHit  = flag.Bool("require-hit", false, "treat Get not-found as error (default false; off for -compare)")
 		duration    = flag.Duration("duration", 15*time.Second, "per-trial measure window")
 		warmup      = flag.Duration("warmup", 5*time.Second, "warmup before each trial (discarded)")
 		trials      = flag.Int("trials", 5, "independent measure trials; report median")
@@ -69,14 +73,25 @@ func main() {
 	*op = strings.ToLower(*op)
 	*backend = strings.ToLower(*backend)
 	*dist = strings.ToLower(*dist)
+	*missMode = strings.ToLower(*missMode)
 
 	ops := []string{*op}
 	if *suite {
 		ops = []string{"get", "set", "mixed"}
 	}
+	validOp := map[string]bool{"get": true, "set": true, "mixed": true, "delete": true, "miss": true}
 	for _, o := range ops {
-		if o != "get" && o != "set" && o != "mixed" {
+		if !validOp[o] {
 			fatalf("invalid op %q", o)
+		}
+	}
+	if *op == "miss" || containsOp(ops, "miss") {
+		switch *missMode {
+		case "cacheonly":
+		case "loadthrough":
+			fatalf("-miss-mode=loadthrough needs -embed")
+		default:
+			fatalf("invalid -miss-mode %q", *missMode)
 		}
 	}
 	if *trials < 1 {
@@ -84,6 +99,12 @@ func main() {
 	}
 	if *concurrency < 1 || *keys < 1 || *valueBytes < 1 {
 		fatalf("concurrency, keys, value-bytes must be >= 1")
+	}
+	if *conns < 1 {
+		fatalf("conns must be >= 1")
+	}
+	if *sampleCap < 1 {
+		fatalf("sample-cap must be >= 1")
 	}
 
 	var dkind distKind
@@ -126,22 +147,22 @@ func main() {
 	fmt.Println("scbench reliable harness")
 	fmt.Printf("  GOMAXPROCS=%d NumCPU=%d Go=%s\n", report.GOMAXPROCS, report.NumCPU, report.GoVersion)
 	fmt.Printf("  keys=%d value=%dB concurrency=%d dist=%s zipf-s=%.2f\n", *keys, *valueBytes, *concurrency, *dist, *zipfS)
-	fmt.Printf("  warmup=%s duration=%s trials=%d suite=%v compare=%v\n", *warmup, *duration, *trials, *suite, *compare)
+	fmt.Printf("  warmup=%s duration=%s trials=%d suite=%v compare=%v conns=%d sample-cap=%d require-hit=%v\n",
+		*warmup, *duration, *trials, *suite, *compare, *conns, *sampleCap, *requireHit)
 	fmt.Printf("  note: %s\n\n", report.Note)
 
 	ctx := context.Background()
 	var runs []runRecord
 
 	for _, b := range backends {
-		store, err := openBackend(ctx, b.name, b.addr, *keyspace, *concurrency)
+		store, err := openBackend(ctx, b.name, b.addr, *keyspace, *concurrency, *conns)
 		if err != nil {
 			fatalf("connect %s %s: %v\n  hint: start redis-server and/or supercache-node first", b.name, b.addr, err)
 		}
 
 		needPrefill := *prefill
-		// Prefill once per backend if any op needs hits
 		for _, o := range ops {
-			if o == "get" || o == "mixed" {
+			if o == "get" || o == "mixed" || o == "delete" {
 				if needPrefill {
 					fmt.Printf("[%s] prefill %d keys…\n", b.name, *keys)
 					t0 := time.Now()
@@ -163,6 +184,8 @@ func main() {
 				concurrency: *concurrency, duration: *duration, readRatio: *readRatio,
 				dist: dkind, zipfS: *zipfS, seed: *seed,
 				collectRuntime: *collectRuntime,
+				requireHit:     *requireHit && o == "get",
+				sampleCap:      *sampleCap,
 			}
 			var trialsOut []trialResult
 			for t := 1; t <= *trials; t++ {
@@ -218,6 +241,15 @@ func main() {
 		}
 		fmt.Printf("wrote JSON report %s\n", *jsonOut)
 	}
+}
+
+func containsOp(ops []string, want string) bool {
+	for _, o := range ops {
+		if o == want {
+			return true
+		}
+	}
+	return false
 }
 
 func fatalf(format string, args ...any) {

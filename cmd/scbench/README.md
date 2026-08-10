@@ -62,7 +62,13 @@ go run ./cmd/scbench -backend=redis      -op=get -trials=5 -duration=15s
 go run ./cmd/scbench -backend=supercache -op=get -trials=5 -duration=15s
 
 go run ./cmd/scbench -backend=redis -op=mixed -dist=zipf -zipf-s=1.2
+
+# CacheOnly miss (no prefill) / delete
+go run ./cmd/scbench -backend=supercache -op=miss -prefill=false -trials=1 -duration=5s
+go run ./cmd/scbench -backend=supercache -op=delete -trials=1 -duration=5s
 ```
+
+LoadThrough miss (`-miss-mode=loadthrough`) needs `-embed` (not in this release).
 
 ## Flags
 
@@ -77,6 +83,11 @@ go run ./cmd/scbench -backend=redis -op=mixed -dist=zipf -zipf-s=1.2
 | `-keys` | 50000 | Key space |
 | `-value-bytes` | 256 | Payload size |
 | `-concurrency` | 64 | Workers |
+| `-conns` | 1 | SuperCache gRPC clients (striped by worker) |
+| `-sample-cap` | 262144 | Max latency samples per trial (exact sum across workers) |
+| `-require-hit` | false | Get not-found is an error (off for `-compare` / mixed) |
+| `-op` | get | `get` \| `set` \| `mixed` \| `delete` \| `miss` |
+| `-miss-mode` | cacheonly | `cacheonly` only until `-embed` |
 | `-dist` | uniform | `uniform` \| `zipf` |
 | `-zipf-s` | 1.1 | Zipf exponent |
 | `-read-ratio` | 0.95 | Mixed GET fraction |
@@ -107,6 +118,6 @@ op=get  supercache/redis throughput ratio = 0.9x
 - Production multi-AZ performance  
 - Redis Cluster vs SuperCache cluster  
 - Pipelined Redis vs unary gRPC (Redis can go much faster with pipelines)  
-- LoadThrough / SoT miss paths (CacheOnly hits only)
+- LoadThrough / SoT miss paths (`-miss-mode=loadthrough` needs embed)
 
 See also [docs/BENCHMARKS.md](../../docs/BENCHMARKS.md).
