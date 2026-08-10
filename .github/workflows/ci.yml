@@ -36,8 +36,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22.x"
-      - name: Micro + smoke
-        run: bash scripts/bench-ci.sh
+      - name: Micro + smoke (this ref)
+        run: bash scripts/bench-ci.sh .
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,28 +46,27 @@ jobs:
           path: |
             micro.txt
             smoke.json
-      - name: Download main baseline
+      # Same VM as the PR benches above — do not compare across GitHub runners.
+      - name: Checkout merge-base (main)
         if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v6
+        uses: actions/checkout@v4
         with:
-          name: bench-smoke
-          workflow: ci.yml
-          branch: ${{ github.event.pull_request.base.ref }}
-          event: push
-          path: bench-prev
-          search_artifacts: true
-          if_no_artifact_found: warn
-      - name: Diff vs main
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: bench-base-src
+      - name: Micro + smoke (main, same runner)
+        if: github.event_name == 'pull_request'
+        run: bash scripts/bench-ci.sh "$RUNNER_TEMP/bench-base"
+        working-directory: bench-base-src
+      - name: Diff vs main (same runner)
         if: always() && github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          args=(-new smoke.json -out bench-comment.md)
-          if [ -f bench-prev/smoke.json ]; then
-            args+=(-old bench-prev/smoke.json)
+          args=(-new smoke.json -out bench-comment.md -same-runner)
+          if [ -f "$RUNNER_TEMP/bench-base/smoke.json" ]; then
+            args+=(-old "$RUNNER_TEMP/bench-base/smoke.json")
           fi
-          if [ -f bench-prev/micro.txt ]; then
-            args+=(-old-micro bench-prev/micro.txt)
+          if [ -f "$RUNNER_TEMP/bench-base/micro.txt" ]; then
+            args+=(-old-micro "$RUNNER_TEMP/bench-base/micro.txt")
           fi
           if [ -f micro.txt ]; then
             args+=(-new-micro micro.txt)

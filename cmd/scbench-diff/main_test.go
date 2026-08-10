@@ -15,12 +15,15 @@ func TestRenderNoBaseline(t *testing.T) {
 	  "git_sha": "aaaaaaaa",
 	  "runs": [{"op":"get","path":"hit","nodes":1,"concurrency":1,"dist":"uniform","median_ops_per_sec":1000,"median_p50_ns":1000,"median_p99_ns":2000}]
 	}`)
-	md, err := render("", cur, "", "")
+	md, err := render("", cur, "", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(md, "No previous") || !strings.Contains(md, "get/hit n=1 c=1") {
 		t.Fatalf("md:\n%s", md)
+	}
+	if strings.Contains(md, "same GitHub runner") {
+		t.Fatal("did not pass same-runner")
 	}
 }
 
@@ -46,12 +49,15 @@ func TestRenderDelta(t *testing.T) {
 	    ]
 	  }]
 	}`)
-	md, err := render(oldP, newP, "", "")
+	md, err := render(oldP, newP, "", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(md, "1000") || !strings.Contains(md, "800") || !strings.Contains(md, "-20.0%") {
 		t.Fatalf("md:\n%s", md)
+	}
+	if !strings.Contains(md, "same GitHub runner") {
+		t.Fatal("expected same-runner note")
 	}
 }
 

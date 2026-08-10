@@ -58,7 +58,7 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 
 In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scripts/bench-ci.sh` (micro + `bench/ci-smoke.yaml`). Laptop/full: `bash scripts/bench-local.sh laptop|full`.
 
-On pull requests, the `bench` job diffs `smoke.json` / `micro.txt` against the latest **`main`** `bench-smoke` artifact and posts (or updates) a sticky PR comment. CI smoke uses **3 trials** (comment shows the **average**); micro uses `go test -count=3` (averaged ns/op). That is **not** a merge gate. First PR after this lands has no baseline until `main` has produced an artifact.
+On pull requests the `bench` job runs the suite **twice on the same runner** (`main` SHA, then the PR) and comments the diff. That avoids comparing two different GitHub VMs (which was showing fake 40–90% swings on docs-only PRs). Each side is the average of 3 runs. **Not** a merge gate.
 
 Read the comment as: ops/s up is better; ns/op down is better. Moves under ~15–20% on `ubuntu-latest` are usually noise.
 

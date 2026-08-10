@@ -74,12 +74,13 @@ func main() {
 	oldMicro := flag.String("old-micro", "", "previous micro.txt")
 	newMicro := flag.String("new-micro", "", "current micro.txt")
 	out := flag.String("out", "", "write markdown here (default stdout)")
+	sameRunner := flag.Bool("same-runner", false, "note that both sides ran on this VM")
 	flag.Parse()
 	if *newJSON == "" {
 		fmt.Fprintln(os.Stderr, "usage: scbench-diff -new smoke.json [-old prev/smoke.json] [-old-micro ...] [-new-micro ...] [-out comment.md]")
 		os.Exit(2)
 	}
-	md, err := render(*oldJSON, *newJSON, *oldMicro, *newMicro)
+	md, err := render(*oldJSON, *newJSON, *oldMicro, *newMicro, *sameRunner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -94,7 +95,7 @@ func main() {
 	}
 }
 
-func render(oldPath, newPath, oldMicro, newMicro string) (string, error) {
+func render(oldPath, newPath, oldMicro, newMicro string, sameRunner bool) (string, error) {
 	cur, err := readSuite(newPath)
 	if err != nil {
 		return "", err
@@ -111,7 +112,11 @@ func render(oldPath, newPath, oldMicro, newMicro string) (string, error) {
 	var b strings.Builder
 	b.WriteString("<!-- supercache-bench-comment -->\n")
 	b.WriteString("## SuperCache bench vs `main`\n\n")
-	b.WriteString("Each number is the **average of 3 runs** on `ubuntu-latest`. Hosted runners are still noisy; treat &lt;15–20% moves as noise.\n\n")
+	if sameRunner {
+		b.WriteString("Both sides ran on **this same GitHub runner** (checkout `main`, then this PR). Each side is the **average of 3 runs**. Remaining noise is mostly run-to-run on one VM, not two different machines.\n\n")
+	} else {
+		b.WriteString("Each number is the **average of 3 runs**. Comparing **different** `ubuntu-latest` VMs is noisy; treat large swings without code changes as infrastructure, not SuperCache.\n\n")
+	}
 	if prev == nil {
 		b.WriteString("_No previous `bench-smoke` artifact on `main` yet — showing this PR only._\n\n")
 	} else {
