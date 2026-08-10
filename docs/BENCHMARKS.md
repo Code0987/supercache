@@ -58,7 +58,7 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 
 In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scripts/bench-ci.sh` (micro + `bench/ci-smoke.yaml`). Laptop/full: `bash scripts/bench-local.sh laptop|full`.
 
-On pull requests the `bench` job runs the suite **twice on the same runner** (`main` SHA, then the PR) and comments the diff. That avoids comparing two different GitHub VMs (which was showing fake 40–90% swings on docs-only PRs). Each side is the average of 3 runs. **Not** a merge gate.
+On pull requests the `bench` job runs the suite **once on `main` and once on the PR, same runner**, then comments the diff. One run each (no multi-trial average). **Not** a merge gate.
 
 Read the comment as: ops/s up is better; ns/op down is better. Moves under ~15–20% on `ubuntu-latest` are usually noise.
 

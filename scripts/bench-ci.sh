@@ -13,7 +13,7 @@ go test ./pkg/store ./pkg/engine \
   -run=^$ \
   -bench='Benchmark(Store|Engine)' \
   -skip=Cluster3 \
-  -benchmem -benchtime=200ms -count=3 \
+  -benchmem -benchtime=200ms -count=1 \
   -timeout=5m \
   | tee "$OUT/micro.txt"
 
