@@ -78,6 +78,10 @@ go run ./cmd/scbench -embed -nodes=3 -op=get -require-hit -concurrency=10 -durat
 go run ./cmd/scbench -tier=smoke -json=smoke.json
 go run ./cmd/scbench -tier=laptop -json=laptop.json
 bash scripts/bench-local.sh laptop
+
+# Compare two smoke reports (CI uses this for PR comments)
+go run ./cmd/scbench-diff -old prev/smoke.json -new smoke.json \
+  -old-micro prev/micro.txt -new-micro micro.txt
 ```
 
 ## Flags

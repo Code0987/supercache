@@ -58,6 +58,8 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 
 In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scripts/bench-ci.sh` (micro + `bench/ci-smoke.yaml`). Laptop/full: `bash scripts/bench-local.sh laptop|full`.
 
+On pull requests, the `bench` job diffs `smoke.json` / `micro.txt` against the latest **`main`** `bench-smoke` artifact and posts (or updates) a sticky PR comment. That is **not** a merge gate. First PR after this lands has no baseline until `main` has produced an artifact.
+
 ### Fairness
 
 | OK | Not OK |
