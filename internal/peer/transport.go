@@ -169,14 +169,33 @@ func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, 
 type FanoutConfig struct {
 	Workers   int
 	QueueSize int
+	// DisableHints skips remembering failed ApplyPuts for later replay.
+	DisableHints bool
+	// HintMaxPerPeer caps distinct (keyspace, key) hints per peer (0 = 4096).
+	HintMaxPerPeer int
+	// HintRetryInterval is how often to flush hints (0 = 100ms).
+	HintRetryInterval time.Duration
 }
 
-// FanoutPool async-fans ApplyPut to peers (no retry).
+// FanoutPool async-fans ApplyPut to peers. Failed ApplyPuts are queued as
+// bounded per-peer hints and replayed until the peer accepts them (or the hint
+// is dropped under cap). Put ACK stays non-blocking.
 type FanoutPool struct {
 	t      *Transport
 	jobs   chan fanoutJob
 	wg     sync.WaitGroup
 	closed atomic.Bool
+
+	hintsDisabled bool
+	hintMax       int
+	hintEvery     time.Duration
+	hintCancel    context.CancelFunc
+	hintWG        sync.WaitGroup
+	hintMu        sync.Mutex
+	hints         map[string]*peerHintQ // addr -> queue
+
+	HintsFlushed atomic.Uint64
+	HintsDropped atomic.Uint64
 }
 
 type fanoutJob struct {
@@ -195,13 +214,31 @@ func NewFanoutPool(t *Transport, cfg FanoutConfig) *FanoutPool {
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 10_000
 	}
+	hintMax := cfg.HintMaxPerPeer
+	if hintMax <= 0 {
+		hintMax = 4096
+	}
+	hintEvery := cfg.HintRetryInterval
+	if hintEvery <= 0 {
+		hintEvery = 100 * time.Millisecond
+	}
 	p := &FanoutPool{
-		t:    t,
-		jobs: make(chan fanoutJob, cfg.QueueSize),
+		t:             t,
+		jobs:          make(chan fanoutJob, cfg.QueueSize),
+		hintsDisabled: cfg.DisableHints,
+		hintMax:       hintMax,
+		hintEvery:     hintEvery,
+		hints:         make(map[string]*peerHintQ),
 	}
 	for i := 0; i < cfg.Workers; i++ {
 		p.wg.Add(1)
 		go p.loop()
+	}
+	if !p.hintsDisabled {
+		ctx, cancel := context.WithCancel(context.Background())
+		p.hintCancel = cancel
+		p.hintWG.Add(1)
+		go p.hintLoop(ctx)
 	}
 	return p
 }
@@ -213,7 +250,7 @@ func (p *FanoutPool) loop() {
 	}
 }
 
-// applyJob fans ApplyPut to all peers concurrently (no retry).
+// applyJob fans ApplyPut to all peers concurrently.
 func (p *FanoutPool) applyJob(job fanoutJob) {
 	var wg sync.WaitGroup
 	for _, peer := range job.peers {
@@ -233,13 +270,14 @@ func (p *FanoutPool) applyJob(job fanoutJob) {
 			_, err := p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, ent, job.ringGen)
 			if err != nil {
 				p.t.FanoutErrors.Add(1)
+				p.enqueueHint(peer, job.ks, job.key, ent, job.ringGen)
 			}
 		}(peer)
 	}
 	wg.Wait()
 }
 
-// Submit queues a fan-out. Drops if full (no retry).
+// Submit queues a fan-out. Drops if full (no retry of the submit itself).
 func (p *FanoutPool) Submit(peers []ring.Peer, keyspace, key string, ent store.Entry, ringGen uint64) {
 	if p == nil || p.closed.Load() {
 		return
@@ -252,13 +290,17 @@ func (p *FanoutPool) Submit(peers []ring.Peer, keyspace, key string, ent store.E
 	}
 }
 
-// Close stops workers.
+// Close stops workers and the hint flusher.
 func (p *FanoutPool) Close() {
 	if p == nil || !p.closed.CompareAndSwap(false, true) {
 		return
 	}
 	close(p.jobs)
 	p.wg.Wait()
+	if p.hintCancel != nil {
+		p.hintCancel()
+	}
+	p.hintWG.Wait()
 }
 
 // FormatAddr joins host port for errors.

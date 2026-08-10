@@ -46,7 +46,7 @@ func TestFanoutPeersInParallel(t *testing.T) {
 
 	tr := peer.NewTransport(rpcTimeout)
 	defer tr.Close()
-	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{Workers: 1, QueueSize: 10})
+	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{Workers: 1, QueueSize: 10, DisableHints: true})
 	// One worker so parallelism must be within the job, not across workers.
 	defer fo.Close()
 

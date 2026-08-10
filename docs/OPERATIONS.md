@@ -61,7 +61,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | Op | Guarantee |
 |----|-----------|
 | Get | Local observation on the queried node |
-| Put | ACK after **owner** accept; async fan-out (no retry) |
+| Put | ACK after **owner** accept; async fan-out. Failed `ApplyPut`s are hinted per peer and replayed when that peer is reachable again (bounded; oldest dropped). |
 | Delete | Owner + all peers best-effort; `MultiError` / peer_failures if any fail |
 | Failures | Fan-out errors are metrics-only on Put |
 
