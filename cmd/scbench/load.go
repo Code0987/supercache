@@ -10,6 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/Code0987/supercache/internal/benchmetrics"
 	"github.com/Code0987/supercache/pkg/client"
 )
 
@@ -28,9 +29,10 @@ type loadConfig struct {
 	concurrency int
 	duration    time.Duration
 	readRatio   float64
-	dist        distKind
-	zipfS       float64
-	seed        uint64
+	dist           distKind
+	zipfS          float64
+	seed           uint64
+	collectRuntime bool
 }
 
 type trialResult struct {
@@ -44,6 +46,8 @@ type trialResult struct {
 	P999      time.Duration `json:"p999_ns"`
 	Mean      time.Duration `json:"mean_ns"`
 	Samples   int           `json:"samples"`
+	// Proc is process-level CPU/GC/alloc deltas (not testing.B allocs/op).
+	Proc *benchmetrics.Report `json:"proc,omitempty"`
 }
 
 func prefillKeys(ctx context.Context, store kvStore, prefix string, n int, value []byte) error {
@@ -99,7 +103,12 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 		zipf = newZipf(cfg.keys, cfg.zipfS)
 	}
 
-	stopAt := time.Now().Add(cfg.duration)
+	var before benchmetrics.Snapshot
+	if cfg.collectRuntime {
+		before = benchmetrics.Read()
+	}
+	tWall := time.Now()
+	stopAt := tWall.Add(cfg.duration)
 	var wg sync.WaitGroup
 	wg.Add(cfg.concurrency)
 	for w := 0; w < cfg.concurrency; w++ {
@@ -159,7 +168,7 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 		secs = 1
 	}
 	p50, p95, p99, p999, mean := latencyStats(all)
-	return trialResult{
+	res := trialResult{
 		Ops:       ops,
 		Errors:    errs,
 		Duration:  cfg.duration,
@@ -170,7 +179,13 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 		P999:      p999,
 		Mean:      mean,
 		Samples:   len(all),
-	}, nil
+	}
+	if cfg.collectRuntime {
+		after := benchmetrics.Read()
+		rep := benchmetrics.Delta(before, after, time.Since(tWall), ops)
+		res.Proc = &rep
+	}
+	return res, nil
 }
 
 type rng struct{ s uint64 }

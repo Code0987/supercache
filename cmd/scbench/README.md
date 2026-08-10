@@ -84,15 +84,16 @@ go run ./cmd/scbench -backend=redis -op=mixed -dist=zipf -zipf-s=1.2
 | `-sc-addr` | 127.0.0.1:9000 | SuperCache **cache** port |
 | `-keyspace` | demo | SuperCache keyspace |
 | `-json` | | Write full report |
+| `-collect-runtime` | false | Process CPU/GC/allocs per trial (`proc_*` in JSON; not `testing.B`) |
 
 ## Interpreting output
 
 ```text
 SUMMARY backend=redis      op=get   trials=5  median_ops/s=...
-         latency median-of-trials  p50=... p95=... p99=...
+         latency median-of-trials  p50=... p95=... p99=... p999=...
 
 COMPARISON
-backend    op      ops/s   p50   p95   p99
+backend    op      ops/s   p50   p95   p99   p999
 ...
 op=get  supercache/redis throughput ratio = 0.9x
 ```

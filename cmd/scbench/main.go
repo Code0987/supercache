@@ -43,8 +43,9 @@ func main() {
 		dist        = flag.String("dist", "uniform", "uniform | zipf")
 		zipfS       = flag.Float64("zipf-s", 1.1, "zipf exponent (higher = hotter head)")
 		seed        = flag.Uint64("seed", 42, "RNG seed for reproducibility")
-		jsonOut     = flag.String("json", "", "write full report JSON to path")
-		reliable    = flag.Bool("reliable", false, "preset: suite+compare, trials=5, duration=20s, warmup=5s, keys=50k")
+		jsonOut         = flag.String("json", "", "write full report JSON to path")
+		collectRuntime  = flag.Bool("collect-runtime", false, "sample process CPU/GC/allocs per trial (proc_* in JSON)")
+		reliable        = flag.Bool("reliable", false, "preset: suite+compare, trials=5, duration=20s, warmup=5s, keys=50k")
 	)
 	flag.Parse()
 
@@ -161,6 +162,7 @@ func main() {
 				op: o, prefix: *prefix, keys: *keys, value: value,
 				concurrency: *concurrency, duration: *duration, readRatio: *readRatio,
 				dist: dkind, zipfS: *zipfS, seed: *seed,
+				collectRuntime: *collectRuntime,
 			}
 			var trialsOut []trialResult
 			for t := 1; t <= *trials; t++ {
@@ -180,7 +182,7 @@ func main() {
 				printTrial(b.name, o, t, *trials, res)
 				trialsOut = append(trialsOut, res)
 			}
-			medOps, minOps, maxOps, medP50, medP95, medP99 := aggregateTrials(trialsOut)
+			agg := aggregateTrials(trialsOut)
 			rec := runRecord{
 				Backend:         b.name,
 				Addr:            b.addr,
@@ -190,12 +192,14 @@ func main() {
 				Concurrency:     *concurrency,
 				Dist:            *dist,
 				Trials:          trialsOut,
-				MedianOpsPerSec: medOps,
-				MedianP50:       medP50,
-				MedianP95:       medP95,
-				MedianP99:       medP99,
-				MinOpsPerSec:    minOps,
-				MaxOpsPerSec:    maxOps,
+				MedianOpsPerSec: agg.medOps,
+				MedianP50:       agg.medP50,
+				MedianP95:       agg.medP95,
+				MedianP99:       agg.medP99,
+				MedianP999:      agg.medP999,
+				MinOpsPerSec:    agg.minOps,
+				MaxOpsPerSec:    agg.maxOps,
+				MedianProc:      agg.medProc,
 			}
 			printRunSummary(rec)
 			runs = append(runs, rec)
