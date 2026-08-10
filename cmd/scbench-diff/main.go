@@ -21,51 +21,15 @@ type suiteReport struct {
 	Runs        []runRecord `json:"runs"`
 }
 
-type trialRow struct {
-	OpsPerSec float64 `json:"ops_per_sec"`
-	P50       int64   `json:"p50_ns"`
-	P99       int64   `json:"p99_ns"`
-}
-
 type runRecord struct {
-	Op              string     `json:"op"`
-	Path            string     `json:"path"`
-	Nodes           int        `json:"nodes"`
-	Concurrency     int        `json:"concurrency"`
-	Dist            string     `json:"dist"`
-	MedianOpsPerSec float64    `json:"median_ops_per_sec"`
-	MedianP50       int64      `json:"median_p50_ns"`
-	MedianP99       int64      `json:"median_p99_ns"`
-	Trials          []trialRow `json:"trials"`
-}
-
-func (r runRecord) avgOps() float64 {
-	if n := len(r.Trials); n > 0 {
-		var s float64
-		for _, t := range r.Trials {
-			s += t.OpsPerSec
-		}
-		return s / float64(n)
-	}
-	return r.MedianOpsPerSec
-}
-
-func (r runRecord) avgP50() int64 {
-	return avgNs(r.Trials, func(t trialRow) int64 { return t.P50 }, r.MedianP50)
-}
-func (r runRecord) avgP99() int64 {
-	return avgNs(r.Trials, func(t trialRow) int64 { return t.P99 }, r.MedianP99)
-}
-
-func avgNs(trials []trialRow, get func(trialRow) int64, fallback int64) int64 {
-	if len(trials) == 0 {
-		return fallback
-	}
-	var s float64
-	for _, t := range trials {
-		s += float64(get(t))
-	}
-	return int64(s / float64(len(trials)))
+	Op              string  `json:"op"`
+	Path            string  `json:"path"`
+	Nodes           int     `json:"nodes"`
+	Concurrency     int     `json:"concurrency"`
+	Dist            string  `json:"dist"`
+	MedianOpsPerSec float64 `json:"median_ops_per_sec"`
+	MedianP50       int64   `json:"median_p50_ns"`
+	MedianP99       int64   `json:"median_p99_ns"`
 }
 
 func main() {
@@ -113,9 +77,9 @@ func render(oldPath, newPath, oldMicro, newMicro string, sameRunner bool) (strin
 	b.WriteString("<!-- supercache-bench-comment -->\n")
 	b.WriteString("## SuperCache bench vs `main`\n\n")
 	if sameRunner {
-		b.WriteString("Both sides ran on **this same GitHub runner** (checkout `main`, then this PR). Each side is the **average of 3 runs**. Remaining noise is mostly run-to-run on one VM, not two different machines.\n\n")
+		b.WriteString("Both sides ran **once on this same GitHub runner** (`main`, then this PR). Not a merge gate.\n\n")
 	} else {
-		b.WriteString("Each number is the **average of 3 runs**. Comparing **different** `ubuntu-latest` VMs is noisy; treat large swings without code changes as infrastructure, not SuperCache.\n\n")
+		b.WriteString("Single-run compare. Different GitHub VMs are noisy; prefer same-runner PR comments.\n\n")
 	}
 	if prev == nil {
 		b.WriteString("_No previous `bench-smoke` artifact on `main` yet — showing this PR only._\n\n")
@@ -140,19 +104,19 @@ func render(oldPath, newPath, oldMicro, newMicro string, sameRunner bool) (strin
 		label := k
 		if o == nil {
 			fmt.Fprintf(&b, "| `%s` | — → **%.0f** | n/a | %s | %s |\n",
-				label, n.avgOps(), dur(n.avgP50()), dur(n.avgP99()))
+				label, n.MedianOpsPerSec, dur(n.MedianP50), dur(n.MedianP99))
 			continue
 		}
-		dOps := pct(o.avgOps(), n.avgOps(), true)
+		dOps := pct(o.MedianOpsPerSec, n.MedianOpsPerSec, true)
 		fmt.Fprintf(&b, "| `%s` | %.0f → **%.0f** | %s | %s → %s | %s → %s |\n",
-			label, o.avgOps(), n.avgOps(), dOps,
-			dur(o.avgP50()), dur(n.avgP50()),
-			dur(o.avgP99()), dur(n.avgP99()))
+			label, o.MedianOpsPerSec, n.MedianOpsPerSec, dOps,
+			dur(o.MedianP50), dur(n.MedianP50),
+			dur(o.MedianP99), dur(n.MedianP99))
 	}
 	b.WriteString("\nΔ ops/s: **green-ish** is higher throughput. Latency: lower is better.\n\n")
 
 	if newMicro != "" {
-		b.WriteString("### `go test -bench` (avg ns/op over 3 counts)\n\n")
+		b.WriteString("### `go test -bench` (ns/op)\n\n")
 		curM, err := parseMicro(newMicro)
 		if err != nil {
 			fmt.Fprintf(&b, "_could not parse new micro.txt: %v_\n\n", err)
@@ -294,8 +258,7 @@ func parseMicro(path string) (map[string]microRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	sum := map[string]microRow{}
-	n := map[string]int{}
+	out := map[string]microRow{}
 	for _, line := range strings.Split(string(b), "\n") {
 		m := benchLine.FindStringSubmatch(line)
 		if m == nil {
@@ -306,20 +269,7 @@ func parseMicro(path string) (map[string]microRow, error) {
 		if m[3] != "" {
 			al, _ = strconv.ParseFloat(m[3], 64)
 		}
-		name := m[1]
-		s := sum[name]
-		s.nsPerOp += ns
-		s.allocs += al
-		sum[name] = s
-		n[name]++
-	}
-	out := map[string]microRow{}
-	for name, s := range sum {
-		c := float64(n[name])
-		if c == 0 {
-			continue
-		}
-		out[name] = microRow{nsPerOp: s.nsPerOp / c, allocs: s.allocs / c}
+		out[m[1]] = microRow{nsPerOp: ns, allocs: al}
 	}
 	return out, nil
 }
