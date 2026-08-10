@@ -1,10 +1,9 @@
 # SuperCache — Architecture Plan
 
 **Project:** `supercache`  
-**Status:** Implementation baseline (post architect review)  
-**Module path (proposed):** `github.com/Code0987/supercache` (adjust to org as needed)
+**Module:** `github.com/Code0987/supercache`
 
-This document freezes product intent and the technical decisions required to implement v1 without inventing major design mid-flight.
+This document freezes product intent and the technical decisions for v1.
 
 ---
 

@@ -5,9 +5,9 @@
 | **Document** | SuperCache benchmarking matrix |
 | **Author** | SuperCache |
 | **Date** | 2026-08-08 |
-| **Status** | Draft (rev 3) |
+| **Status** | Implemented (rev 3; PR plan below is historical) |
 | **Module** | `github.com/Code0987/supercache` |
-| **Audience** | SuperCache maintainers implementing the matrix |
+| **Audience** | SuperCache maintainers |
 
 ---
 

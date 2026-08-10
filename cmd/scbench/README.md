@@ -101,7 +101,7 @@ go run ./cmd/scbench-diff -old prev/smoke.json -new smoke.json \
 | `-sample-cap` | 262144 | Max latency samples per trial (exact sum across workers) |
 | `-require-hit` | false | Get not-found is an error (off for `-compare` / mixed) |
 | `-op` | get | `get` \| `set` \| `mixed` \| `delete` \| `miss` |
-| `-miss-mode` | cacheonly | `cacheonly` only until `-embed` |
+| `-miss-mode` | cacheonly | `cacheonly` \| `loadthrough` (`loadthrough` needs `-embed`) |
 | `-dist` | uniform | `uniform` \| `zipf` |
 | `-zipf-s` | 1.1 | Zipf exponent |
 | `-read-ratio` | 0.95 | Mixed GET fraction |

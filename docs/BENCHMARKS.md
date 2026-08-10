@@ -54,7 +54,7 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 - **Get-hit allocs/op** is dominated by `CloneValue` (~1 alloc). A jump to 5+ is a real regression.
 - **CacheOnly miss** should be cheaper than hit (no value copy).
 - **LoadThrough miss** is DS + failed fill every op, not `ForceLoad` refresh-ahead.
-- Cluster3 Engine benches are local-only (PR 8); not in CI.
+- Cluster3 Engine benches are local-only; not in CI.
 
 In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scripts/bench-ci.sh` (micro + `bench/ci-smoke.yaml`). Laptop/full: `bash scripts/bench-local.sh laptop|full`.
 

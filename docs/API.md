@@ -5,7 +5,7 @@
 | Where | URL |
 |-------|-----|
 | **On a running node** | `http://<admin-addr>/docs` (default `http://127.0.0.1:8080/docs`) |
-| **GitHub Pages** | `https://code0987.github.io/supercache/` (after Pages is enabled) |
+| **GitHub Pages** | `https://code0987.github.io/supercache/` |
 | **OpenAPI YAML (admin)** | `/openapi.yaml` or `/docs/admin.openapi.yaml` |
 | **OpenAPI YAML (cache ref)** | `/docs/cache.openapi.yaml` |
 

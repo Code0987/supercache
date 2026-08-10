@@ -2,15 +2,20 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-**Status:** Milestone 6 — polish (client API, docs, chaos tests)
-
-See [PLAN.md](./PLAN.md) for architecture, [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md) for cluster Mermaid flows, [docs/OPERATIONS.md](./docs/OPERATIONS.md) for ops, [docs/API.md](./docs/API.md) for API docs, and [docs/RELEASING.md](./docs/RELEASING.md) for versioned GitHub Releases.
-
-## Module
+In-process Engine or dedicated nodes. Owner Put with async fan-out, local reads, gossip membership, load-through keyspaces, and a bounded per-node LRU.
 
 ```text
 github.com/Code0987/supercache
 ```
+
+| Topic | Link |
+|-------|------|
+| Architecture | [PLAN.md](./PLAN.md) |
+| Cluster flows | [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md) |
+| Operations | [docs/OPERATIONS.md](./docs/OPERATIONS.md) |
+| API | [docs/API.md](./docs/API.md) · [Swagger](https://code0987.github.io/supercache/) |
+| Benchmarks | [docs/BENCHMARKS.md](./docs/BENCHMARKS.md) |
+| Releases | [docs/RELEASING.md](./docs/RELEASING.md) · [GitHub Releases](https://github.com/Code0987/supercache/releases) |
 
 ## Quick start
 
@@ -73,14 +78,23 @@ go run ./cmd/sc
 
 Install: `go install ./cmd/sc`. See [cmd/sc/README.md](./cmd/sc/README.md).
 
-### Bench vs Redis
+### Benchmarks
+
+Local SuperCache vs Redis (multi-trial medians):
 
 ```bash
 # Redis (memory-only) + SuperCache node in other terminals, then:
 go run ./cmd/scbench -reliable -json=bench-report.json
 ```
 
-Multi-trial medians, get/set/mixed suite, comparison table. See [cmd/scbench/README.md](./cmd/scbench/README.md) and [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
+In-process matrix (no external node):
+
+```bash
+go run ./cmd/scbench -tier=laptop -json=laptop.json
+# or: bash scripts/bench-local.sh laptop
+```
+
+CI runs the smoke suite once per side on the same GitHub runner and comments the diff on pull requests (not a merge gate). See [cmd/scbench/README.md](./cmd/scbench/README.md) and [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
 
 ### Music trending billboard (cluster demo)
 
@@ -100,7 +114,7 @@ go run ./cmd/supercache-node -cluster -node-id n1 \
   ...
 ```
 
-Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md`.
+Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
 ## Packages
 
@@ -118,17 +132,20 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See `docs/OPERATIONS.md
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `internal/ring` | Consistent hash |
-| `internal/peer` | Peer client pool + fan-out |
-| `internal/peerserver` | Peer gRPC service |
-| `internal/cacheserver` | Application Cache gRPC service |
 | `cmd/supercache-node` | Node binary |
 | `cmd/sc` | CLI for get/put/del + admin diagnostics |
-| `cmd/scbench` | SuperCache vs Redis load harness |
+| `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
-## Consistency (short)
+## Consistency
 
-SuperCache is **eventually consistent**. Put ACKs on owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads. Details: `PLAN.md` §3 and `docs/OPERATIONS.md`.
+SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads.
+
+- Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
+- Peer port and Cache port are separate; do not expose Peer to applications.
+- `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
+- Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
+
+Details: [PLAN.md](./PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
 ## Releases
 
@@ -151,10 +168,3 @@ See [docs/RELEASING.md](./docs/RELEASING.md). Downloads: [GitHub Releases](https
 ```bash
 go test ./... -race
 ```
-
-## Design notes
-
-- Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
-- Peer port and Cache port are separate; do not expose Peer to applications.
-- `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
-- Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See `docs/CLUSTER_FLOWS.md`.
