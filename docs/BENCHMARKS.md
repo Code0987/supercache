@@ -60,6 +60,8 @@ In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scrip
 
 On pull requests, the `bench` job diffs `smoke.json` / `micro.txt` against the latest **`main`** `bench-smoke` artifact and posts (or updates) a sticky PR comment. That is **not** a merge gate. First PR after this lands has no baseline until `main` has produced an artifact.
 
+Read the comment as: ops/s up is better; ns/op down is better. Moves under ~15–20% on `ubuntu-latest` are usually noise.
+
 ### Fairness
 
 | OK | Not OK |
