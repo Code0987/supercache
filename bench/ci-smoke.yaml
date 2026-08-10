@@ -1,7 +1,7 @@
 # CI smoke — 6×1-node + 3-node get-hit (after PrefillAll).
 tier: smoke
 gomaxprocs: 2
-trials: 1
+trials: 3
 duration: 3s
 warmup: 1s
 keys: 5000
