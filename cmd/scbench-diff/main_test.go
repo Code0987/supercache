@@ -36,7 +36,15 @@ func TestRenderDelta(t *testing.T) {
 	mustWrite(t, newP, `{
 	  "git_sha": "2222222",
 	  "generated_at": "t1",
-	  "runs": [{"op":"get","path":"hit","nodes":1,"concurrency":10,"dist":"uniform","median_ops_per_sec":800,"median_p50_ns":500000,"median_p99_ns":900000}]
+	  "runs": [{
+	    "op":"get","path":"hit","nodes":1,"concurrency":10,"dist":"uniform",
+	    "median_ops_per_sec":800,
+	    "trials":[
+	      {"ops_per_sec":700,"p50_ns":500000,"p99_ns":900000},
+	      {"ops_per_sec":800,"p50_ns":500000,"p99_ns":900000},
+	      {"ops_per_sec":900,"p50_ns":500000,"p99_ns":900000}
+	    ]
+	  }]
 	}`)
 	md, err := render(oldP, newP, "", "")
 	if err != nil {
@@ -50,14 +58,14 @@ func TestRenderDelta(t *testing.T) {
 func TestParseMicro(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "micro.txt")
-	mustWrite(t, p, "BenchmarkStoreGetHit-2\t111188\t486.5 ns/op\t271 B/op\t2 allocs/op\nPASS\n")
+	mustWrite(t, p, "BenchmarkStoreGetHit-2\t1\t400 ns/op\t271 B/op\t2 allocs/op\nBenchmarkStoreGetHit-2\t1\t500 ns/op\t271 B/op\t4 allocs/op\nPASS\n")
 	m, err := parseMicro(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	row, ok := m["BenchmarkStoreGetHit"]
-	if !ok || row.nsPerOp < 480 || row.allocs != 2 {
-		t.Fatalf("%+v", m)
+	if !ok || row.nsPerOp != 450 || row.allocs != 3 {
+		t.Fatalf("%+v", row)
 	}
 }
 

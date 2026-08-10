@@ -8,7 +8,7 @@ go test ./pkg/store ./pkg/engine \
   -run=^$ \
   -bench='Benchmark(Store|Engine)' \
   -skip=Cluster3 \
-  -benchmem -benchtime=200ms -count=1 \
+  -benchmem -benchtime=200ms -count=3 \
   -timeout=5m \
   | tee micro.txt
 
