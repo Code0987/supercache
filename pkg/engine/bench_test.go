@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Code0987/supercache/internal/benchmetrics"
+	"github.com/Code0987/supercache/internal/testcluster"
 	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/engine"
 	"github.com/Code0987/supercache/pkg/keyspace"
@@ -268,6 +269,59 @@ func BenchmarkEngineDelete(b *testing.B) {
 		if (i+1)%benchKeys == 0 {
 			b.StopTimer()
 			prefill(b, e, val)
+			b.StartTimer()
+		}
+	}
+	b.StopTimer()
+	benchmetrics.ReportB(b, before, benchmetrics.Read())
+}
+
+func BenchmarkEnginePutCluster3(b *testing.B) {
+	cl, err := testcluster.Start(testcluster.Config{Nodes: 3})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer cl.Close()
+	e := cl.Nodes()[0].Engine
+	val := benchValue()
+	ctx := context.Background()
+	b.SetBytes(benchValueSize)
+	b.ReportAllocs()
+	b.ResetTimer()
+	before := benchmetrics.Read()
+	for i := 0; i < b.N; i++ {
+		if err := e.Put(ctx, "bench", fmt.Sprintf("k%d", i%benchKeys), val); err != nil {
+			b.Fatal(err)
+		}
+	}
+	reportLoop(b, before)
+}
+
+func BenchmarkEngineDeleteCluster3(b *testing.B) {
+	cl, err := testcluster.Start(testcluster.Config{Nodes: 3})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer cl.Close()
+	e := cl.Nodes()[0].Engine
+	val := benchValue()
+	ctx := context.Background()
+	for i := 0; i < benchKeys; i++ {
+		_ = e.Put(ctx, "bench", fmt.Sprintf("k%d", i), val)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	before := benchmetrics.Read()
+	for i := 0; i < b.N; i++ {
+		err := e.Delete(ctx, "bench", fmt.Sprintf("k%d", i%benchKeys))
+		if err != nil && !errors.Is(err, engine.ErrNotFound) {
+			b.Fatal(err)
+		}
+		if (i+1)%benchKeys == 0 {
+			b.StopTimer()
+			for j := 0; j < benchKeys; j++ {
+				_ = e.Put(ctx, "bench", fmt.Sprintf("k%d", j), val)
+			}
 			b.StartTimer()
 		}
 	}

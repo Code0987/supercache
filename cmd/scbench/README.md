@@ -68,7 +68,17 @@ go run ./cmd/scbench -backend=supercache -op=miss -prefill=false -trials=1 -dura
 go run ./cmd/scbench -backend=supercache -op=delete -trials=1 -duration=5s
 ```
 
-LoadThrough miss (`-miss-mode=loadthrough`) needs `-embed` (not in this release).
+LoadThrough miss (`-miss-mode=loadthrough`) needs `-embed`.
+
+```bash
+# In-process cluster (no external node)
+go run ./cmd/scbench -embed -nodes=3 -op=get -require-hit -concurrency=10 -duration=3s -warmup=1s
+
+# Presets
+go run ./cmd/scbench -tier=smoke -json=smoke.json
+go run ./cmd/scbench -tier=laptop -json=laptop.json
+bash scripts/bench-local.sh laptop
+```
 
 ## Flags
 

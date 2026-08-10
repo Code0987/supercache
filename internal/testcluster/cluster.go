@@ -16,6 +16,7 @@ import (
 	"github.com/Code0987/supercache/internal/peerserver"
 	"github.com/Code0987/supercache/internal/ring"
 	"github.com/Code0987/supercache/pkg/client"
+	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/engine"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
@@ -60,11 +61,27 @@ type Cluster struct {
 	rt []runtimeNode
 }
 
+// CacheOnlyBench is the default CacheOnly keyspace for embed benches.
+func CacheOnlyBench() keyspace.Config {
+	return keyspace.Config{
+		Name: "bench", Mode: keyspace.ModeCacheOnly,
+		MaxBytes: 64 << 20, TTL: time.Hour,
+	}
+}
+
+// LoadThroughBench is LoadThrough with MaxBytes=1MiB so lastVer prune stays cheap.
+func LoadThroughBench(src datasource.DataSource) keyspace.Config {
+	return keyspace.Config{
+		Name: "benchlt", Mode: keyspace.ModeLoadThrough,
+		MaxBytes: 1 << 20, TTL: time.Hour, DataSource: src,
+	}
+}
+
 // Start listens, builds a shared ring, and attaches peer transport.
-// Supported N for v1 of this package: 1 or 3 (10-node soak is a later PR).
+// Nodes must be 1, 3, or 10.
 func Start(cfg Config) (*Cluster, error) {
-	if cfg.Nodes != 1 && cfg.Nodes != 3 {
-		return nil, fmt.Errorf("testcluster: Nodes must be 1 or 3, got %d", cfg.Nodes)
+	if cfg.Nodes != 1 && cfg.Nodes != 3 && cfg.Nodes != 10 {
+		return nil, fmt.Errorf("testcluster: Nodes must be 1, 3, or 10, got %d", cfg.Nodes)
 	}
 	if cfg.VNodes <= 0 {
 		cfg.VNodes = 32

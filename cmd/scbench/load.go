@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -35,6 +36,8 @@ type loadConfig struct {
 	collectRuntime bool
 	requireHit     bool
 	sampleCap      int
+	uniqueKeys     bool
+	seq            *atomic.Int64
 }
 
 type trialResult struct {
@@ -161,13 +164,18 @@ func runLoad(ctx context.Context, store kvStore, cfg loadConfig) (trialResult, e
 				if ctx.Err() != nil {
 					return
 				}
-				var idx int
-				if zipf != nil {
-					idx = zipf.Next(rng)
+				var key string
+				if cfg.uniqueKeys && cfg.seq != nil {
+					key = fmt.Sprintf("%s%d", cfg.prefix, cfg.seq.Add(1))
 				} else {
-					idx = int(rng.Uint64() % uint64(cfg.keys))
+					var idx int
+					if zipf != nil {
+						idx = zipf.Next(rng)
+					} else {
+						idx = int(rng.Uint64() % uint64(cfg.keys))
+					}
+					key = fmt.Sprintf("%s%d", cfg.prefix, idx)
 				}
-				key := fmt.Sprintf("%s%d", cfg.prefix, idx)
 
 				t0 := time.Now()
 				var err error

@@ -23,25 +23,34 @@ type runRecord struct {
 	Dist        string        `json:"dist"`
 	Trials      []trialResult `json:"trials"`
 	// Aggregates across trials (median of each metric)
-	MedianOpsPerSec float64       `json:"median_ops_per_sec"`
-	MedianP50       time.Duration `json:"median_p50_ns"`
-	MedianP95       time.Duration `json:"median_p95_ns"`
-	MedianP99       time.Duration `json:"median_p99_ns"`
-	MedianP999      time.Duration `json:"median_p999_ns"`
-	MinOpsPerSec    float64       `json:"min_ops_per_sec"`
-	MaxOpsPerSec    float64       `json:"max_ops_per_sec"`
+	MedianOpsPerSec float64              `json:"median_ops_per_sec"`
+	MedianP50       time.Duration        `json:"median_p50_ns"`
+	MedianP95       time.Duration        `json:"median_p95_ns"`
+	MedianP99       time.Duration        `json:"median_p99_ns"`
+	MedianP999      time.Duration        `json:"median_p999_ns"`
+	MinOpsPerSec    float64              `json:"min_ops_per_sec"`
+	MaxOpsPerSec    float64              `json:"max_ops_per_sec"`
 	MedianProc      *benchmetrics.Report `json:"median_proc,omitempty"`
+	Nodes           int                  `json:"nodes,omitempty"`
+	Conns           int                  `json:"conns,omitempty"`
+	Sticky          bool                 `json:"sticky,omitempty"`
+	Path            string               `json:"path,omitempty"`
+	Embed           bool                 `json:"embed,omitempty"`
+	FanoutErrors    uint64               `json:"fanout_errors,omitempty"`
+	FanoutDropped   uint64               `json:"fanout_dropped,omitempty"`
+	HintsFlushed    uint64               `json:"hints_flushed,omitempty"`
+	HintsDropped    uint64               `json:"hints_dropped,omitempty"`
 }
 
 type suiteReport struct {
-	SchemaVersion int            `json:"schema_version"`
-	GeneratedAt   string         `json:"generated_at"`
-	GitSHA        string         `json:"git_sha,omitempty"`
-	GOMAXPROCS    int            `json:"gomaxprocs"`
-	GoVersion     string         `json:"go_version"`
-	NumCPU        int            `json:"num_cpu"`
-	Note          string         `json:"note"`
-	Runs          []runRecord    `json:"runs"`
+	SchemaVersion int         `json:"schema_version"`
+	GeneratedAt   string      `json:"generated_at"`
+	GitSHA        string      `json:"git_sha,omitempty"`
+	GOMAXPROCS    int         `json:"gomaxprocs"`
+	GoVersion     string      `json:"go_version"`
+	NumCPU        int         `json:"num_cpu"`
+	Note          string      `json:"note"`
+	Runs          []runRecord `json:"runs"`
 }
 
 func latencyStats(ds []time.Duration) (p50, p95, p99, p999, mean time.Duration) {
@@ -72,7 +81,7 @@ func latencyStats(ds []time.Duration) (p50, p95, p99, p999, mean time.Duration) 
 }
 
 type trialAgg struct {
-	medOps, minOps, maxOps           float64
+	medOps, minOps, maxOps          float64
 	medP50, medP95, medP99, medP999 time.Duration
 	medProc                         *benchmetrics.Report
 }
@@ -185,6 +194,10 @@ func printRunSummary(rec runRecord) {
 			time.Duration(p.GCP50Ns).Round(time.Microsecond),
 			time.Duration(p.GCP99Ns).Round(time.Microsecond),
 			p.GCFrac)
+	}
+	if rec.Embed {
+		fmt.Printf("         embed nodes=%d path=%s sticky=%v fanout_err=%d fanout_drop=%d hints_drop=%d\n",
+			rec.Nodes, rec.Path, rec.Sticky, rec.FanoutErrors, rec.FanoutDropped, rec.HintsDropped)
 	}
 	fmt.Println()
 }

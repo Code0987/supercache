@@ -110,7 +110,22 @@ func TestRejectBadNodeCount(t *testing.T) {
 	if _, err := Start(Config{Nodes: 2}); err == nil {
 		t.Fatal("want error for N=2")
 	}
-	if _, err := Start(Config{Nodes: 10}); err == nil {
-		t.Fatal("N=10 reserved for later PR")
+}
+
+func TestStartClose10(t *testing.T) {
+	c, err := Start(Config{Nodes: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if len(c.CacheAddrs()) != 10 {
+		t.Fatalf("addrs=%d", len(c.CacheAddrs()))
+	}
+	ctx := context.Background()
+	if err := c.PrefillAll(ctx, "bench", "t:", 20, []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.VerifyLocalHits(ctx, "bench", "t:", 20, 5); err != nil {
+		t.Fatal(err)
 	}
 }

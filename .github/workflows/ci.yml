@@ -22,3 +22,32 @@ jobs:
         run: |
           python3 scripts/parse-release-commit_test.py
           python3 scripts/check-release-version_test.py
+
+  bench:
+    runs-on: ubuntu-latest
+    env:
+      GOMAXPROCS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Micro + smoke
+        run: bash scripts/bench-ci.sh
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-smoke
+          path: |
+            micro.txt
+            smoke.json
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## Bench smoke"
+            echo '```'
+            tail -n 40 micro.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

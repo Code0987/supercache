@@ -1,0 +1,21 @@
+# CI smoke — 6×1-node + 3-node get-hit (after PrefillAll).
+tier: smoke
+gomaxprocs: 2
+trials: 1
+duration: 3s
+warmup: 1s
+keys: 5000
+value_bytes: 256
+dist: uniform
+seed: 42
+embed: true
+collect_runtime: true
+conns: 1
+cells:
+  - { op: get,  path: hit,            nodes: 1, concurrency: 1 }
+  - { op: get,  path: hit,            nodes: 1, concurrency: 10 }
+  - { op: set,  path: put,            nodes: 1, concurrency: 1 }
+  - { op: set,  path: put,            nodes: 1, concurrency: 10 }
+  - { op: miss, path: miss-cacheonly, nodes: 1, concurrency: 1 }
+  - { op: miss, path: miss-cacheonly, nodes: 1, concurrency: 10 }
+  - { op: get,  path: hit,            nodes: 3, concurrency: 10 }

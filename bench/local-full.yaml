@@ -1,0 +1,43 @@
+# Full local matrix (headline 24 + optional delete + zipf).
+tier: full
+trials: 3
+duration: 15s
+warmup: 5s
+keys: 50000
+value_bytes: 256
+dist: uniform
+seed: 42
+embed: true
+collect_runtime: true
+conns: 1
+cells:
+  # 1-node (12)
+  - { op: get,  path: hit,                 nodes: 1, concurrency: 1 }
+  - { op: get,  path: hit,                 nodes: 1, concurrency: 10 }
+  - { op: get,  path: hit,                 nodes: 1, concurrency: 100 }
+  - { op: get,  path: hit,                 nodes: 1, concurrency: 1000 }
+  - { op: set,  path: put,                 nodes: 1, concurrency: 1 }
+  - { op: set,  path: put,                 nodes: 1, concurrency: 10 }
+  - { op: set,  path: put,                 nodes: 1, concurrency: 100 }
+  - { op: set,  path: put,                 nodes: 1, concurrency: 1000 }
+  - { op: miss, path: miss-cacheonly,      nodes: 1, concurrency: 1 }
+  - { op: miss, path: miss-cacheonly,      nodes: 1, concurrency: 10 }
+  - { op: miss, path: miss-cacheonly,      nodes: 1, concurrency: 100 }
+  - { op: miss, path: miss-loadthrough,    nodes: 1, concurrency: 10 }
+  # 3-node (8)
+  - { op: get,  path: hit,                 nodes: 3, concurrency: 1 }
+  - { op: get,  path: hit,                 nodes: 3, concurrency: 10 }
+  - { op: get,  path: hit,                 nodes: 3, concurrency: 100 }
+  - { op: set,  path: put,                 nodes: 3, concurrency: 10 }
+  - { op: set,  path: put,                 nodes: 3, concurrency: 100 }
+  - { op: miss, path: miss-cacheonly,      nodes: 3, concurrency: 10 }
+  - { op: miss, path: miss-loadthrough,    nodes: 3, concurrency: 10 }
+  - { op: get,  path: hit,                 nodes: 3, concurrency: 100, sticky: true }
+  # 10-node (4)
+  - { op: get,  path: hit,                 nodes: 10, concurrency: 10 }
+  - { op: get,  path: hit,                 nodes: 10, concurrency: 100 }
+  - { op: set,  path: put,                 nodes: 10, concurrency: 10 }
+  - { op: set,  path: put,                 nodes: 10, concurrency: 100 }
+  # extras (not in headline 24)
+  - { op: delete, path: delete,            nodes: 1, concurrency: 100 }
+  - { op: get, path: hit, nodes: 1, concurrency: 100, dist: zipf }
