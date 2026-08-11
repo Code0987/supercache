@@ -10,7 +10,7 @@ github.com/Code0987/supercache
 
 | Topic | Link |
 |-------|------|
-| Architecture | [PLAN.md](./PLAN.md) |
+| Architecture | [docs/PLAN.md](./docs/PLAN.md) |
 | Cluster flows | [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md) |
 | Operations | [docs/OPERATIONS.md](./docs/OPERATIONS.md) |
 | API | [docs/API.md](./docs/API.md) · [Swagger](https://code0987.github.io/supercache/) |
@@ -146,7 +146,7 @@ SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
 
-Details: [PLAN.md](./PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
+Details: [docs/PLAN.md](./docs/PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
 ## Releases
 

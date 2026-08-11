@@ -57,7 +57,7 @@ which expands to `-compare -suite -trials=5 -duration=20s -warmup=5s -keys=50000
 - **Wrong tool for CPU/allocs.** `testing.B` is the only honest way to get allocs/op and B/op. Applying those labels to gRPC wall time would be fabricated.
 - **Combinatorial waste.** Local Delete on a 10-node cluster does not answer a product question. CacheOnly miss latency barely changes from 1→10 nodes (no SoT, no fan-out). 1k workers on 10 in-process nodes is a scheduler experiment, not a cache experiment.
 - **CI honesty.** `ubuntu-latest` is noisy and small. 1k × 10 × 20 s × 5 trials is not a CI job.
-- **Put ACK ≠ replicated.** `PLAN.md` §2: owner apply + ACK, **async** full-mesh `ApplyPut`. A 10-node Put bench that ignores `FanoutDropped` will look “fast” while the hint queue melts.
+- **Put ACK ≠ replicated.** `docs/PLAN.md` §2: owner apply + ACK, **async** full-mesh `ApplyPut`. A 10-node Put bench that ignores `FanoutDropped` will look “fast” while the hint queue melts.
 
 ---
 
@@ -205,7 +205,7 @@ connIdx = workerID % conns
 
 #### Hit vs miss
 
-CacheOnly `Get` after a local store miss returns `ErrNotFound` immediately (`pkg/engine/engine.go` ~256–258). It never owner-forwards. PLAN.md §2: reads are served from **local observation** on the node that was queried.
+CacheOnly `Get` after a local store miss returns `ErrNotFound` immediately (`pkg/engine/engine.go` ~256–258). It never owner-forwards. `docs/PLAN.md` §2: reads are served from **local observation** on the node that was queried.
 
 | Label | Keyspace | Prefill | Op | Success |
 |-------|----------|---------|----|---------|
@@ -1071,7 +1071,7 @@ See **PR Plan**. Each PR is mergeable: tests pass without the next PR.
 - `internal/peer/transport.go` `FanoutConfig` / `FanoutPool`
 - `internal/ring/ring.go` `SetPeers`
 - `cmd/supercache-node/main.go` (production fan-out defaults, gossip — **not** used by matrix)
-- `PLAN.md` §2 (async fan-out, N × hot set, read-QPS scale-out)
+- `docs/PLAN.md` §2 (async fan-out, N × hot set, read-QPS scale-out)
 - `.github/workflows/ci.yml`
 - Go 1.22 `runtime/metrics` (`/gc/pauses:seconds`, `/cpu/classes/*`, `/gc/heap/allocs:*`)
 
