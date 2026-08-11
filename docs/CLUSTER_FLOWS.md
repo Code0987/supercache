@@ -81,12 +81,12 @@ flowchart TD
 
   OWN -->|yes| APPLY["nextVersion(key)<br/>store.AcceptIfNewer"]
   APPLY --> ACK["ACK to client"]
-  ACK --> FAN["async ApplyPut to all peers except self<br/>no retry — log/metric on fail"]
+  ACK --> FAN["async ApplyPut to R−1 replicas<br/>no retry — log/metric on fail"]
 
   OWN -->|no| FWD["ForwardPut to owner<br/>hop_count = 0"]
   FWD --> OL["Owner PutLocalAtHop"]
   OL --> OACK["ACK back to Nx → client"]
-  OACK --> FAN2["Owner async ApplyPut × N−1"]
+  OACK --> FAN2["Owner async ApplyPut × R−1"]
 
   FAN --> PEER["Each peer: AcceptIfNewer LWW"]
   FAN2 --> PEER
@@ -105,7 +105,7 @@ flowchart TD
   E -->|ok| F["return"]
   E -->|fail| G["putLocalApply + forceFanout"]
   D -->|no| G
-  G --> H["Local apply + force ApplyPut<br/>to all peers"]
+  G --> H["Local apply + force ApplyPut<br/>to replica set"]
 ```
 
 ---
@@ -143,7 +143,7 @@ flowchart TD
   INST --> RET["return value or NotFound"]
   GOL -->|owner down| FB["local loadThrough<br/>no fan-out"]
 
-  LT -->|value| FILL["mint version + store<br/>async ApplyPut × N−1"]
+  LT -->|value| FILL["mint version + store<br/>async ApplyPut × R−1"]
   LT -->|NotFound| NFIL["optional negative + fan-out"]
   LT -->|error| E["error / Unavailable"]
   FILL --> R2["return value"]
@@ -217,7 +217,7 @@ flowchart LR
   DEL["Delete path"] --> AD
   NPUT["Non-owner Put"] --> FP
   NDEL["Non-owner Delete"] --> FDel
-  GET["LoadThrough miss"] --> GL
+  GET["LoadThrough / CacheOnly miss"] --> GL
 ```
 
 ---
@@ -255,7 +255,7 @@ flowchart TD
   REST --> W
 
   W --> REP["ReplicateToPeers<br/>fanoutPut force=true"]
-  REP --> AP["ApplyPut → all peers except self"]
+  REP --> AP["ApplyPut → replica set except self"]
   AP --> J["Receivers AcceptIfNewer<br/>joiner warms async"]
 ```
 
@@ -363,7 +363,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  P0["Put on owner"] --> P1["async ApplyPut × N−1"]
+  P0["Put on owner"] --> P1["async ApplyPut × R−1"]
   P1 --> P2["Steady: local Get hits<br/>on nodes that received fan-out"]
   P2 --> P3["Join: ring remap<br/>joiner cold then handoff"]
   P3 --> P4["Leave: remap<br/>survivors keep copies"]
@@ -387,7 +387,7 @@ flowchart TD
   E --> E8["Owner down on Get"]
   E --> E9["Owner down on ForwardPut"]
 
-  E1 --> A1["Owner apply + async ApplyPut × N−1"]
+  E1 --> A1["Owner apply + async ApplyPut × R−1"]
   E2 --> A2["Local store only"]
   E3 --> A3["NotFound"]
   E4 --> A4["Owner GetOrLoad → DS; install on caller"]

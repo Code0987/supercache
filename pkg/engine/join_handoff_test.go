@@ -363,10 +363,9 @@ func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 }
 
 func countLocalHits(e *engine.Engine, ks string, n int, keyAt func(int) string) int {
-	ctx := context.Background()
 	hits := 0
 	for i := 0; i < n; i++ {
-		if _, err := e.Get(ctx, ks, keyAt(i)); err == nil {
+		if e.HasLocal(ks, keyAt(i)) {
 			hits++
 		}
 	}

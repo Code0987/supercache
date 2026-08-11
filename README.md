@@ -138,7 +138,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 ## Consistency
 
-SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async. Delete is best-effort to all peers. Not for linearizable or transactional workloads.
+SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async to **R replicas** (default 3; `keyspace.Config.ReplicationFactor`). CacheOnly miss on a non-owner forwards to the owner. Delete is best-effort to the replica set. Not for linearizable or transactional workloads.
 
 - Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
 - Peer port and Cache port are separate; do not expose Peer to applications.

@@ -14,8 +14,8 @@ type Peer struct {
 
 // Ring is a consistent hash ring with virtual nodes.
 type Ring struct {
-	mu       sync.RWMutex
-	vnodes   int
+	mu     sync.RWMutex
+	vnodes int
 	// sorted hashes
 	keys     []uint64
 	hashToID map[uint64]string
@@ -102,6 +102,79 @@ func (r *Ring) PeersExcept(id string) []Peer {
 			continue
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+// Replicas returns up to n distinct peers for key, owner first, then clockwise
+// successors on the vnode ring. n<=0 yields nil. n>=peer count yields every peer.
+func (r *Ring) Replicas(key string, n int) []Peer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.replicasLocked(key, n)
+}
+
+// ReplicasExcept is Replicas with id removed.
+func (r *Ring) ReplicasExcept(key, id string, n int) []Peer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	reps := r.replicasLocked(key, n)
+	if id == "" || len(reps) == 0 {
+		return reps
+	}
+	out := make([]Peer, 0, len(reps))
+	for _, p := range reps {
+		if p.ID != id {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// IsReplica reports whether id is among the first n replicas for key.
+func (r *Ring) IsReplica(key, id string, n int) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if id == "" || n <= 0 || len(r.keys) == 0 {
+		return false
+	}
+	if n >= len(r.peers) {
+		_, ok := r.peers[id]
+		return ok
+	}
+	for _, p := range r.replicasLocked(key, n) {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Ring) replicasLocked(key string, n int) []Peer {
+	if n <= 0 || len(r.keys) == 0 || len(r.peers) == 0 {
+		return nil
+	}
+	if n > len(r.peers) {
+		n = len(r.peers)
+	}
+	h := hashString(key)
+	i := sort.Search(len(r.keys), func(i int) bool { return r.keys[i] >= h })
+	if i == len(r.keys) {
+		i = 0
+	}
+	out := make([]Peer, 0, n)
+	seen := make(map[string]struct{}, n)
+	for walked := 0; walked < len(r.keys) && len(out) < n; walked++ {
+		id := r.hashToID[r.keys[i]]
+		i++
+		if i == len(r.keys) {
+			i = 0
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, r.peers[id])
 	}
 	return out
 }

@@ -35,10 +35,33 @@ func (m Mode) String() string {
 
 // Default limits from PLAN §14.
 const (
-	DefaultMaxKeyLen   = 512
+	DefaultMaxKeyLen    = 512
 	DefaultMaxValueSize = 1 << 20 // 1 MiB
-	DefaultMaxBatch    = 100
+	DefaultMaxBatch     = 100
+	// DefaultReplicationFactor is used when Config.ReplicationFactor is 0.
+	DefaultReplicationFactor = 3
+	// ReplicationAll stores each key on every peer (legacy full mesh).
+	ReplicationAll = -1
 )
+
+// EffectiveReplication returns how many peers should store each key given
+// the current ring size.
+func (c Config) EffectiveReplication(peerCount int) int {
+	if peerCount <= 0 {
+		return 1
+	}
+	rf := c.ReplicationFactor
+	if rf < 0 {
+		return peerCount
+	}
+	if rf == 0 {
+		rf = DefaultReplicationFactor
+	}
+	if rf > peerCount {
+		return peerCount
+	}
+	return rf
+}
 
 // Config is a keyspace definition (local to a node).
 type Config struct {
@@ -60,6 +83,11 @@ type Config struct {
 	// MaxKeyLen / MaxValueSize override engine defaults when > 0.
 	MaxKeyLen    int
 	MaxValueSize int
+
+	// ReplicationFactor is how many ring members store each key (owner plus
+	// clockwise successors). 0 means DefaultReplicationFactor (3). Negative
+	// means every peer (legacy full-mesh). Always capped at cluster size.
+	ReplicationFactor int
 }
 
 // Validate checks config invariants.
@@ -79,40 +107,42 @@ func (c Config) Validate() error {
 // ConfigHash is a stable hash of non-function config fields for drift detection.
 func (c Config) ConfigHash() string {
 	type wire struct {
-		Name             string
-		Mode             int
-		TTL              time.Duration
-		NegativeTTL      time.Duration
-		MaxBytes         int64
-		LoadTimeout      time.Duration
-		PeerTimeout      time.Duration
-		WarmKeys         []string
-		RefreshInterval  time.Duration
-		RateLimitRPS     float64
-		BreakerRPS       float64
-		BreakerBurst     int
-		BreakerThreshold int
-		BreakerOpen      time.Duration
-		MaxKeyLen        int
-		MaxValueSize     int
+		Name              string
+		Mode              int
+		TTL               time.Duration
+		NegativeTTL       time.Duration
+		MaxBytes          int64
+		LoadTimeout       time.Duration
+		PeerTimeout       time.Duration
+		WarmKeys          []string
+		RefreshInterval   time.Duration
+		RateLimitRPS      float64
+		BreakerRPS        float64
+		BreakerBurst      int
+		BreakerThreshold  int
+		BreakerOpen       time.Duration
+		MaxKeyLen         int
+		MaxValueSize      int
+		ReplicationFactor int
 	}
 	b, _ := json.Marshal(wire{
-		Name:             c.Name,
-		Mode:             int(c.Mode),
-		TTL:              c.TTL,
-		NegativeTTL:      c.NegativeTTL,
-		MaxBytes:         c.MaxBytes,
-		LoadTimeout:      c.LoadTimeout,
-		PeerTimeout:      c.PeerTimeout,
-		WarmKeys:         c.WarmKeys,
-		RefreshInterval:  c.RefreshInterval,
-		RateLimitRPS:     c.RateLimitRPS,
-		BreakerRPS:       c.CircuitBreaker.RateLimitRPS,
-		BreakerBurst:     c.CircuitBreaker.Burst,
-		BreakerThreshold: c.CircuitBreaker.FailureThreshold,
-		BreakerOpen:      c.CircuitBreaker.OpenTimeout,
-		MaxKeyLen:        c.MaxKeyLen,
-		MaxValueSize:     c.MaxValueSize,
+		Name:              c.Name,
+		Mode:              int(c.Mode),
+		TTL:               c.TTL,
+		NegativeTTL:       c.NegativeTTL,
+		MaxBytes:          c.MaxBytes,
+		LoadTimeout:       c.LoadTimeout,
+		PeerTimeout:       c.PeerTimeout,
+		WarmKeys:          c.WarmKeys,
+		RefreshInterval:   c.RefreshInterval,
+		RateLimitRPS:      c.RateLimitRPS,
+		BreakerRPS:        c.CircuitBreaker.RateLimitRPS,
+		BreakerBurst:      c.CircuitBreaker.Burst,
+		BreakerThreshold:  c.CircuitBreaker.FailureThreshold,
+		BreakerOpen:       c.CircuitBreaker.OpenTimeout,
+		MaxKeyLen:         c.MaxKeyLen,
+		MaxValueSize:      c.MaxValueSize,
+		ReplicationFactor: c.ReplicationFactor,
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])

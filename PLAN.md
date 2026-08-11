@@ -42,11 +42,11 @@ v1 is an **eventually consistent, multi-replica cache**:
 
 | Concern | Behavior |
 |---------|----------|
-| **Memory** | Each node holds its own LRU-bounded working set. After successful fan-out, **hot keys tend to exist on every node**. Cluster memory ≈ **N × working set** for hot data, not working set / N. |
+| **Memory** | Each node holds its own LRU-bounded working set. After fan-out, a key exists on **R** ring members (owner + successors), not every node. Cluster memory ≈ **R × unique working set / N** per node. |
 | **Owner** | Consistent-hash **coordinator** for Put ACK, preferred miss-load coalescing, and version allocation — **not** a sole storage shard. |
-| **Reads** | Served from **local** observation on whichever node is queried (after fan-out or local load). |
-| **Writes** | Owner applies + assigns version → ACK → **async fan-out** `ApplyPut` to all other peers (no retry). |
-| **Scale-out value** | More nodes → more **read QPS** and HA when peers hold copies; **not** more unique key capacity for the hot set. |
+| **Reads** | Local hit if this node has a copy. CacheOnly miss **forwards to the owner** (replicas store the repair; non-replicas do not). |
+| **Writes** | Owner applies + assigns version → ACK → **async fan-out** `ApplyPut` to the other **R−1 replicas** (no retry). |
+| **Scale-out value** | More nodes → more **unique key capacity** (at fixed R) and more read QPS; HA is R copies, not N. |
 
 ### Capacity formula (ops)
 
@@ -56,7 +56,7 @@ hot_set_cluster   ≈ size of keys that stay hot longer than fan-out + TTL dynam
 effective_hot_cost ≈ hot_set_cluster × N   (worst case: full replication of hot set)
 ```
 
-**Hot keys cost O(value size) on every node** after fan-out. Size `MaxBytes` and TTLs so the **per-node** hot set fits; do not assume sharding multiplies capacity.
+**Each key costs O(R × value size)** after fan-out (`R = keyspace.ReplicationFactor`, default 3, cap N). Size `MaxBytes` for the slice of keys this node replicas; unique cluster capacity grows with N/R.
 
 ### Rejected for v1: true shard-only storage
 
@@ -70,7 +70,7 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 |-------|--------|
 | Language | **Go** |
 | Consistency | **Eventually consistent**, bounded by TTL / Delete / versioned LWW apply |
-| Peer write path | Owner ACK + **async full-mesh fan-out**; peer failures **logged, not retried, not returned** on Put |
+| Peer write path | Owner ACK + **async fan-out to R−1 replicas**; peer failures **logged, not retried, not returned** on Put |
 | Persistence | **None** |
 | Workload | **Read-heavy** |
 | Client API | **gRPC** `Cache` service + optional in-process Engine |
@@ -121,9 +121,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns the most recently **accepted** value **on the queried node** (subject to LWW version). May lag other nodes or the source-of-truth. |
-| **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to every other **currently known** peer. Non-owner peer failures: **log + metric only** (not in Put error). |
-| **Delete / DeleteMany** | **Best-effort cluster invalidate**: RPC `ApplyDelete` to owner and all other known peers. Returns **structured multi-error** if any peer fails/unreachable. Peers that did **not** apply may still serve the key until TTL, LRU, later Delete, or a newer versioned Put. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. |
+| **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). |
+| **Delete / DeleteMany** | **Best-effort replica invalidate**: RPC `ApplyDelete` to the other R−1 replicas. Returns **structured multi-error** if any replica fails/unreachable. Peers that did **not** apply may still serve the key until TTL, LRU, later Delete, or a newer versioned Put. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
@@ -657,7 +657,7 @@ Do **not** use SuperCache for:
 - Sole copy of irreplaceable data
 - Cross-key transactions
 - Assuming one `UpdateKeySpace` updates the whole cluster
-- Expecting cluster RAM capacity ≈ N × single-node for the **same** hot working set without budgeting N× replication
+- Expecting cluster RAM capacity ≈ N × single-node for the **same** hot working set without budgeting **R×** replication
 - Running every app replica as a gossip peer
 
 ---

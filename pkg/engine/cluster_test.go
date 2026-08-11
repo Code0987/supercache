@@ -79,7 +79,7 @@ func TestClusterPutFanout(t *testing.T) {
 		hits = 0
 		for i := 0; i < 20; i++ {
 			k := fmt.Sprintf("k-%d", i)
-			if _, err := engB.Get(ctx, "demo", k); err == nil {
+			if engB.HasLocal("demo", k) {
 				hits++
 			}
 		}
@@ -90,7 +90,7 @@ func TestClusterPutFanout(t *testing.T) {
 	}
 	if hits < 10 {
 		errN, dropN := engA.FanoutStats()
-		t.Fatalf("expected fan-out hits on B, got %d/20; fanout err/drop=%d/%d", hits, errN, dropN)
+		t.Fatalf("expected fan-out copies on B, got %d/20; fanout err/drop=%d/%d", hits, errN, dropN)
 	}
 
 	ok, err := engB.ApplyPut("demo", "manual", store.Entry{Value: []byte("x"), Version: 5})
@@ -1251,19 +1251,17 @@ filled:
 	}
 }
 
-// waitFanoutHits waits until eng has at least wantHits local hits for keys
-// produced by keyAt(0..nKeys-1). Prefer CacheOnly keyspaces so Get does not
-// mask missing fan-out via owner GetOrLoad.
+// waitFanoutHits waits until eng has at least wantHits local copies for keys
+// produced by keyAt(0..nKeys-1). Uses HasLocal so CacheOnly owner-forward
+// cannot mask a missing ApplyPut.
 func waitFanoutHits(t *testing.T, eng *engine.Engine, ks string, nKeys int, keyAt func(int) string, wantHits int, timeout time.Duration) {
 	t.Helper()
-	ctx := context.Background()
 	deadline := time.Now().Add(timeout)
 	var hits int
 	for time.Now().Before(deadline) {
 		hits = 0
 		for i := 0; i < nKeys; i++ {
-			k := keyAt(i)
-			if _, err := eng.Get(ctx, ks, k); err == nil {
+			if eng.HasLocal(ks, keyAt(i)) {
 				hits++
 			}
 		}
@@ -1273,5 +1271,5 @@ func waitFanoutHits(t *testing.T, eng *engine.Engine, ks string, nKeys int, keyA
 		time.Sleep(30 * time.Millisecond)
 	}
 	errN, dropN := eng.FanoutStats()
-	t.Fatalf("fan-out wait: hits=%d want>=%d; fanout err/drop=%d/%d", hits, wantHits, errN, dropN)
+	t.Fatalf("fan-out wait: local copies=%d want>=%d; fanout err/drop=%d/%d", hits, wantHits, errN, dropN)
 }

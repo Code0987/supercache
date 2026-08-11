@@ -105,7 +105,7 @@ func TestClusterPutFanoutOverMTLS(t *testing.T) {
 	for time.Now().Before(deadline) {
 		hits = 0
 		for i := 0; i < 10; i++ {
-			if _, err := engB.Get(ctx, "demo", fmt.Sprintf("tk-%d", i)); err == nil {
+			if engB.HasLocal("demo", fmt.Sprintf("tk-%d", i)) {
 				hits++
 			}
 		}
@@ -140,9 +140,9 @@ func mustLeaf2(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, cn s
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		DNSNames: dns, IPAddresses: ips,
+		DNSNames:    dns, IPAddresses: ips,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caKey)
 	if err != nil {

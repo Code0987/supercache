@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -127,16 +126,18 @@ func TestFanoutMissedWhilePeerDownIsRepairedOnReturn(t *testing.T) {
 
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		v, gerr := engB.Get(ctx, "demo", key)
-		if gerr == nil && string(v) == want {
-			return
+		if engB.HasLocal("demo", key) {
+			v, gerr := engB.Get(ctx, "demo", key)
+			if gerr == nil && string(v) == want {
+				return
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	v, gerr := engB.Get(ctx, "demo", key)
-	if errors.Is(gerr, engine.ErrNotFound) {
-		t.Fatalf("t6 B returned but still missing %s=%s (fanout err/drop=%d/%d); missed ApplyPut was not repaired",
-			key, want, ferr, fdrop)
+	if !engB.HasLocal("demo", key) {
+		t.Fatalf("t6 B returned but still no local copy of %s=%s (fanout err/drop=%d/%d); missed ApplyPut was not repaired (Get err=%v val=%q)",
+			key, want, ferr, fdrop, gerr, v)
 	}
 	t.Fatalf("t6 B Get: val=%q err=%v want %s", v, gerr, want)
 }

@@ -152,7 +152,7 @@ func (e *Engine) fanoutPut(keyspaceName, key string, ent store.Entry, force bool
 			return
 		}
 	}
-	peers := c.Ring.PeersExcept(c.SelfID)
+	peers := e.replicaPeers(c, keyspaceName, key, c.SelfID)
 	if len(peers) == 0 {
 		return
 	}
@@ -201,7 +201,7 @@ func (e *Engine) putViaCluster(ctx context.Context, keyspaceName, key string, va
 	return nil
 }
 
-// DeleteAsOwner mints a delete version, applies locally, and sync-RPCs all peers.
+// DeleteAsOwner mints a delete version, applies locally, and sync-RPCs the replica set.
 // Returns MultiError if any peer fails (local success still applied).
 func (e *Engine) DeleteAsOwner(ctx context.Context, keyspaceName, key string) error {
 	if err := ctx.Err(); err != nil {
@@ -227,7 +227,7 @@ func (e *Engine) DeleteAsOwner(ctx context.Context, keyspaceName, key string) er
 		return nil
 	}
 
-	peers := c.Ring.PeersExcept(c.SelfID)
+	peers := e.replicaPeers(c, keyspaceName, key, c.SelfID)
 	if len(peers) == 0 {
 		return nil
 	}
@@ -411,22 +411,82 @@ func (e *Engine) getViaCluster(ctx context.Context, ks *ksRuntime, key string) (
 		e.metrics.RecordOwnerFallback(ks.cfg.Name)
 		return e.loadThrough(ctx, ks, key, false)
 	}
+	storeLocal := e.holdsReplica(c, ks, key)
 	if !res.Found {
 		// Install owner's negative envelope when present (same version); do not remint.
-		if res.Entry.IsNegative() || res.Entry.Version > 0 {
-			_ = ks.store.AcceptNegative(key, res.Entry)
-		} else {
-			// Owner returned bare not-found without envelope (should be rare).
-			e.storeNegative(ks, key, false)
+		if storeLocal {
+			if res.Entry.IsNegative() || res.Entry.Version > 0 {
+				_ = ks.store.AcceptNegative(key, res.Entry)
+			} else {
+				// Owner returned bare not-found without envelope (should be rare).
+				e.storeNegative(ks, key, false)
+			}
 		}
 		return nil, ErrNotFound
 	}
-	// Install peer entry with same version (no new version).
+	// Install peer entry with same version (no new version) only on replicas.
 	if res.Entry.IsNegative() {
-		_ = ks.store.AcceptNegative(key, res.Entry)
+		if storeLocal {
+			_ = ks.store.AcceptNegative(key, res.Entry)
+		}
 		return nil, ErrNotFound
 	}
-	_ = ks.store.AcceptIfNewer(key, res.Entry)
+	if storeLocal {
+		_ = ks.store.AcceptIfNewer(key, res.Entry)
+	}
+	if res.Entry.Value == nil {
+		return []byte{}, nil
+	}
+	return append([]byte(nil), res.Entry.Value...), nil
+}
+
+// replicaPeers is the ApplyPut/ApplyDelete target set (replicas except id).
+func (e *Engine) replicaPeers(c *Cluster, keyspaceName, key, except string) []ring.Peer {
+	if c == nil || c.Ring == nil {
+		return nil
+	}
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return c.Ring.ReplicasExcept(key, except, keyspace.DefaultReplicationFactor)
+	}
+	rf := ks.cfg.EffectiveReplication(c.Ring.Len())
+	return c.Ring.ReplicasExcept(key, except, rf)
+}
+
+// holdsReplica reports whether this node should keep a local copy of key.
+func (e *Engine) holdsReplica(c *Cluster, ks *ksRuntime, key string) bool {
+	if c == nil || c.Ring == nil || ks == nil {
+		return true
+	}
+	return c.Ring.IsReplica(key, c.SelfID, ks.cfg.EffectiveReplication(c.Ring.Len()))
+}
+
+// fetchFromOwner is CacheOnly miss repair / proxy: GetOrLoad on the owner.
+// Replicas store the result; non-replicas return it without widening RF.
+func (e *Engine) fetchFromOwner(ctx context.Context, ks *ksRuntime, key string) ([]byte, error) {
+	c := e.clusterSnapshot()
+	if c == nil || c.Ring == nil {
+		return nil, ErrNotFound
+	}
+	owner, ok := c.Ring.Owner(key)
+	if !ok || owner.ID == "" || owner.ID == c.SelfID {
+		return nil, ErrNotFound
+	}
+	if c.Transport == nil || owner.Addr == "" {
+		return nil, ErrNotFound
+	}
+	pctx, cancel := e.peerCtx(ctx, ks)
+	defer cancel()
+	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, key)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	if !res.Found || res.Entry.IsNegative() {
+		return nil, ErrNotFound
+	}
+	if e.holdsReplica(c, ks, key) {
+		_ = ks.store.AcceptIfNewer(key, res.Entry)
+	}
 	if res.Entry.Value == nil {
 		return []byte{}, nil
 	}
@@ -440,6 +500,16 @@ func (e *Engine) FanoutStats() (errors, dropped uint64) {
 		return 0, 0
 	}
 	return c.Transport.FanoutErrors.Load(), c.Transport.FanoutDropped.Load()
+}
+
+// HasLocal reports a live positive local copy (no owner forward).
+func (e *Engine) HasLocal(keyspaceName, key string) bool {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return false
+	}
+	ent, ok := ks.store.Peek(key)
+	return ok && !ent.IsTombstone() && !ent.IsNegative()
 }
 
 // OwnerOf returns the ring owner for key (empty if single-node).

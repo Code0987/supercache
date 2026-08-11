@@ -7,17 +7,18 @@ import (
 
 // KeySpaceSnapshot is admin/JSON diagnostics for one keyspace.
 type KeySpaceSnapshot struct {
-	Name         string      `json:"name"`
-	Mode         string      `json:"mode"`
-	ConfigHash   string      `json:"config_hash"`
-	MaxBytes     int64       `json:"max_bytes"`
-	TTL          string      `json:"ttl"`
-	NegTTL       string      `json:"negative_ttl"`
-	Stats        store.Stats `json:"stats"`
-	Breaker      string      `json:"breaker_state"`
-	RateLimited  uint64      `json:"rate_limited"`
-	BreakerOpens uint64      `json:"breaker_opens"`
-	HotKeys      []string    `json:"hot_keys,omitempty"`
+	Name              string      `json:"name"`
+	Mode              string      `json:"mode"`
+	ConfigHash        string      `json:"config_hash"`
+	MaxBytes          int64       `json:"max_bytes"`
+	TTL               string      `json:"ttl"`
+	NegTTL            string      `json:"negative_ttl"`
+	Stats             store.Stats `json:"stats"`
+	Breaker           string      `json:"breaker_state"`
+	RateLimited       uint64      `json:"rate_limited"`
+	BreakerOpens      uint64      `json:"breaker_opens"`
+	HotKeys           []string    `json:"hot_keys,omitempty"`
+	ReplicationFactor int         `json:"replication_factor"`
 }
 
 // NodeID returns this node's identity (empty until SetNodeInfo / AttachCluster).
@@ -97,6 +98,13 @@ func (e *Engine) KeySpaceSnapshots() []KeySpaceSnapshot {
 		snap KeySpaceSnapshot
 	}
 	items := make([]tmp, 0, len(e.keyspaces))
+	peerN := 0
+	if e.cluster != nil && e.cluster.Ring != nil {
+		peerN = e.cluster.Ring.Len()
+	}
+	if peerN <= 0 {
+		peerN = 1
+	}
 	for _, ks := range e.keyspaces {
 		limited, opens := uint64(0), uint64(0)
 		state := "closed"
@@ -105,16 +113,17 @@ func (e *Engine) KeySpaceSnapshots() []KeySpaceSnapshot {
 			state = ks.guard.State()
 		}
 		items = append(items, tmp{snap: KeySpaceSnapshot{
-			Name:         ks.cfg.Name,
-			Mode:         ks.cfg.Mode.String(),
-			ConfigHash:   ks.cfg.ConfigHash(),
-			MaxBytes:     ks.cfg.MaxBytes,
-			TTL:          ks.cfg.TTL.String(),
-			NegTTL:       ks.cfg.NegativeTTL.String(),
-			Stats:        ks.store.Stats(),
-			Breaker:      state,
-			RateLimited:  limited,
-			BreakerOpens: opens,
+			Name:              ks.cfg.Name,
+			Mode:              ks.cfg.Mode.String(),
+			ConfigHash:        ks.cfg.ConfigHash(),
+			MaxBytes:          ks.cfg.MaxBytes,
+			TTL:               ks.cfg.TTL.String(),
+			NegTTL:            ks.cfg.NegativeTTL.String(),
+			Stats:             ks.store.Stats(),
+			Breaker:           state,
+			RateLimited:       limited,
+			BreakerOpens:      opens,
+			ReplicationFactor: ks.cfg.EffectiveReplication(peerN),
 		}})
 	}
 	rec := e.hitRecorder

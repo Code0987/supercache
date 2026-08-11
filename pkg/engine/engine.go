@@ -54,10 +54,10 @@ type Engine struct {
 	events    chan ClusterEvent
 	metrics   *telemetry.Metrics
 
-	nodeID   string
-	nodeAddr string
-	ringGen  uint64
-	closed   bool
+	nodeID       string
+	nodeAddr     string
+	ringGen      uint64
+	closed       bool
 	cluster      *Cluster
 	hitRecorder  HitRecorder
 	topoListener TopologyListener
@@ -254,8 +254,37 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	}
 
 	if ks.cfg.Mode == keyspace.ModeCacheOnly {
+		c := e.clusterSnapshot()
+		if c == nil || c.Ring == nil || c.Transport == nil {
+			e.metrics.RecordGet(keyspaceName, "miss")
+			return nil, ErrNotFound
+		}
+		// Replica repair / non-replica proxy: ask the owner. Do not treat a
+		// successful forward as a local hit; store only if we are a replica.
+		v, err, _ := ks.flight.Do("get:"+key, func() (any, error) {
+			if ent, ok := ks.store.Get(key); ok {
+				if ent.IsNegative() {
+					return nil, ErrNotFound
+				}
+				return ent.Value, nil
+			}
+			return e.fetchFromOwner(context.WithoutCancel(ctx), ks, key)
+		})
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				e.metrics.RecordGet(keyspaceName, "miss")
+			}
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if v == nil {
+			e.metrics.RecordGet(keyspaceName, "miss")
+			return nil, ErrNotFound
+		}
 		e.metrics.RecordGet(keyspaceName, "miss")
-		return nil, ErrNotFound
+		return v.([]byte), nil
 	}
 
 	// LoadThrough miss — owner GetOrLoad when clustered; else local fill.
@@ -648,8 +677,6 @@ func joinErrors(errs []error) error {
 	}
 	return errors.Join(errs...)
 }
-
-
 
 func (e *Engine) startSpan(ctx context.Context, name string) (context.Context, func()) {
 	if e.metrics == nil {
