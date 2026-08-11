@@ -257,6 +257,12 @@ func (e *Engine) DeleteAsOwner(ctx context.Context, keyspaceName, key string) er
 			defer cancel()
 			_, err := c.Transport.ApplyDelete(pctx, p.Addr, keyspaceName, key, ver, ringGen)
 			if err != nil {
+				if c.Fanout != nil {
+					c.Fanout.Hint(p, keyspaceName, key, store.Entry{
+						Version: ver,
+						Flags:   store.FlagTombstone,
+					}, ringGen)
+				}
 				mu.Lock()
 				errs = append(errs, PeerError{PeerID: p.ID, Op: "ApplyDelete", Err: err})
 				mu.Unlock()

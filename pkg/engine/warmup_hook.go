@@ -49,15 +49,15 @@ func (e *Engine) WarmTargets() []warmup.WarmTarget {
 	return out
 }
 
-// LocalEntries returns live non-tombstone entries for a keyspace (positives + negatives).
-// Implements warmup.Cache for topology handoff.
+// LocalEntries returns live entries for a keyspace, including tombstones
+// so join handoff can replay deletes to a returning replica.
 func (e *Engine) LocalEntries(keyspaceName string) []warmup.LocalEntry {
 	ks, err := e.getKS(keyspaceName)
 	if err != nil {
 		return nil
 	}
 	var out []warmup.LocalEntry
-	ks.store.Range(func(key string, ent store.Entry) bool {
+	ks.store.RangeAll(func(key string, ent store.Entry) bool {
 		out = append(out, warmup.LocalEntry{
 			Key: key,
 			Entry: store.Entry{

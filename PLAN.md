@@ -123,7 +123,7 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 |-----------|----------|
 | **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). |
-| **Delete / DeleteMany** | **Best-effort replica invalidate**: RPC `ApplyDelete` to the other R−1 replicas. Returns **structured multi-error** if any replica fails/unreachable. Peers that did **not** apply may still serve the key until TTL, LRU, later Delete, or a newer versioned Put. |
+| **Delete / DeleteMany** | Owner installs a tombstone and `ApplyDelete`s the other R−1 replicas. Failed replica RPCs are **hinted** and replayed when that peer is reachable again (same queue as missed ApplyPuts; LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff also pushes tombstones. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)

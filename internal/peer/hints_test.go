@@ -42,6 +42,31 @@ func TestHintCoalesceAndBound(t *testing.T) {
 	}
 }
 
+func TestHintDeleteSupersedesOlderPut(t *testing.T) {
+	tr := NewTransport(20 * time.Millisecond)
+	defer tr.Close()
+	fo := NewFanoutPool(tr, FanoutConfig{Workers: 1, QueueSize: 8, DisableHints: true})
+	defer fo.Close()
+	fo.hintsDisabled = false
+
+	p := ring.Peer{ID: "b", Addr: "127.0.0.1:1"}
+	fo.Hint(p, "demo", "k", store.Entry{Value: []byte("v"), Version: 5}, 1)
+	fo.Hint(p, "demo", "k", store.Entry{Version: 6, Flags: store.FlagTombstone}, 1)
+	if fo.HintPending() != 1 {
+		t.Fatalf("pending=%d", fo.HintPending())
+	}
+	h, ok := fo.peekHint(p.Addr)
+	if !ok || !h.ent.IsTombstone() || h.ent.Version != 6 {
+		t.Fatalf("want tombstone v6, got %+v ok=%v", h.ent, ok)
+	}
+	// Stale put hint must not replace the delete.
+	fo.Hint(p, "demo", "k", store.Entry{Value: []byte("old"), Version: 5}, 1)
+	h, ok = fo.peekHint(p.Addr)
+	if !ok || !h.ent.IsTombstone() || h.ent.Version != 6 {
+		t.Fatalf("stale put overwrote delete: %+v ok=%v", h.ent, ok)
+	}
+}
+
 func TestHintDisabledSkipsQueue(t *testing.T) {
 	tr := NewTransport(20 * time.Millisecond)
 	defer tr.Close()

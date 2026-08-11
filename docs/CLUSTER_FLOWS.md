@@ -186,10 +186,11 @@ flowchart TD
   D["Delete(ks, key) on Nx"] --> O{"Nx is owner?"}
 
   O -->|yes| V["mint delete_version<br/>DeleteIfVersion tombstone"]
-  V --> P["parallel ApplyDelete<br/>to all other peers"]
+  V --> P["parallel ApplyDelete<br/>to replica set"]
   P --> R{"any peer fail?"}
   R -->|no| OK["return OK"]
-  R -->|yes| ME["return MultiError"]
+  R -->|yes| H["hint tombstone for that peer<br/>replay ApplyDelete on return"]
+  H --> ME["return MultiError"]
 
   O -->|no| FD["ForwardDelete → owner"]
   FD -->|ok| OWN["owner DeleteAsOwner"]

@@ -55,6 +55,9 @@ type Store interface {
 	// Expired entries encountered during the walk may be removed.
 	Range(fn func(key string, e Entry) bool)
 
+	// RangeAll is Range plus unexpired tombstones (for delete handoff).
+	RangeAll(fn func(key string, e Entry) bool)
+
 	// Close releases resources.
 	Close()
 }
