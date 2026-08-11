@@ -395,7 +395,7 @@ func (e *Engine) loadThrough(ctx context.Context, ks *ksRuntime, key string, all
 	}
 	// Owner load path: async fan-out like Put (recommended default).
 	if allowFanout {
-		e.fanoutPut(ks.cfg.Name, key, ent, false)
+		e.replicate(ks.cfg.Name, key, ent, false)
 	}
 	return append([]byte(nil), val...), nil
 }
@@ -419,7 +419,7 @@ func (e *Engine) storeNegative(ks *ksRuntime, key string, allowFanout bool) {
 	}
 	// PLAN: owner fans out negative entries so peers avoid SoT stampedes.
 	if allowFanout {
-		e.fanoutPut(ks.cfg.Name, key, ent, false)
+		e.replicate(ks.cfg.Name, key, ent, false)
 	}
 }
 
@@ -445,8 +445,8 @@ func (e *Engine) PutMany(ctx context.Context, keyspaceName string, kvs []KV, opt
 }
 
 // Delete invalidates the key: owner mints a version, installs a tombstone,
-// and ApplyDeletes the replica set. Returns MultiError if any replica is
-// unreachable (local/owner tombstone may still be installed).
+// and replicateWaits the replica set (same apply+hint path as Put).
+// Returns MultiError if any replica is unreachable on the first attempt.
 func (e *Engine) Delete(ctx context.Context, keyspaceName, key string) error {
 	ctx, end := e.startSpan(ctx, "engine.Delete")
 	defer end()
