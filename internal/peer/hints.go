@@ -50,7 +50,10 @@ func (p *FanoutPool) enqueueHint(peer ring.Peer, ks, key string, ent store.Entry
 		q = &peerHintQ{items: make(map[string]fanoutHint)}
 		p.hints[peer.Addr] = q
 	}
-	if _, exists := q.items[id]; exists {
+	if old, exists := q.items[id]; exists {
+		if !hintNewer(h.ent, old.ent) {
+			return
+		}
 		q.items[id] = h
 		return
 	}
@@ -99,7 +102,7 @@ func (p *FanoutPool) flushPeerHints(addr string) {
 		if !ok {
 			return
 		}
-		_, err := p.t.ApplyPut(context.Background(), addr, h.ks, h.key, h.ent, h.ringGen)
+		err := p.replayHint(addr, h)
 		if err != nil {
 			p.t.FanoutErrors.Add(1)
 			return
@@ -148,7 +151,28 @@ func (p *FanoutPool) popHint(addr, id string) {
 	}
 }
 
-// HintPending returns how many distinct missed ApplyPuts are waiting.
+func hintNewer(a, b store.Entry) bool {
+	if a.Version != b.Version {
+		return a.Version > b.Version
+	}
+	return a.IsTombstone() && !b.IsTombstone()
+}
+
+func (p *FanoutPool) replayHint(addr string, h fanoutHint) error {
+	if h.ent.IsTombstone() {
+		_, err := p.t.ApplyDelete(context.Background(), addr, h.ks, h.key, h.ent.Version, h.ringGen)
+		return err
+	}
+	_, err := p.t.ApplyPut(context.Background(), addr, h.ks, h.key, h.ent, h.ringGen)
+	return err
+}
+
+// Hint remembers a failed ApplyPut / ApplyDelete for replay (LWW per key).
+func (p *FanoutPool) Hint(peer ring.Peer, ks, key string, ent store.Entry, ringGen uint64) {
+	p.enqueueHint(peer, ks, key, ent, ringGen)
+}
+
+// HintPending returns how many distinct missed ApplyPuts/ApplyDeletes are waiting.
 func (p *FanoutPool) HintPending() int {
 	if p == nil {
 		return 0

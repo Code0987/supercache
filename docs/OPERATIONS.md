@@ -62,7 +62,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner + replica set: each accepted delete **installs a versioned tombstone** (not a bare remove). `MultiError` / peer_failures if any replica RPC fails. Tombstones expire after 5m so they do not pin RAM; until then a delayed ApplyPut cannot resurrect the key. |
+| Delete | Owner + replica set: each accepted delete **installs a versioned tombstone**. Failed `ApplyDelete`s are hinted per replica and replayed when that peer returns (LWW vs queued Puts). `MultiError` if any replica RPC fails on the first attempt. Tombstones expire after 5m; join handoff also pushes markers. |
 | Failures | Fan-out errors are metrics-only on Put |
 
 Set TTLs to your max acceptable staleness.
@@ -79,7 +79,7 @@ Do not treat a mismatch as a hard error; use it for diagnostics.
 On membership join/leave, every node rebuilds the hash ring and runs warmup:
 
 1. Prefetch configured `WarmKeys` and tracked hot keys.
-2. **Handoff:** push local live entries to each key's **replica set** — **hot first, then the rest** (async `ApplyPut`).
+2. **Handoff:** push local live entries **and tombstones** to each key's **replica set** — **hot first, then the rest** (async `ApplyPut` / `ApplyDelete`).
 
 A new node starts empty and warms from peers; there is a short cold window before handoff completes. Keys nobody holds stay cold until Put or LoadThrough traffic.
 

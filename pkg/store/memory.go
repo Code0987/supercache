@@ -308,6 +308,29 @@ func (m *Memory) Range(fn func(key string, e Entry) bool) {
 	}
 }
 
+// RangeAll visits non-expired entries including tombstones.
+func (m *Memory) RangeAll(fn func(key string, e Entry) bool) {
+	if m == nil || fn == nil {
+		return
+	}
+	m.mu.Lock()
+	keys := make([]string, 0, len(m.items))
+	for k := range m.items {
+		keys = append(keys, k)
+	}
+	m.mu.Unlock()
+
+	for _, k := range keys {
+		ent, ok := m.Peek(k)
+		if !ok {
+			continue
+		}
+		if !fn(k, ent) {
+			return
+		}
+	}
+}
+
 func (m *Memory) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

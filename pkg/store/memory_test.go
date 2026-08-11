@@ -190,6 +190,22 @@ func TestMemoryRangeSkipsTombstonesAndExpired(t *testing.T) {
 	if seen["dead"] || seen["exp"] {
 		t.Fatalf("tombstone/expired should be skipped: %v", keys)
 	}
+
+	var all []string
+	m.RangeAll(func(k string, e Entry) bool {
+		all = append(all, k)
+		if k == "dead" && !e.IsTombstone() {
+			t.Fatalf("dead should be tombstone: %+v", e)
+		}
+		return true
+	})
+	seenAll := map[string]bool{}
+	for _, k := range all {
+		seenAll[k] = true
+	}
+	if !seenAll["live"] || !seenAll["neg"] || !seenAll["dead"] {
+		t.Fatalf("RangeAll want live+neg+tombstone, got %v", all)
+	}
 }
 
 func TestMemoryTombstoneRequiredUnderMaxBytes(t *testing.T) {

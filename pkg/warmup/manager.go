@@ -28,7 +28,7 @@ type Cache interface {
 	OwnerOf(key string) (ring.Peer, bool)
 	NodeID() string
 	WarmTargets() []WarmTarget
-	// LocalEntries returns live non-tombstone entries for topology handoff.
+	// LocalEntries returns live entries including tombstones for topology handoff.
 	LocalEntries(keyspace string) []LocalEntry
 	// ReplicateToPeers force-fans an entry to the key's replica set (async).
 	ReplicateToPeers(keyspace, key string, ent store.Entry)

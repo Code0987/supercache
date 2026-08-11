@@ -177,9 +177,9 @@ type FanoutConfig struct {
 	HintRetryInterval time.Duration
 }
 
-// FanoutPool async-fans ApplyPut to peers. Failed ApplyPuts are queued as
-// bounded per-peer hints and replayed until the peer accepts them (or the hint
-// is dropped under cap). Put ACK stays non-blocking.
+// FanoutPool async-fans ApplyPut (and tombstone ApplyDelete) to peers.
+// Failed applies are queued as bounded per-peer hints and replayed until the
+// peer accepts them (or the hint is dropped under cap). Put ACK stays non-blocking.
 type FanoutPool struct {
 	t      *Transport
 	jobs   chan fanoutJob
@@ -267,7 +267,12 @@ func (p *FanoutPool) applyJob(job fanoutJob) {
 				ExpireAt: job.ent.ExpireAt,
 				Flags:    job.ent.Flags,
 			}
-			_, err := p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, ent, job.ringGen)
+			var err error
+			if ent.IsTombstone() {
+				_, err = p.t.ApplyDelete(context.Background(), peer.Addr, job.ks, job.key, ent.Version, job.ringGen)
+			} else {
+				_, err = p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, ent, job.ringGen)
+			}
 			if err != nil {
 				p.t.FanoutErrors.Add(1)
 				p.enqueueHint(peer, job.ks, job.key, ent, job.ringGen)
