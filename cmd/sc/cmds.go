@@ -35,6 +35,8 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdAdmin(ctx, sess.cfg, "/healthz")
 	case "ready", "readyz":
 		return cmdAdmin(ctx, sess.cfg, "/readyz")
+	case "bloom":
+		return cmdBloom(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -255,6 +257,49 @@ func cmdDel(ctx context.Context, sess *session, keys []string) int {
 		})
 	} else if !cfg.quiet {
 		fmt.Printf("OK deleted %s via %s\n", strings.Join(keys, ", "), sess.ConnectedAddr())
+	}
+	return 0
+}
+
+func cmdBloom(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: bloom add|test <name> <item>")
+		return 2
+	}
+	op, name, item := strings.ToLower(args[0]), args[1], args[2]
+	var (
+		maybe bool
+		opErr error
+	)
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		switch op {
+		case "add":
+			opErr = cli.BloomAdd(ctx, sess.cfg.keyspace, name, []byte(item))
+			return opErr
+		case "test":
+			maybe, opErr = cli.BloomTest(ctx, sess.cfg.keyspace, name, []byte(item))
+			return opErr
+		default:
+			opErr = fmt.Errorf("usage: bloom add|test <name> <item>")
+			return nil
+		}
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bloom: %v\n", err)
+		return 1
+	}
+	if opErr != nil && op != "add" && op != "test" {
+		fmt.Fprintf(os.Stderr, "%v\n", opErr)
+		return 2
+	}
+	if opErr != nil {
+		fmt.Fprintf(os.Stderr, "bloom: %v\n", opErr)
+		return 1
+	}
+	if op == "test" {
+		fmt.Printf("maybe=%v\n", maybe)
+	} else if !sess.cfg.quiet {
+		fmt.Printf("OK bloom add %s %s\n", name, item)
 	}
 	return 0
 }

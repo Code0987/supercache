@@ -1,6 +1,6 @@
 # Bloom filter membership type
 
-**Status:** draft  
+**Status:** approved  
 **Branch (later):** `feat/bloom-filter`
 
 ## Problem

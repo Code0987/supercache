@@ -147,6 +147,21 @@ func keyErrorToProto(ke engine.KeyError) *cachev1.KeyError {
 	return out
 }
 
+func (s *Server) BloomAdd(ctx context.Context, req *cachev1.BloomAddRequest) (*cachev1.BloomAddResponse, error) {
+	if err := s.eng.BloomAdd(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, mapErr(err)
+	}
+	return &cachev1.BloomAddResponse{}, nil
+}
+
+func (s *Server) BloomTest(ctx context.Context, req *cachev1.BloomTestRequest) (*cachev1.BloomTestResponse, error) {
+	maybe, err := s.eng.BloomTest(ctx, req.Keyspace, req.Name, req.Item)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &cachev1.BloomTestResponse{Maybe: maybe}, nil
+}
+
 func mapErr(err error) error {
 	switch {
 	case errors.Is(err, engine.ErrNotFound):

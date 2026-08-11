@@ -11,6 +11,8 @@ service Cache {
   rpc PutMany(PutManyRequest) returns (PutManyResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc DeleteMany(DeleteManyRequest) returns (DeleteManyResponse);
+  rpc BloomAdd(BloomAddRequest) returns (BloomAddResponse);
+  rpc BloomTest(BloomTestRequest) returns (BloomTestResponse);
 }
 
 message GetRequest {
@@ -77,4 +79,22 @@ message DeleteManyRequest {
 
 message DeleteManyResponse {
   repeated KeyError errors = 1;
+}
+
+message BloomAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+
+message BloomAddResponse {}
+
+message BloomTestRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+
+message BloomTestResponse {
+  bool maybe = 1; // false = definitely not present
 }

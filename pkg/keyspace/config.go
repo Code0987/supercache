@@ -20,6 +20,8 @@ const (
 	ModeLoadThrough Mode = iota
 	// ModeCacheOnly never calls DataSource; miss = not found.
 	ModeCacheOnly
+	// ModeBloom is a named Bloom filter (BloomAdd / BloomTest).
+	ModeBloom
 )
 
 func (m Mode) String() string {
@@ -28,6 +30,8 @@ func (m Mode) String() string {
 		return "LoadThrough"
 	case ModeCacheOnly:
 		return "CacheOnly"
+	case ModeBloom:
+		return "Bloom"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -47,6 +51,10 @@ const (
 	// TombstoneTTLNever keeps delete markers until they are replaced
 	// (Config.TombstoneTTL < 0).
 	TombstoneTTLNever = time.Duration(-1)
+	// DefaultBloomBits is m when Config.BloomBits is 0 (1 MiB bitset).
+	DefaultBloomBits = 1 << 20
+	// DefaultBloomHashes is k when Config.BloomHashes is 0.
+	DefaultBloomHashes = 7
 )
 
 // EffectiveReplication returns how many peers should store each key given
@@ -110,6 +118,10 @@ type Config struct {
 	// ApplyPut cannot resurrect the key. 0 means DefaultTombstoneTTL (5m).
 	// Negative means never expire (TombstoneTTLNever).
 	TombstoneTTL time.Duration
+
+	// BloomBits / BloomHashes size a ModeBloom filter (0 → defaults).
+	BloomBits   int
+	BloomHashes int
 }
 
 // Validate checks config invariants.
@@ -123,7 +135,33 @@ func (c Config) Validate() error {
 	if c.MaxBytes < 0 {
 		return errors.New("keyspace: MaxBytes must be >= 0")
 	}
+	if c.Mode == ModeBloom {
+		bits := c.EffectiveBloomBits()
+		if bits < 64 || c.EffectiveBloomHashes() < 1 {
+			return errors.New("keyspace: BloomBits must be >= 64 and BloomHashes >= 1")
+		}
+		need := int64((bits + 7) / 8)
+		if c.MaxBytes > 0 && need > c.MaxBytes {
+			return fmt.Errorf("keyspace: Bloom bitset %d bytes exceeds MaxBytes %d", need, c.MaxBytes)
+		}
+	}
 	return nil
+}
+
+// EffectiveBloomBits is m for ModeBloom.
+func (c Config) EffectiveBloomBits() int {
+	if c.BloomBits <= 0 {
+		return DefaultBloomBits
+	}
+	return c.BloomBits
+}
+
+// EffectiveBloomHashes is k for ModeBloom.
+func (c Config) EffectiveBloomHashes() int {
+	if c.BloomHashes <= 0 {
+		return DefaultBloomHashes
+	}
+	return c.BloomHashes
 }
 
 // ConfigHash is a stable hash of non-function config fields for drift detection.
@@ -147,6 +185,8 @@ func (c Config) ConfigHash() string {
 		MaxValueSize      int
 		ReplicationFactor int
 		TombstoneTTL      time.Duration
+		BloomBits         int
+		BloomHashes       int
 	}
 	b, _ := json.Marshal(wire{
 		Name:              c.Name,
@@ -167,6 +207,8 @@ func (c Config) ConfigHash() string {
 		MaxValueSize:      c.MaxValueSize,
 		ReplicationFactor: c.ReplicationFactor,
 		TombstoneTTL:      c.TombstoneTTL,
+		BloomBits:         c.BloomBits,
+		BloomHashes:       c.BloomHashes,
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])

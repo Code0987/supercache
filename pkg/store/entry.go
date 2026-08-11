@@ -6,6 +6,8 @@ import "time"
 const (
 	FlagNegative  uint32 = 1 << 0
 	FlagTombstone uint32 = 1 << 1 // versioned delete marker (blocks stale ApplyPut)
+	FlagBloom     uint32 = 1 << 2 // value is a Bloom bitset
+	FlagBloomAdd  uint32 = 1 << 3 // fan-out only: value is an item to OR into the filter
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -24,6 +26,16 @@ func (e Entry) IsNegative() bool {
 // IsTombstone reports whether this is a delete tombstone (not a readable value).
 func (e Entry) IsTombstone() bool {
 	return e.Flags&FlagTombstone != 0
+}
+
+// IsBloom reports whether Value is a Bloom bitset.
+func (e Entry) IsBloom() bool {
+	return e.Flags&FlagBloom != 0
+}
+
+// IsBloomAdd reports a replica item-add (Value is the item, not the bitset).
+func (e Entry) IsBloomAdd() bool {
+	return e.Flags&FlagBloomAdd != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

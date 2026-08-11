@@ -309,6 +309,13 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 	if err := e.validateKeyLen(ks, key); err != nil {
 		return store.Entry{}, err
 	}
+	if ks.cfg.Mode == keyspace.ModeBloom {
+		ent, ok := ks.store.Peek(key)
+		if !ok || ent.IsTombstone() || !ent.IsBloom() {
+			return store.Entry{}, ErrNotFound
+		}
+		return ent, nil
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {

@@ -193,9 +193,15 @@ func (c *Cluster) ready() error {
 		if err != nil {
 			return fmt.Errorf("testcluster: dial %s: %w", n.CacheAddr, err)
 		}
-		_, err = cli.Get(ctx, firstKS(n.Engine), "__testcluster_ready__")
-		_ = cli.Close()
+		ks := firstKS(n.Engine)
+		_, err = cli.Get(ctx, ks, "__testcluster_ready__")
 		if err == nil || errors.Is(err, client.ErrNotFound) {
+			_ = cli.Close()
+			continue
+		}
+		_, berr := cli.BloomTest(ctx, ks, "__testcluster_ready__", []byte("x"))
+		_ = cli.Close()
+		if berr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

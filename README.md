@@ -123,7 +123,8 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 |---------|------|
 | `pkg/engine` | Core Get/Put/Delete, keyspaces, cluster routing |
 | `pkg/store` | Versioned LRU memory store (immediate Set / RYOW) |
-| `pkg/keyspace` | Config, `LoadThrough` / `CacheOnly` |
+| `pkg/keyspace` | Config, `LoadThrough` / `CacheOnly` / `Bloom` |
+| `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -146,6 +147,7 @@ SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
+- `ModeBloom` keyspaces are membership filters: `BloomAdd` / `BloomTest` (no per-item delete). See [docs/design/2026-08-11-bloom-filter.md](./docs/design/2026-08-11-bloom-filter.md).
 
 Details: [PLAN.md](./PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
