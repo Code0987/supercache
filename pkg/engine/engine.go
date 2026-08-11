@@ -184,8 +184,11 @@ func (e *Engine) UpdateKeySpace(cfg keyspace.Config) error {
 		guardCfg.RateLimitRPS = cfg.RateLimitRPS
 	}
 	e.keyspaces[cfg.Name] = &ksRuntime{
-		cfg:            cfg,
-		store:          store.NewMemory(cfg.MaxBytes, store.WithClock(e.now)),
+		cfg: cfg,
+		store: store.NewMemory(cfg.MaxBytes,
+			store.WithClock(e.now),
+			store.WithTombstoneTTL(cfg.EffectiveTombstoneTTL()),
+		),
 		guard:          protect.New(guardCfg),
 		lastVer:        lastVer,
 		maxVersionKeys: e.maxVersionKeys,

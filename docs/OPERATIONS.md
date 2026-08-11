@@ -62,7 +62,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after 5m; join handoff uses the same pool. |
+| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. |
 | Failures | Fan-out errors are metrics-only on Put |
 
 Set TTLs to your max acceptable staleness.

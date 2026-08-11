@@ -144,6 +144,7 @@ SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async
 - Peer port and Cache port are separate; do not expose Peer to applications.
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
+- Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
 
 Details: [PLAN.md](./PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 

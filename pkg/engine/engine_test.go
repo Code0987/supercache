@@ -447,11 +447,11 @@ func TestWrappedNotFound(t *testing.T) {
 	e := engine.New()
 	defer e.Close()
 	_ = e.UpdateKeySpace(keyspace.Config{
-		Name:        "lt",
-		Mode:        keyspace.ModeLoadThrough,
-		MaxBytes:    1 << 20,
-		NegativeTTL: time.Minute,
-		DataSource:  src,
+		Name:           "lt",
+		Mode:           keyspace.ModeLoadThrough,
+		MaxBytes:       1 << 20,
+		NegativeTTL:    time.Minute,
+		DataSource:     src,
 		CircuitBreaker: protect.Config{FailureThreshold: 1, OpenTimeout: time.Minute},
 	})
 	ctx := context.Background()
@@ -527,6 +527,43 @@ func TestSingleflightCanceledCallerDoesNotFailCoWaiters(t *testing.T) {
 	}
 	if string(<-valCh2) != "ok" {
 		t.Fatal("co-waiter value")
+	}
+}
+
+func TestEngineTombstoneTTLExpires(t *testing.T) {
+	now := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
+	e := engine.New(engine.WithNow(func() time.Time { return now }))
+	defer e.Close()
+	_ = e.UpdateKeySpace(keyspace.Config{
+		Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20,
+		TombstoneTTL: time.Second,
+	})
+	ctx := context.Background()
+	if err := e.Put(ctx, "c", "k", []byte("v1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Delete(ctx, "c", "k"); err != nil {
+		t.Fatal(err)
+	}
+	stale := store.Entry{Value: []byte("v1"), Version: 1}
+	ok, err := e.ApplyPut("c", "k", stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("within TombstoneTTL a stale ApplyPut must not apply")
+	}
+	now = now.Add(2 * time.Second)
+	ok, err = e.ApplyPut("c", "k", stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("after TombstoneTTL a stale ApplyPut may land")
+	}
+	got, err := e.Get(ctx, "c", "k")
+	if err != nil || string(got) != "v1" {
+		t.Fatalf("got %q err=%v", got, err)
 	}
 }
 

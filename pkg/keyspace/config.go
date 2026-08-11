@@ -42,6 +42,11 @@ const (
 	DefaultReplicationFactor = 3
 	// ReplicationAll stores each key on every peer (legacy full mesh).
 	ReplicationAll = -1
+	// DefaultTombstoneTTL is used when Config.TombstoneTTL is 0.
+	DefaultTombstoneTTL = 5 * time.Minute
+	// TombstoneTTLNever keeps delete markers until they are replaced
+	// (Config.TombstoneTTL < 0).
+	TombstoneTTLNever = time.Duration(-1)
 )
 
 // EffectiveReplication returns how many peers should store each key given
@@ -61,6 +66,18 @@ func (c Config) EffectiveReplication(peerCount int) int {
 		return peerCount
 	}
 	return rf
+}
+
+// EffectiveTombstoneTTL is how long a delete marker is retained.
+// 0 → DefaultTombstoneTTL; negative → never expire (0 for the store).
+func (c Config) EffectiveTombstoneTTL() time.Duration {
+	if c.TombstoneTTL < 0 {
+		return 0
+	}
+	if c.TombstoneTTL == 0 {
+		return DefaultTombstoneTTL
+	}
+	return c.TombstoneTTL
 }
 
 // Config is a keyspace definition (local to a node).
@@ -88,6 +105,11 @@ type Config struct {
 	// clockwise successors). 0 means DefaultReplicationFactor (3). Negative
 	// means every peer (legacy full-mesh). Always capped at cluster size.
 	ReplicationFactor int
+
+	// TombstoneTTL is how long a versioned delete marker is kept so a delayed
+	// ApplyPut cannot resurrect the key. 0 means DefaultTombstoneTTL (5m).
+	// Negative means never expire (TombstoneTTLNever).
+	TombstoneTTL time.Duration
 }
 
 // Validate checks config invariants.
@@ -124,6 +146,7 @@ func (c Config) ConfigHash() string {
 		MaxKeyLen         int
 		MaxValueSize      int
 		ReplicationFactor int
+		TombstoneTTL      time.Duration
 	}
 	b, _ := json.Marshal(wire{
 		Name:              c.Name,
@@ -143,6 +166,7 @@ func (c Config) ConfigHash() string {
 		MaxKeyLen:         c.MaxKeyLen,
 		MaxValueSize:      c.MaxValueSize,
 		ReplicationFactor: c.ReplicationFactor,
+		TombstoneTTL:      c.TombstoneTTL,
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
