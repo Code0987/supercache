@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.28.3
-// source: cache.proto
+// source: api/proto/cache.proto
 
 package cachev1
 
@@ -24,6 +24,8 @@ const (
 	Cache_PutMany_FullMethodName    = "/supercache.cache.v1.Cache/PutMany"
 	Cache_Delete_FullMethodName     = "/supercache.cache.v1.Cache/Delete"
 	Cache_DeleteMany_FullMethodName = "/supercache.cache.v1.Cache/DeleteMany"
+	Cache_BloomAdd_FullMethodName   = "/supercache.cache.v1.Cache/BloomAdd"
+	Cache_BloomTest_FullMethodName  = "/supercache.cache.v1.Cache/BloomTest"
 )
 
 // CacheClient is the client API for Cache service.
@@ -37,6 +39,8 @@ type CacheClient interface {
 	PutMany(ctx context.Context, in *PutManyRequest, opts ...grpc.CallOption) (*PutManyResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
 	DeleteMany(ctx context.Context, in *DeleteManyRequest, opts ...grpc.CallOption) (*DeleteManyResponse, error)
+	BloomAdd(ctx context.Context, in *BloomAddRequest, opts ...grpc.CallOption) (*BloomAddResponse, error)
+	BloomTest(ctx context.Context, in *BloomTestRequest, opts ...grpc.CallOption) (*BloomTestResponse, error)
 }
 
 type cacheClient struct {
@@ -97,6 +101,26 @@ func (c *cacheClient) DeleteMany(ctx context.Context, in *DeleteManyRequest, opt
 	return out, nil
 }
 
+func (c *cacheClient) BloomAdd(ctx context.Context, in *BloomAddRequest, opts ...grpc.CallOption) (*BloomAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BloomAddResponse)
+	err := c.cc.Invoke(ctx, Cache_BloomAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) BloomTest(ctx context.Context, in *BloomTestRequest, opts ...grpc.CallOption) (*BloomTestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BloomTestResponse)
+	err := c.cc.Invoke(ctx, Cache_BloomTest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -108,6 +132,8 @@ type CacheServer interface {
 	PutMany(context.Context, *PutManyRequest) (*PutManyResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 	DeleteMany(context.Context, *DeleteManyRequest) (*DeleteManyResponse, error)
+	BloomAdd(context.Context, *BloomAddRequest) (*BloomAddResponse, error)
+	BloomTest(context.Context, *BloomTestRequest) (*BloomTestResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -132,6 +158,12 @@ func (UnimplementedCacheServer) Delete(context.Context, *DeleteRequest) (*Delete
 }
 func (UnimplementedCacheServer) DeleteMany(context.Context, *DeleteManyRequest) (*DeleteManyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteMany not implemented")
+}
+func (UnimplementedCacheServer) BloomAdd(context.Context, *BloomAddRequest) (*BloomAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BloomAdd not implemented")
+}
+func (UnimplementedCacheServer) BloomTest(context.Context, *BloomTestRequest) (*BloomTestResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BloomTest not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -244,6 +276,42 @@ func _Cache_DeleteMany_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_BloomAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BloomAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BloomAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BloomAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BloomAdd(ctx, req.(*BloomAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_BloomTest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BloomTestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BloomTest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BloomTest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BloomTest(ctx, req.(*BloomTestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -271,7 +339,15 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteMany",
 			Handler:    _Cache_DeleteMany_Handler,
 		},
+		{
+			MethodName: "BloomAdd",
+			Handler:    _Cache_BloomAdd_Handler,
+		},
+		{
+			MethodName: "BloomTest",
+			Handler:    _Cache_BloomTest_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "cache.proto",
+	Metadata: "api/proto/cache.proto",
 }

@@ -149,6 +149,22 @@ func (c *Client) Delete(ctx context.Context, keyspace, key string) error {
 	return peerFailuresFromProto(resp.PeerFailures)
 }
 
+// BloomAdd inserts item into a ModeBloom filter named name.
+func (c *Client) BloomAdd(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.BloomAdd(ctx, &cachev1.BloomAddRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+// BloomTest reports whether item may be in the named filter.
+// false means definitely not present.
+func (c *Client) BloomTest(ctx context.Context, keyspace, name string, item []byte) (bool, error) {
+	resp, err := c.api.BloomTest(ctx, &cachev1.BloomTestRequest{Keyspace: keyspace, Name: name, Item: item})
+	if err != nil {
+		return false, err
+	}
+	return resp.GetMaybe(), nil
+}
+
 // DeleteMany deletes many keys (not atomic).
 func (c *Client) DeleteMany(ctx context.Context, keyspace string, keys []string) error {
 	resp, err := c.api.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: keyspace, Keys: keys})

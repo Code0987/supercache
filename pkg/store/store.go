@@ -58,6 +58,17 @@ type Store interface {
 	// RangeAll is Range plus unexpired tombstones (for delete handoff).
 	RangeAll(fn func(key string, e Entry) bool)
 
+	// BloomAdd ORs item into the named filter, creating it at version if needed.
+	// Returns false if a higher tombstone or a non-bloom live entry blocks.
+	BloomAdd(key string, item []byte, mBits, k int, version uint64, expireAt int64) bool
+
+	// BloomTest reports maybe-present. false if missing, expired, tombstone, or definite miss.
+	// Does not update LRU (read-hot path).
+	BloomTest(key string, item []byte, mBits, k int) bool
+
+	// BloomMerge ORs a remote bitset into the named filter (handoff).
+	BloomMerge(key string, bits []byte, mBits, k int, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

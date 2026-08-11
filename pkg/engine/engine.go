@@ -245,6 +245,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if err := e.validateKeyLen(ks, key); err != nil {
 		return nil, err
 	}
+	if ks.cfg.Mode == keyspace.ModeBloom {
+		return nil, fmt.Errorf("%w: use BloomTest", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -430,6 +433,9 @@ func (e *Engine) storeNegative(ks *ksRuntime, key string, allowFanout bool) {
 func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte, opts ...PutOption) error {
 	ctx, end := e.startSpan(ctx, "engine.Put")
 	defer end()
+	if ks, err := e.getKS(keyspaceName); err == nil && ks.cfg.Mode == keyspace.ModeBloom {
+		return fmt.Errorf("%w: use BloomAdd", ErrInvalidArgument)
+	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
 
@@ -489,6 +495,20 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	// Track observed versions so future local puts stay monotonic.
 	ks.observeVersion(key, ent.Version)
+	if ent.IsBloomAdd() {
+		ok := e.applyBloomAdd(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		if ok {
+			if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+				if owner, yes := c.Ring.Owner(key); yes && owner.ID == c.SelfID {
+					e.replicate(keyspaceName, key, ent, false)
+				}
+			}
+		}
+		return ok, nil
+	}
+	if ent.IsBloom() {
+		return e.applyBloomMerge(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).
 		ok := ks.store.AcceptNegative(key, ent)

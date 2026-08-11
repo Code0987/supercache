@@ -21,7 +21,10 @@ type peerHintQ struct {
 	items map[string]fanoutHint
 }
 
-func hintID(ks, key string) string {
+func hintID(ks, key string, ent store.Entry) string {
+	if ent.IsBloomAdd() {
+		return ks + "\x00" + key + "\x00" + string(ent.Value)
+	}
 	return ks + "\x00" + key
 }
 
@@ -41,7 +44,7 @@ func (p *FanoutPool) enqueueHint(peer ring.Peer, ks, key string, ent store.Entry
 		},
 		ringGen: ringGen,
 	}
-	id := hintID(ks, key)
+	id := hintID(ks, key, h.ent)
 
 	p.hintMu.Lock()
 	defer p.hintMu.Unlock()
@@ -49,6 +52,27 @@ func (p *FanoutPool) enqueueHint(peer ring.Peer, ks, key string, ent store.Entry
 	if q == nil {
 		q = &peerHintQ{items: make(map[string]fanoutHint)}
 		p.hints[peer.Addr] = q
+	}
+	if h.ent.IsTombstone() {
+		// Drop in-flight item-adds for this filter.
+		for oid, old := range q.items {
+			if old.ks == ks && old.key == key && old.ent.IsBloomAdd() {
+				delete(q.items, oid)
+			}
+		}
+		// rebuild order without deleted ids
+		out := q.order[:0]
+		for _, oid := range q.order {
+			if _, ok := q.items[oid]; ok {
+				out = append(out, oid)
+			}
+		}
+		q.order = out
+	}
+	if h.ent.IsBloomAdd() {
+		if old, ok := q.items[hintID(ks, key, store.Entry{Flags: store.FlagTombstone})]; ok && old.ent.IsTombstone() && old.ent.Version >= h.ent.Version {
+			return
+		}
 	}
 	if old, exists := q.items[id]; exists {
 		if !hintNewer(h.ent, old.ent) {
@@ -107,7 +131,7 @@ func (p *FanoutPool) flushPeerHints(addr string) {
 			p.t.FanoutErrors.Add(1)
 			return
 		}
-		p.popHint(addr, hintID(h.ks, h.key))
+		p.popHint(addr, hintID(h.ks, h.key, h.ent))
 		p.HintsFlushed.Add(1)
 	}
 }
