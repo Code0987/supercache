@@ -1,6 +1,9 @@
 package keyspace
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestEffectiveReplication(t *testing.T) {
 	cases := []struct {
@@ -20,6 +23,27 @@ func TestEffectiveReplication(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("rf=%d n=%d: got %d want %d", tc.rf, tc.n, got, tc.want)
 		}
+	}
+}
+
+func TestEffectiveTombstoneTTL(t *testing.T) {
+	if got := (Config{}).EffectiveTombstoneTTL(); got != DefaultTombstoneTTL {
+		t.Fatalf("zero: got %v want %v", got, DefaultTombstoneTTL)
+	}
+	if got := (Config{TombstoneTTL: time.Second}).EffectiveTombstoneTTL(); got != time.Second {
+		t.Fatalf("explicit: got %v", got)
+	}
+	if got := (Config{TombstoneTTL: TombstoneTTLNever}).EffectiveTombstoneTTL(); got != 0 {
+		t.Fatalf("never: got %v want 0", got)
+	}
+}
+
+func TestConfigHashIncludesTombstoneTTL(t *testing.T) {
+	a := Config{Name: "k", Mode: ModeCacheOnly, MaxBytes: 1}
+	b := a
+	b.TombstoneTTL = time.Second
+	if a.ConfigHash() == b.ConfigHash() {
+		t.Fatal("TombstoneTTL must change config hash")
 	}
 }
 

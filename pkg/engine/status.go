@@ -19,6 +19,7 @@ type KeySpaceSnapshot struct {
 	BreakerOpens      uint64      `json:"breaker_opens"`
 	HotKeys           []string    `json:"hot_keys,omitempty"`
 	ReplicationFactor int         `json:"replication_factor"`
+	TombstoneTTL      string      `json:"tombstone_ttl"`
 }
 
 // NodeID returns this node's identity (empty until SetNodeInfo / AttachCluster).
@@ -124,6 +125,7 @@ func (e *Engine) KeySpaceSnapshots() []KeySpaceSnapshot {
 			RateLimited:       limited,
 			BreakerOpens:      opens,
 			ReplicationFactor: ks.cfg.EffectiveReplication(peerN),
+			TombstoneTTL:      ks.cfg.EffectiveTombstoneTTL().String(),
 		}})
 	}
 	rec := e.hitRecorder

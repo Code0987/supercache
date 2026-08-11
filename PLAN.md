@@ -192,7 +192,7 @@ Prefetch / DataSource fill:
   must go through same version assignment on owner (or use version 0 fill only if absent — see modes)
 ```
 
-**Tombstones (v1, required):** every accepted Delete / ApplyDelete installs a versioned marker so a delayed ApplyPut cannot resurrect the key. LRU must not evict an unexpired tombstone (MaxBytes may overshoot). Markers expire after a short TTL (`DefaultTombstoneTTL`, 5m) so deleted keys do not pin RAM forever; after expiry a late Put may land, and the key’s own TTL still bounds any value.
+**Tombstones (v1, required):** every accepted Delete / ApplyDelete installs a versioned marker so a delayed ApplyPut cannot resurrect the key. LRU must not evict an unexpired tombstone (MaxBytes may overshoot). Marker lifetime is `keyspace.Config.TombstoneTTL` (0 → `DefaultTombstoneTTL` 5m; negative → never expire). After expiry a late Put may land; the key’s own TTL still bounds any value.
 
 ### Concurrent writers
 
@@ -419,6 +419,7 @@ type KeySpaceConfig struct {
     Mode           KeySpaceMode
     TTL            time.Duration
     NegativeTTL    time.Duration // 0 = disabled
+    TombstoneTTL   time.Duration // 0 = 5m; negative = never expire
     MaxBytes       int64
     LoadTimeout    time.Duration
     PeerTimeout    time.Duration
