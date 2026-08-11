@@ -16,6 +16,7 @@ github.com/Code0987/supercache
 | API | [docs/API.md](./docs/API.md) · [Swagger](https://code0987.github.io/supercache/) |
 | Benchmarks | [docs/BENCHMARKS.md](./docs/BENCHMARKS.md) |
 | Releases | [docs/RELEASING.md](./docs/RELEASING.md) · [GitHub Releases](https://github.com/Code0987/supercache/releases) |
+| Change workflow | [docs/WORKFLOW.md](./docs/WORKFLOW.md) |
 
 ## Quick start
 
