@@ -444,9 +444,9 @@ func (e *Engine) PutMany(ctx context.Context, keyspaceName string, kvs []KV, opt
 	return joinErrors(errs)
 }
 
-// Delete best-effort invalidates the key cluster-wide.
-// When clustered, the owner mints the version and ApplyDeletes every peer.
-// Returns MultiError if any peer is unreachable (local/owner apply may still succeed).
+// Delete invalidates the key: owner mints a version, installs a tombstone,
+// and ApplyDeletes the replica set. Returns MultiError if any replica is
+// unreachable (local/owner tombstone may still be installed).
 func (e *Engine) Delete(ctx context.Context, keyspaceName, key string) error {
 	ctx, end := e.startSpan(ctx, "engine.Delete")
 	defer end()

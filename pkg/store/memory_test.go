@@ -192,6 +192,47 @@ func TestMemoryRangeSkipsTombstonesAndExpired(t *testing.T) {
 	}
 }
 
+func TestMemoryTombstoneRequiredUnderMaxBytes(t *testing.T) {
+	// Budget smaller than a tombstone envelope (key + ~64 B). Old path
+	// skipped the marker and left a resurrection hole.
+	m := NewMemory(40)
+	defer m.Close()
+
+	if !m.DeleteIfVersion("k", 6) {
+		t.Fatal("delete must install tombstone even when cost > MaxBytes")
+	}
+	ent, ok := m.Peek("k")
+	if !ok || !ent.IsTombstone() || ent.Version != 6 {
+		t.Fatalf("want tombstone v6, peek ok=%v %+v", ok, ent)
+	}
+	if m.AcceptIfNewer("k", Entry{Value: []byte("stale"), Version: 5}) {
+		t.Fatal("stale ApplyPut must not resurrect when tombstone overshoots MaxBytes")
+	}
+}
+
+func TestMemoryTombstoneSurvivesLRUPressure(t *testing.T) {
+	m := NewMemory(400)
+	defer m.Close()
+
+	if !m.Set("keep", Entry{Value: []byte("v"), Version: 1}) {
+		t.Fatal("set keep")
+	}
+	if !m.DeleteIfVersion("keep", 2) {
+		t.Fatal("tombstone keep")
+	}
+	for i := 0; i < 30; i++ {
+		k := fmt.Sprintf("n-%02d", i)
+		_ = m.Set(k, Entry{Value: make([]byte, 40), Version: 1})
+	}
+	ent, ok := m.Peek("keep")
+	if !ok || !ent.IsTombstone() {
+		t.Fatalf("LRU must not evict live tombstone, peek ok=%v %+v", ok, ent)
+	}
+	if m.AcceptIfNewer("keep", Entry{Value: []byte("stale"), Version: 1}) {
+		t.Fatal("eviction must not open a resurrection hole")
+	}
+}
+
 // Tombstones expire so they do not pin memory forever.
 func TestMemoryTombstoneExpiry(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

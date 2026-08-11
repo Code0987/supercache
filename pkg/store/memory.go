@@ -236,19 +236,6 @@ func (m *Memory) DeleteIfVersion(key string, deleteVersion uint64) bool {
 		ExpireAt: m.tombstoneExpireAt(),
 	}
 	cost := entryCost(key, tomb)
-	if m.maxBytes > 0 && cost > m.maxBytes {
-		// Still try to remove live data even if tombstone cannot be stored.
-		if el, ok := m.items[key]; ok {
-			it := el.Value.(*lruItem)
-			if it.entry.Expired(m.now()) || deleteVersion >= it.entry.Version {
-				m.removeElement(el)
-				return true
-			}
-			m.staleSkip.Add(1)
-			return false
-		}
-		return true
-	}
 
 	if el, ok := m.items[key]; ok {
 		it := el.Value.(*lruItem)
@@ -334,13 +321,27 @@ func (m *Memory) evictLocked() {
 		return
 	}
 	for m.bytes > m.maxBytes && m.order.Len() > 0 {
-		el := m.order.Back()
+		el := m.lruVictim()
 		if el == nil {
-			break
+			// Only live tombstones remain; allow overshoot so deletes stay gated.
+			return
 		}
 		m.removeElement(el)
 		m.evictions.Add(1)
 	}
+}
+
+// lruVictim is the least-recent live/expired entry. Unexpired tombstones are
+// not evicted — that would let a delayed ApplyPut resurrect the key.
+func (m *Memory) lruVictim() *list.Element {
+	for el := m.order.Back(); el != nil; el = el.Prev() {
+		it := el.Value.(*lruItem)
+		if it.entry.IsTombstone() && !it.entry.Expired(m.now()) {
+			continue
+		}
+		return el
+	}
+	return nil
 }
 
 func (m *Memory) removeElement(el *list.Element) {

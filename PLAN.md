@@ -185,15 +185,14 @@ ApplyPut(entry):
   else → ignore (metric: apply_stale)
 
 ApplyDelete(key, delete_version):
-  if local missing → ok
-  if delete_version >= local.version → remove (or store tombstone with version until TTL)
-  else → ignore
+  if delete_version < local.version → ignore
+  else → install versioned tombstone (required; never a bare remove)
 
 Prefetch / DataSource fill:
   must go through same version assignment on owner (or use version 0 fill only if absent — see modes)
 ```
 
-**Tombstones (v1):** optional short-lived delete markers with version so delayed Put cannot resurrect; minimum is delete_version gate + TTL on key absence via negative optional.
+**Tombstones (v1, required):** every accepted Delete / ApplyDelete installs a versioned marker so a delayed ApplyPut cannot resurrect the key. LRU must not evict an unexpired tombstone (MaxBytes may overshoot). Markers expire after a short TTL (`DefaultTombstoneTTL`, 5m) so deleted keys do not pin RAM forever; after expiry a late Put may land, and the key’s own TTL still bounds any value.
 
 ### Concurrent writers
 
@@ -230,7 +229,7 @@ Each keyspace has a mode:
 | Load fill | present non-expired | **do not** overwrite (hit path shouldn’t load) |
 | Prefetch | same as load fill rules |
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
-| ApplyDelete adequate version | present | remove |
+| ApplyDelete adequate version | present or missing | install tombstone |
 
 ---
 

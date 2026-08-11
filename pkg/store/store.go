@@ -39,10 +39,11 @@ type Store interface {
 	// Delete removes key if present (hard remove, no tombstone). Returns true if removed.
 	Delete(key string) bool
 
-	// DeleteIfVersion installs a versioned tombstone when local is missing or
-	// local.Version <= deleteVersion. Returns false only when a higher live/tombstone
-	// version already exists (stale delete). Tombstones make Get miss and reject
-	// AcceptIfNewer with version <= tombstone until the tombstone expires.
+	// DeleteIfVersion always installs a versioned tombstone when local is missing
+	// or local.Version <= deleteVersion. Returns false only when a higher
+	// live/tombstone version already exists (stale delete). Tombstones make Get
+	// miss and reject AcceptIfNewer with version <= tombstone until the marker
+	// expires. LRU must not evict an unexpired tombstone (budget may overshoot).
 	DeleteIfVersion(key string, deleteVersion uint64) bool
 
 	// Stats returns a snapshot of counters.
