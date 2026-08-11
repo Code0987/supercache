@@ -72,3 +72,51 @@ func TestFanoutPeersInParallel(t *testing.T) {
 		t.Fatalf("fan-out looks serial: elapsed=%v (serial floor ~%v for %d peers)", elapsed, serialFloor, n)
 	}
 }
+
+func TestFanoutApplyEmptyAddr(t *testing.T) {
+	tr := peer.NewTransport(20 * time.Millisecond)
+	defer tr.Close()
+	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{Workers: 1, QueueSize: 4, DisableHints: true})
+	defer fo.Close()
+
+	fails := fo.Apply(nil, []ring.Peer{{ID: "x"}}, "ks", "k", store.Entry{Version: 1, Flags: store.FlagTombstone}, 1)
+	if len(fails) != 1 || fails[0].Err == nil {
+		t.Fatalf("want empty-address failure, got %+v", fails)
+	}
+}
+
+func TestSubmitDropHintsPeers(t *testing.T) {
+	tr := peer.NewTransport(200 * time.Millisecond)
+	defer tr.Close()
+	fo := peer.NewFanoutPool(tr, peer.FanoutConfig{
+		Workers: 1, QueueSize: 1, HintMaxPerPeer: 8,
+	})
+	defer fo.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				time.Sleep(time.Second)
+				_ = c.Close()
+			}(c)
+		}
+	}()
+	p := ring.Peer{ID: "b", Addr: ln.Addr().String()}
+	// Worker takes hang1; hang2 fills the one-slot queue.
+	fo.Submit([]ring.Peer{p}, "ks", "hang1", store.Entry{Value: []byte("v"), Version: 1}, 1)
+	fo.Submit([]ring.Peer{p}, "ks", "hang2", store.Entry{Value: []byte("v"), Version: 1}, 1)
+	// Queue full: this submit must hint instead of dropping on the floor.
+	fo.Submit([]ring.Peer{p}, "ks", "drop", store.Entry{Version: 3, Flags: store.FlagTombstone}, 1)
+	if fo.HintPending() < 1 {
+		t.Fatalf("dropped submit should enqueue a hint, pending=%d", fo.HintPending())
+	}
+}

@@ -159,12 +159,12 @@ func hintNewer(a, b store.Entry) bool {
 }
 
 func (p *FanoutPool) replayHint(addr string, h fanoutHint) error {
-	if h.ent.IsTombstone() {
-		_, err := p.t.ApplyDelete(context.Background(), addr, h.ks, h.key, h.ent.Version, h.ringGen)
-		return err
+	pr := h.peer
+	if pr.Addr == "" {
+		pr.Addr = addr
 	}
-	_, err := p.t.ApplyPut(context.Background(), addr, h.ks, h.key, h.ent, h.ringGen)
-	return err
+	// Already queued; do not hint again on this attempt.
+	return p.applyToPeer(context.Background(), pr, h.ks, h.key, h.ent, h.ringGen, false)
 }
 
 // Hint remembers a failed ApplyPut / ApplyDelete for replay (LWW per key).

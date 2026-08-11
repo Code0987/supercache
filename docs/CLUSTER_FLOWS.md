@@ -255,7 +255,7 @@ flowchart TD
   HOT --> W
   REST --> W
 
-  W --> REP["ReplicateToPeers<br/>fanoutPut force=true"]
+  W --> REP["ReplicateToPeers<br/>replicate force=true"]
   REP --> AP["ApplyPut → replica set except self"]
   AP --> J["Receivers AcceptIfNewer<br/>joiner warms async"]
 ```

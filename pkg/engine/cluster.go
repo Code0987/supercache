@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/Code0987/supercache/internal/peer"
@@ -137,32 +136,59 @@ func (e *Engine) putLocalApply(ctx context.Context, ks *ksRuntime, keyspaceName,
 		return fmt.Errorf("%w: entry exceeds MaxBytes", ErrInvalidArgument)
 	}
 	e.metrics.RecordPut(keyspaceName)
-	e.fanoutPut(keyspaceName, key, ent, forceFanout)
+	e.replicate(keyspaceName, key, ent, forceFanout)
 	return nil
 }
 
-func (e *Engine) fanoutPut(keyspaceName, key string, ent store.Entry, force bool) {
+// replicate async-applies ent to the replica set (Put or tombstone Delete).
+func (e *Engine) replicate(keyspaceName, key string, ent store.Entry, force bool) {
+	c, peers := e.replicaFanout(keyspaceName, key, force)
+	if c == nil || len(peers) == 0 {
+		return
+	}
+	c.Fanout.Submit(peers, keyspaceName, key, ent, c.Ring.Generation())
+}
+
+// replicateWait applies ent to the replica set now and returns MultiError for
+// first-attempt failures (already hinted inside Fanout.Apply).
+func (e *Engine) replicateWait(keyspaceName, key string, ent store.Entry) error {
+	c, peers := e.replicaFanout(keyspaceName, key, true)
+	if c == nil || len(peers) == 0 {
+		return nil
+	}
+	peerTO := time.Second
+	if c.Transport != nil && c.Transport.Timeout() > 0 {
+		peerTO = c.Transport.Timeout()
+	}
+	// Fresh budget: do not nest under a short ForwardDelete client timeout.
+	pctx, cancel := context.WithTimeout(context.Background(), peerTO)
+	defer cancel()
+	fails := c.Fanout.Apply(pctx, peers, keyspaceName, key, ent, c.Ring.Generation())
+	if len(fails) == 0 {
+		return nil
+	}
+	errs := make([]PeerError, 0, len(fails))
+	op := "ApplyPut"
+	if ent.IsTombstone() {
+		op = "ApplyDelete"
+	}
+	for _, f := range fails {
+		errs = append(errs, PeerError{PeerID: f.Peer.ID, Op: op, Err: f.Err})
+	}
+	return &MultiError{Errors: errs}
+}
+
+func (e *Engine) replicaFanout(keyspaceName, key string, force bool) (*Cluster, []ring.Peer) {
 	c := e.clusterSnapshot()
 	if c == nil || c.Fanout == nil || c.Ring == nil {
-		return
+		return nil, nil
 	}
-	// Only the owner should fan out authoritative fills, unless force (mis-route repair).
 	if !force {
 		if owner, ok := c.Ring.Owner(key); ok && owner.ID != c.SelfID {
-			return
+			return c, nil
 		}
 	}
-	peers := e.replicaPeers(c, keyspaceName, key, c.SelfID)
-	if len(peers) == 0 {
-		return
-	}
-	entCopy := store.Entry{
-		Value:    ent.CloneValue(),
-		Version:  ent.Version,
-		ExpireAt: ent.ExpireAt,
-		Flags:    ent.Flags,
-	}
-	c.Fanout.Submit(peers, keyspaceName, key, entCopy, c.Ring.Generation())
+	return c, e.replicaPeers(c, keyspaceName, key, c.SelfID)
 }
 
 // putViaCluster routes Put to owner or applies locally.
@@ -201,8 +227,9 @@ func (e *Engine) putViaCluster(ctx context.Context, keyspaceName, key string, va
 	return nil
 }
 
-// DeleteAsOwner mints a delete version, applies locally, and sync-RPCs the replica set.
-// Returns MultiError if any peer fails (local success still applied).
+// DeleteAsOwner mints a delete version, applies a local tombstone, and
+// replicateWaits the replica set (same apply+hint path as Put).
+// Returns MultiError if any peer fails on the first attempt.
 func (e *Engine) DeleteAsOwner(ctx context.Context, keyspaceName, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -222,58 +249,10 @@ func (e *Engine) DeleteAsOwner(ctx context.Context, keyspaceName, key string) er
 	_ = ks.store.DeleteIfVersion(key, ver)
 	e.metrics.RecordDelete(keyspaceName)
 
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return nil
-	}
-
-	peers := e.replicaPeers(c, keyspaceName, key, c.SelfID)
-	if len(peers) == 0 {
-		return nil
-	}
-
-	var (
-		mu   sync.Mutex
-		errs []PeerError
-		wg   sync.WaitGroup
-	)
-	ringGen := c.Ring.Generation()
-	// Fresh deadline budget for multi-peer delete (do not nest under short ForwardDelete client timeout alone).
-	peerTO := c.Transport.Timeout()
-	if peerTO <= 0 {
-		peerTO = 500 * time.Millisecond
-	}
-	for _, p := range peers {
-		if p.Addr == "" {
-			mu.Lock()
-			errs = append(errs, PeerError{PeerID: p.ID, Op: "ApplyDelete", Err: fmt.Errorf("empty address")})
-			mu.Unlock()
-			continue
-		}
-		wg.Add(1)
-		go func(p ring.Peer) {
-			defer wg.Done()
-			pctx, cancel := context.WithTimeout(context.Background(), peerTO)
-			defer cancel()
-			_, err := c.Transport.ApplyDelete(pctx, p.Addr, keyspaceName, key, ver, ringGen)
-			if err != nil {
-				if c.Fanout != nil {
-					c.Fanout.Hint(p, keyspaceName, key, store.Entry{
-						Version: ver,
-						Flags:   store.FlagTombstone,
-					}, ringGen)
-				}
-				mu.Lock()
-				errs = append(errs, PeerError{PeerID: p.ID, Op: "ApplyDelete", Err: err})
-				mu.Unlock()
-			}
-		}(p)
-	}
-	wg.Wait()
-	if len(errs) == 0 {
-		return nil
-	}
-	return &MultiError{Errors: errs}
+	return e.replicateWait(keyspaceName, key, store.Entry{
+		Version: ver,
+		Flags:   store.FlagTombstone,
+	})
 }
 
 // deleteViaCluster routes Delete to owner coordinator or runs as owner.

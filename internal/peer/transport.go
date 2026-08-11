@@ -250,7 +250,52 @@ func (p *FanoutPool) loop() {
 	}
 }
 
-// applyJob fans ApplyPut to all peers concurrently.
+// ApplyFailure is one replica that did not accept an apply on the first try.
+// The mutation is still hinted for replay when hinting is enabled.
+type ApplyFailure struct {
+	Peer ring.Peer
+	Err  error
+}
+
+func cloneEntry(ent store.Entry) store.Entry {
+	return store.Entry{
+		Value:    ent.CloneValue(),
+		Version:  ent.Version,
+		ExpireAt: ent.ExpireAt,
+		Flags:    ent.Flags,
+	}
+}
+
+// applyToPeer is the single replica RPC path for Put and Delete.
+// Tombstone entries use ApplyDelete; everything else uses ApplyPut.
+// On failure, optionally enqueue an LWW hint for later replay.
+func (p *FanoutPool) applyToPeer(ctx context.Context, peer ring.Peer, ks, key string, ent store.Entry, ringGen uint64, hintOnFail bool) error {
+	if p == nil || p.t == nil {
+		return fmt.Errorf("fanout: no transport")
+	}
+	if peer.Addr == "" {
+		return fmt.Errorf("empty address")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ent = cloneEntry(ent)
+	var err error
+	if ent.IsTombstone() {
+		_, err = p.t.ApplyDelete(ctx, peer.Addr, ks, key, ent.Version, ringGen)
+	} else {
+		_, err = p.t.ApplyPut(ctx, peer.Addr, ks, key, ent, ringGen)
+	}
+	if err != nil {
+		p.t.FanoutErrors.Add(1)
+		if hintOnFail {
+			p.enqueueHint(peer, ks, key, ent, ringGen)
+		}
+	}
+	return err
+}
+
+// applyJob fans one mutation to all peers concurrently.
 func (p *FanoutPool) applyJob(job fanoutJob) {
 	var wg sync.WaitGroup
 	for _, peer := range job.peers {
@@ -260,39 +305,63 @@ func (p *FanoutPool) applyJob(job fanoutJob) {
 		wg.Add(1)
 		go func(peer ring.Peer) {
 			defer wg.Done()
-			// Copy entry bytes per peer so concurrent RPC marshaling is safe.
-			ent := store.Entry{
-				Value:    job.ent.CloneValue(),
-				Version:  job.ent.Version,
-				ExpireAt: job.ent.ExpireAt,
-				Flags:    job.ent.Flags,
-			}
-			var err error
-			if ent.IsTombstone() {
-				_, err = p.t.ApplyDelete(context.Background(), peer.Addr, job.ks, job.key, ent.Version, job.ringGen)
-			} else {
-				_, err = p.t.ApplyPut(context.Background(), peer.Addr, job.ks, job.key, ent, job.ringGen)
-			}
-			if err != nil {
-				p.t.FanoutErrors.Add(1)
-				p.enqueueHint(peer, job.ks, job.key, ent, job.ringGen)
-			}
+			_ = p.applyToPeer(context.Background(), peer, job.ks, job.key, job.ent, job.ringGen, true)
 		}(peer)
 	}
 	wg.Wait()
 }
 
-// Submit queues a fan-out. Drops if full (no retry of the submit itself).
+// Submit queues an async replica apply (Put or tombstone Delete).
+// If the job queue is full, each peer is hinted instead so the mutation is not lost.
 func (p *FanoutPool) Submit(peers []ring.Peer, keyspace, key string, ent store.Entry, ringGen uint64) {
 	if p == nil || p.closed.Load() {
 		return
 	}
-	job := fanoutJob{peers: peers, ks: keyspace, key: key, ent: ent, ringGen: ringGen}
+	job := fanoutJob{peers: peers, ks: keyspace, key: key, ent: cloneEntry(ent), ringGen: ringGen}
 	select {
 	case p.jobs <- job:
 	default:
 		p.t.FanoutDropped.Add(1)
+		for _, peer := range job.peers {
+			p.enqueueHint(peer, job.ks, job.key, job.ent, job.ringGen)
+		}
 	}
+}
+
+// Apply sends the mutation to every peer now (parallel), hints failures, and
+// returns those failures. Used by Delete so the caller can surface MultiError
+// without a second apply/hint implementation.
+func (p *FanoutPool) Apply(ctx context.Context, peers []ring.Peer, keyspace, key string, ent store.Entry, ringGen uint64) []ApplyFailure {
+	if p == nil || p.closed.Load() {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var (
+		mu  sync.Mutex
+		out []ApplyFailure
+		wg  sync.WaitGroup
+	)
+	for _, pr := range peers {
+		if pr.Addr == "" {
+			mu.Lock()
+			out = append(out, ApplyFailure{Peer: pr, Err: fmt.Errorf("empty address")})
+			mu.Unlock()
+			continue
+		}
+		wg.Add(1)
+		go func(pr ring.Peer) {
+			defer wg.Done()
+			if err := p.applyToPeer(ctx, pr, keyspace, key, ent, ringGen, true); err != nil {
+				mu.Lock()
+				out = append(out, ApplyFailure{Peer: pr, Err: err})
+				mu.Unlock()
+			}
+		}(pr)
+	}
+	wg.Wait()
+	return out
 }
 
 // Close stops workers and the hint flusher.

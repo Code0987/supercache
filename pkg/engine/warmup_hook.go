@@ -75,7 +75,7 @@ func (e *Engine) LocalEntries(keyspaceName string) []warmup.LocalEntry {
 // ReplicateToPeers force-fans an entry to the key's replica set (async, no retry).
 // Used for topology handoff so existing replicas can seed a joining replica.
 func (e *Engine) ReplicateToPeers(keyspaceName, key string, ent store.Entry) {
-	e.fanoutPut(keyspaceName, key, ent, true)
+	e.replicate(keyspaceName, key, ent, true)
 }
 
 // HotKeys returns tracked hot keys when a warmup.Manager is attached.
