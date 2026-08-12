@@ -77,7 +77,7 @@ func TestApplyDeleteAndWithTTL(t *testing.T) {
 	}
 }
 
-func TestMultiErrorAndKeyErrorStrings(t *testing.T) {
+func TestPeerMultiAndKeyErrorFormatting(t *testing.T) {
 	pe := engine.PeerError{PeerID: "n1", Op: "ApplyDelete", Err: fmt.Errorf("down")}
 	if pe.Error() == "" || pe.Unwrap() == nil {
 		t.Fatal("PeerError")
@@ -109,7 +109,7 @@ func TestMultiErrorAndKeyErrorStrings(t *testing.T) {
 	}
 }
 
-func TestEventsPeersHotKeysAndStats(t *testing.T) {
+func TestPeersHotKeysStatsAndWarmupHook(t *testing.T) {
 	e := engine.New()
 	defer e.Close()
 	_ = e.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
@@ -167,7 +167,7 @@ func TestEventsPeersHotKeysAndStats(t *testing.T) {
 	}
 }
 
-func TestWithGlobalProtectAndValidate(t *testing.T) {
+func TestValidateEmptyKeyAndLimits(t *testing.T) {
 	g := protect.New(protect.Config{RateLimitRPS: 0.0001, Burst: 1}) // very tight
 	e := engine.New(engine.WithGlobalProtect(g), engine.WithLimits(8, 16, 10))
 	defer e.Close()
@@ -217,7 +217,7 @@ func TestForceLoadCacheOnlyAndOwner(t *testing.T) {
 	}
 }
 
-func TestBatchTooLargeAndJoinErrors(t *testing.T) {
+func TestPutManyDeleteManyBatchLimit(t *testing.T) {
 	e := engine.New(engine.WithLimits(64, 1024, 2))
 	defer e.Close()
 	_ = e.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
@@ -285,7 +285,7 @@ func TestLoadThroughNegativeAndGetOrLoadLocal(t *testing.T) {
 	}
 }
 
-func TestBloomAddEdges(t *testing.T) {
+func TestBloomAddRejectsInvalidInput(t *testing.T) {
 	e := engine.New()
 	defer e.Close()
 	_ = e.UpdateKeySpace(keyspace.Config{
@@ -562,18 +562,28 @@ func TestUpdateKeySpacePreservesVersions(t *testing.T) {
 	}
 }
 
-// TestCoveragePush90 hits remaining low-hanging branches toward 90% statement coverage.
-func TestCoveragePush90(t *testing.T) {
+// TestValidationModeGuardsAndNegativeTTL checks argument validation, ModeBloom
+// API guards, NegativeTTL=0, and version-tracker pruning.
+func TestValidationModeGuardsAndNegativeTTL(t *testing.T) {
 	ctx := context.Background()
 
-	// Nil metrics: Metrics() empty + startSpan no-op + noteRingGeneration early exit.
+	// Engine with metrics disabled still serves Put/Get/Apply.
 	eNil := engine.New(engine.WithMetrics(nil))
 	defer eNil.Close()
-	_ = eNil.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
-	_ = eNil.Metrics()
-	_ = eNil.Put(ctx, "c", "k", []byte("v"))
-	_, _ = eNil.ApplyPutWithRingGen("c", "k", store.Entry{Value: []byte("v2"), Version: 9}, 42)
-	_, _ = eNil.Get(ctx, "c", "k")
+	if err := eNil.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eNil.Put(ctx, "c", "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := eNil.ApplyPutWithRingGen("c", "k", store.Entry{Value: []byte("v2"), Version: 9}, 42)
+	if err != nil || !ok {
+		t.Fatalf("ApplyPut: ok=%v err=%v", ok, err)
+	}
+	v, err := eNil.Get(ctx, "c", "k")
+	if err != nil || string(v) != "v2" {
+		t.Fatalf("Get: %q err=%v", v, err)
+	}
 
 	e := engine.New(engine.WithLimits(8, 32, 8))
 	defer e.Close()
@@ -608,24 +618,26 @@ func TestCoveragePush90(t *testing.T) {
 	if err := e.Put(ctx, "c", "k", []byte("too-big")); !errors.Is(err, engine.ErrValueTooLarge) {
 		t.Fatalf("MaxValueSize: %v", err)
 	}
-	_ = e.Put(ctx, "c", "k", []byte("ok"))
+	if err := e.Put(ctx, "c", "k", []byte("ok")); err != nil {
+		t.Fatal(err)
+	}
 	ents := e.LocalEntries("c")
 	if len(ents) == 0 {
 		t.Fatal("LocalEntries empty")
 	}
 
-	// ModeBloom Get/Put reject; BloomTest wrong mode; BloomAdd item too large / name too long
+	// ModeBloom: Get/Put rejected; BloomTest requires ModeBloom.
 	_ = e.UpdateKeySpace(keyspace.Config{
 		Name: "bf", Mode: keyspace.ModeBloom, MaxBytes: 1 << 20, BloomBits: 1024, BloomHashes: 3, MaxKeyLen: 3,
 	})
-	if _, err := e.Get(ctx, "bf", "n"); err == nil {
-		t.Fatal("Get bloom")
+	if _, err := e.Get(ctx, "bf", "n"); !errors.Is(err, engine.ErrInvalidArgument) {
+		t.Fatalf("Get bloom: %v", err)
 	}
-	if err := e.Put(ctx, "bf", "n", []byte("x")); err == nil {
-		t.Fatal("Put bloom")
+	if err := e.Put(ctx, "bf", "n", []byte("x")); !errors.Is(err, engine.ErrInvalidArgument) {
+		t.Fatalf("Put bloom: %v", err)
 	}
-	if _, err := e.BloomTest(ctx, "c", "n", []byte("x")); err == nil {
-		t.Fatal("BloomTest wrong mode")
+	if _, err := e.BloomTest(ctx, "c", "n", []byte("x")); !errors.Is(err, engine.ErrInvalidArgument) {
+		t.Fatalf("BloomTest wrong mode: %v", err)
 	}
 	// name exceeds MaxKeyLen
 	if err := e.BloomAdd(ctx, "bf", "long", []byte("x")); !errors.Is(err, engine.ErrKeyTooLarge) {
@@ -691,11 +703,10 @@ func TestCoveragePush90(t *testing.T) {
 
 	// joinErrors single-error path via PutMany one failure
 	_ = e.UpdateKeySpace(keyspace.Config{Name: "batch", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
-	err := e.PutMany(ctx, "batch", []engine.KV{
+	if err := e.PutMany(ctx, "batch", []engine.KV{
 		{Key: "ok", Value: []byte("1")},
 		{Key: "toolong!!", Value: []byte("1")}, // 9 > maxKeyLen 8
-	})
-	if err == nil {
+	}); err == nil {
 		t.Fatal("PutMany expected error")
 	}
 
@@ -710,28 +721,30 @@ func TestCoveragePush90(t *testing.T) {
 		t.Fatalf("cap prune still live keys: %d", n)
 	}
 
-	// Snapshots + HotKeys path with warmup; RingGeneration without ring returns stored gen
 	wm := warmup.NewManager(e, warmup.Config{Workers: 1, TopN: 4, TrackMax: 16})
 	e.AttachWarmup(wm, wm)
-	_ = e.KeySpaceSnapshots()
-	_ = e.HotKeys("c", 2)
-	// hitRecorder that does not implement HotKeys
+	if snaps := e.KeySpaceSnapshots(); len(snaps) == 0 {
+		t.Fatal("KeySpaceSnapshots empty")
+	}
+	// hitRecorder that does not implement HotKeys → nil
 	e.AttachWarmup(hitOnly{}, nil)
 	if e.HotKeys("c", 2) != nil {
 		t.Fatal("HotKeys without HotKeys method")
 	}
 
-	// MaxBytes rejection on AcceptIfNewer (value passes MaxValueSize but not store budget)
+	// Store MaxBytes: entries larger than budget eventually fail.
 	eTiny := engine.New()
 	defer eTiny.Close()
 	_ = eTiny.UpdateKeySpace(keyspace.Config{Name: "t", Mode: keyspace.ModeCacheOnly, MaxBytes: 40})
-	// First put may succeed; fill until next put fails MaxBytes.
+	var sawErr bool
 	for i := 0; i < 20; i++ {
-		err := eTiny.Put(ctx, "t", fmt.Sprintf("x%d", i), make([]byte, 30))
-		if err != nil {
-			// expected once full
+		if err := eTiny.Put(ctx, "t", fmt.Sprintf("x%d", i), make([]byte, 30)); err != nil {
+			sawErr = true
 			break
 		}
+	}
+	if !sawErr {
+		t.Fatal("expected MaxBytes rejection after filling store")
 	}
 }
 
@@ -739,7 +752,7 @@ type hitOnly struct{}
 
 func (hitOnly) RecordHit(string, string) {}
 
-func TestCoverageClusterFetchAndForward(t *testing.T) {
+func TestClusterOwnerFetchForwardBloomAndDelete(t *testing.T) {
 	const (
 		addrA = "127.0.0.1:19911"
 		addrB = "127.0.0.1:19912"

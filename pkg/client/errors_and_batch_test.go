@@ -3,6 +3,8 @@ package client_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +16,7 @@ import (
 	"github.com/Code0987/supercache/pkg/keyspace"
 )
 
-func TestClientCoverageEdges(t *testing.T) {
+func TestClientDialBatchBloomAndErrors(t *testing.T) {
 	eng := engine.New(engine.WithLimits(16, 1024, 10))
 	defer eng.Close()
 	_ = eng.UpdateKeySpace(keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Minute})
@@ -66,28 +68,26 @@ func TestClientCoverageEdges(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("BloomTest: ok=%v err=%v", ok, err)
 	}
-	ok, err = cli.BloomTest(ctx, "bf", "f1", []byte("other"))
-	if err != nil {
+	// Unrelated item is allowed to false-positive rarely; assert API works.
+	if _, err := cli.BloomTest(ctx, "bf", "f1", []byte("other")); err != nil {
 		t.Fatal(err)
 	}
-	_ = ok // may be false (no false positive guaranteed for one item)
 
-	// Error paths: missing keyspace
+	// Missing keyspace surfaces as gRPC/client error (not ErrNotFound).
 	if _, err := cli.Get(ctx, "nope", "k"); err == nil {
-		t.Fatal("expected get error")
+		t.Fatal("expected get error for missing keyspace")
 	}
 	if err := cli.Put(ctx, "nope", "k", []byte("v")); err == nil {
-		t.Fatal("expected put error")
+		t.Fatal("expected put error for missing keyspace")
 	}
 	if err := cli.BloomAdd(ctx, "nope", "f", []byte("x")); err == nil {
-		t.Fatal("expected bloom add error")
+		t.Fatal("expected bloom add error for missing keyspace")
 	}
 	if _, err := cli.BloomTest(ctx, "nope", "f", []byte("x")); err == nil {
-		t.Fatal("expected bloom test error")
+		t.Fatal("expected bloom test error for missing keyspace")
 	}
 
-	// PutMany key errors (batch limits via oversized key after WithLimits on a new engine)
-	// Use invalid empty key items — engine returns invalid argument per key.
+	// PutMany empty keys → per-key KeyErrors in the response (not a transport error).
 	err = cli.PutMany(ctx, "demo", []client.KV{
 		{Key: "", Value: []byte("x")},
 		{Key: "", Value: []byte("y")},
@@ -95,31 +95,25 @@ func TestClientCoverageEdges(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected PutMany key errors")
 	}
-	var kes client.KeyErrors
-	if !errors.As(err, &kes) {
-		// KeyErrors is a slice type implementing error — As may need pointer
-		if ke, ok := err.(client.KeyErrors); ok {
-			kes = ke
-		} else {
-			t.Fatalf("want KeyErrors, got %T %v", err, err)
-		}
+	kes, ok := err.(client.KeyErrors)
+	if !ok {
+		t.Fatalf("want KeyErrors, got %T %v", err, err)
 	}
-	_ = kes.Error()
-	if len(kes) > 0 {
-		_ = kes[0].Error()
+	if len(kes) != 2 {
+		t.Fatalf("want 2 key errors, got %d (%v)", len(kes), kes)
+	}
+	if kes.Error() == "" || !errors.As(err, &kes) {
+		t.Fatalf("KeyErrors.Error empty or As failed: %v", err)
 	}
 
-	// DeleteMany key errors on missing keyspace
+	// DeleteMany on missing keyspace → KeyErrors for each key.
 	err = cli.DeleteMany(ctx, "nope", []string{"k1", "k2"})
 	if err == nil {
-		// engine Delete on missing ks returns ErrKeyspaceNotFound per key → KeyErrors
 		t.Fatal("expected DeleteMany errors")
 	}
-	if ke, ok := err.(client.KeyErrors); ok {
-		_ = ke.Error()
-		if len(ke) > 0 {
-			_ = ke[0].Error()
-		}
+	kes, ok = err.(client.KeyErrors)
+	if !ok || len(kes) != 2 {
+		t.Fatalf("want KeyErrors len=2, got %T %v", err, err)
 	}
 }
 
@@ -151,55 +145,82 @@ func TestClientPeerFailures(t *testing.T) {
 	}
 	defer cli.Close()
 
-	_ = cli.Put(ctx, "demo", "k", []byte("v"))
-	err = cli.Delete(ctx, "demo", "k")
-	if err != nil {
-		// PeerFailures from Delete
-		if pf, ok := err.(client.PeerFailures); ok {
-			_ = pf.Error()
-			if len(pf) > 0 {
-				_ = pf[0].Error()
-			}
-		} else {
-			t.Logf("Delete err type %T: %v", err, err)
+	// Put only keys we own so Delete is local owner path (not ForwardDelete to down owner).
+	var owned string
+	for i := 0; i < 2000; i++ {
+		k := fmt.Sprintf("own-%d", i)
+		if o, ok := eng.OwnerOf(k); ok && o.ID == "a" {
+			owned = k
+			break
 		}
 	}
-
-	_ = cli.Put(ctx, "demo", "k2", []byte("v"))
-	err = cli.DeleteMany(ctx, "demo", []string{"k2"})
-	if err != nil {
-		if kes, ok := err.(client.KeyErrors); ok {
-			_ = kes.Error()
-			for _, ke := range kes {
-				_ = ke.Error() // may include PeerFailures branch
-			}
-		}
+	if owned == "" {
+		t.Fatal("no key owned by a")
+	}
+	if err := cli.Put(ctx, "demo", owned, []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	// Owner delete fans out to down peer → PeerFailures (not a transport error).
+	err = cli.Delete(ctx, "demo", owned)
+	if err == nil {
+		t.Fatal("expected peer failures when replica is down")
+	}
+	pf, ok := err.(client.PeerFailures)
+	if !ok {
+		t.Fatalf("want PeerFailures, got %T: %v", err, err)
+	}
+	if len(pf) == 0 || pf.Error() == "" {
+		t.Fatalf("empty PeerFailures: %+v", pf)
+	}
+	if pf[0].PeerID == "" || pf[0].Error() == "" {
+		t.Fatalf("peer failure detail: %+v", pf[0])
 	}
 
-	// Force KeyError.Error with PeerFailures via type construction is internal;
-	// DeleteMany with peer failures should populate PeerFailures on KeyError.
+	var owned2 string
+	for i := 0; i < 2000; i++ {
+		k := fmt.Sprintf("own2-%d", i)
+		if o, ok := eng.OwnerOf(k); ok && o.ID == "a" && k != owned {
+			owned2 = k
+			break
+		}
+	}
+	if err := cli.Put(ctx, "demo", owned2, []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	err = cli.DeleteMany(ctx, "demo", []string{owned2})
+	if err == nil {
+		t.Fatal("expected DeleteMany key errors with peer failures")
+	}
+	kes, ok := err.(client.KeyErrors)
+	if !ok || len(kes) == 0 {
+		t.Fatalf("want KeyErrors, got %T %v", err, err)
+	}
+	if len(kes[0].PeerFailures) == 0 {
+		t.Fatalf("want peer failures on key error, got %+v", kes[0])
+	}
 }
 
-func TestClientErrorStringHelpers(t *testing.T) {
-	// Exercise Error() methods without RPC.
+func TestClientErrorTypesFormat(t *testing.T) {
 	ke := client.KeyError{Key: "k", Message: "msg"}
-	if ke.Error() == "" {
-		t.Fatal("KeyError")
+	if got := ke.Error(); got != `key "k": msg` {
+		t.Fatalf("KeyError: %q", got)
 	}
 	ke.PeerFailures = client.PeerFailures{{PeerID: "p1", Message: "down"}}
-	if ke.Error() == "" {
-		t.Fatal("KeyError with peers")
+	got := ke.Error()
+	// Formats as: key "k": msg (1 peer failure(s))
+	if !strings.Contains(got, `key "k": msg`) || !strings.Contains(got, "peer failure") {
+		t.Fatalf("KeyError with peers: %q", got)
 	}
 	kes := client.KeyErrors{ke}
-	if kes.Error() == "" {
-		t.Fatal("KeyErrors")
+	if kes.Error() != "1 key error(s)" {
+		t.Fatalf("KeyErrors: %q", kes.Error())
 	}
 	pf := client.PeerFailure{PeerID: "p", Message: "e"}
-	if pf.Error() == "" {
-		t.Fatal("PeerFailure")
+	if pf.Error() != "peer p: e" {
+		t.Fatalf("PeerFailure: %q", pf.Error())
 	}
 	pfs := client.PeerFailures{pf}
-	if pfs.Error() == "" {
-		t.Fatal("PeerFailures")
+	if pfs.Error() != "1 peer failure(s)" {
+		t.Fatalf("PeerFailures: %q", pfs.Error())
 	}
 }
