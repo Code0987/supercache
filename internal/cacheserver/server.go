@@ -62,12 +62,7 @@ func (s *Server) PutMany(ctx context.Context, req *cachev1.PutManyRequest) (*cac
 		return resp, nil
 	}
 	// Flatten KeyError / joined errors into response when possible.
-	var ke engine.KeyError
-	if errors.As(err, &ke) {
-		resp.Errors = append(resp.Errors, &cachev1.KeyError{Key: ke.Key, Message: ke.Err.Error()})
-		return resp, nil
-	}
-	// errors.Join
+	// Prefer multi unwrap first: errors.As finds only the first KeyError in a Join.
 	type multi interface{ Unwrap() []error }
 	if m, ok := err.(multi); ok {
 		for _, e := range m.Unwrap() {
@@ -78,6 +73,11 @@ func (s *Server) PutMany(ctx context.Context, req *cachev1.PutManyRequest) (*cac
 				resp.Errors = append(resp.Errors, &cachev1.KeyError{Message: e.Error()})
 			}
 		}
+		return resp, nil
+	}
+	var ke engine.KeyError
+	if errors.As(err, &ke) {
+		resp.Errors = append(resp.Errors, &cachev1.KeyError{Key: ke.Key, Message: ke.Err.Error()})
 		return resp, nil
 	}
 	return nil, mapErr(err)
@@ -108,11 +108,7 @@ func (s *Server) DeleteMany(ctx context.Context, req *cachev1.DeleteManyRequest)
 	if err == nil {
 		return resp, nil
 	}
-	var ke engine.KeyError
-	if errors.As(err, &ke) {
-		resp.Errors = append(resp.Errors, keyErrorToProto(ke))
-		return resp, nil
-	}
+	// Prefer multi unwrap first: errors.As finds only the first KeyError in a Join.
 	type multi interface{ Unwrap() []error }
 	if m, ok := err.(multi); ok {
 		for _, e := range m.Unwrap() {
@@ -123,6 +119,11 @@ func (s *Server) DeleteMany(ctx context.Context, req *cachev1.DeleteManyRequest)
 				resp.Errors = append(resp.Errors, &cachev1.KeyError{Message: e.Error()})
 			}
 		}
+		return resp, nil
+	}
+	var ke engine.KeyError
+	if errors.As(err, &ke) {
+		resp.Errors = append(resp.Errors, keyErrorToProto(ke))
 		return resp, nil
 	}
 	return nil, mapErr(err)
