@@ -222,3 +222,51 @@ func writeKey(t *testing.T, dir, name string, key *ecdsa.PrivateKey) string {
 	}
 	return writePEM(t, dir, name, "EC PRIVATE KEY", b)
 }
+
+func TestServerClientFilesRejectBadPEMs(t *testing.T) {
+	dir := t.TempDir()
+	// bad key pair paths
+	if _, err := tlsconfig.ServerFiles(filepath.Join(dir, "missing.pem"), filepath.Join(dir, "missing-key.pem"), "", false); err == nil {
+		t.Fatal("missing cert")
+	}
+	// invalid CA file
+	badCA := filepath.Join(dir, "bad-ca.pem")
+	if err := os.WriteFile(badCA, []byte("not-a-cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// need real cert/key for ServerFiles past LoadX509KeyPair
+	caCert, caKey := mustCA(t)
+	srvCert, srvKey := mustLeaf(t, caCert, caKey, "server", nil, nil)
+	srvCertFile := writePEM(t, dir, "s.pem", "CERTIFICATE", srvCert.Raw)
+	srvKeyFile := writeKey(t, dir, "s-key.pem", srvKey)
+
+	if _, err := tlsconfig.ServerFiles(srvCertFile, srvKeyFile, badCA, true); err == nil {
+		t.Fatal("bad CA")
+	}
+	// client CA with requireClientCert=false → VerifyClientCertIfGiven
+	caFile := writePEM(t, dir, "ca.pem", "CERTIFICATE", caCert.Raw)
+	cfg, err := tlsconfig.ServerFiles(srvCertFile, srvKeyFile, caFile, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ClientAuth != tls.VerifyClientCertIfGiven {
+		t.Fatalf("ClientAuth=%v", cfg.ClientAuth)
+	}
+
+	// ClientFiles bad CA
+	if _, err := tlsconfig.ClientFiles(badCA, "localhost", "", ""); err == nil {
+		t.Fatal("bad client CA")
+	}
+	// ClientFiles only cert without key
+	if _, err := tlsconfig.ClientFiles(caFile, "localhost", srvCertFile, ""); err == nil {
+		t.Fatal("cert without key")
+	}
+	// ClientFiles bad key pair
+	if _, err := tlsconfig.ClientFiles(caFile, "localhost", srvCertFile, filepath.Join(dir, "nope.pem")); err == nil {
+		t.Fatal("bad client key pair")
+	}
+	// missing CA path
+	if _, err := tlsconfig.ClientFiles(filepath.Join(dir, "no-ca.pem"), "h", "", ""); err == nil {
+		t.Fatal("missing ca file")
+	}
+}

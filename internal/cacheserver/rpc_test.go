@@ -2,6 +2,7 @@ package cacheserver_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func startCache(t *testing.T, eng *engine.Engine) (cachev1.CacheClient, func()) 
 	}
 }
 
-func TestCacheRPCHappyAndMapErr(t *testing.T) {
+func TestCacheRPCPutGetDeleteBloomAndMapErr(t *testing.T) {
 	eng := engine.New(engine.WithLimits(8, 16, 2))
 	defer eng.Close()
 	_ = eng.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20, TTL: time.Hour})
@@ -200,18 +201,20 @@ func TestDeleteMultiErrorResponse(t *testing.T) {
 	defer stop()
 	ctx := context.Background()
 
-	_, _ = cli.Put(ctx, &cachev1.PutRequest{Keyspace: "c", Key: "k", Value: []byte("v")})
+	if _, err := cli.Put(ctx, &cachev1.PutRequest{Keyspace: "c", Key: "k", Value: []byte("v")}); err != nil {
+		t.Fatal(err)
+	}
 	del, err := cli.Delete(ctx, &cachev1.DeleteRequest{Keyspace: "c", Key: "k"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// When owner delete fans out to down peer, PeerFailures is populated.
+	// Owner delete fans out to down peer → structured PeerFailures (gRPC OK).
 	if len(del.PeerFailures) == 0 {
-		t.Log("no peer failures (RF/topology may skip)")
+		t.Fatal("expected peer failures when replica is down")
 	}
 }
 
-func TestMapErrUnavailable(t *testing.T) {
+func TestGetUnavailableWhenGlobalProtectBlocks(t *testing.T) {
 	g := protect.New(protect.Config{
 		RateLimitRPS: 0.0001, Burst: 1,
 		FailureThreshold: 1, OpenTimeout: time.Hour,
@@ -238,7 +241,7 @@ func TestMapErrUnavailable(t *testing.T) {
 	}
 }
 
-func TestGetAfterClose(t *testing.T) {
+func TestGetKeyspaceNotFoundAfterEngineClose(t *testing.T) {
 	eng := engine.New()
 	eng.Close()
 	cli, stop := startCache(t, eng)
@@ -249,7 +252,7 @@ func TestGetAfterClose(t *testing.T) {
 	}
 }
 
-func TestDeleteManyJoinErrors(t *testing.T) {
+func TestDeleteManyReportsPeerFailures(t *testing.T) {
 	eng := engine.New(engine.WithLimits(64, 1024, 10))
 	defer eng.Close()
 	_ = eng.UpdateKeySpace(keyspace.Config{Name: "c", Mode: keyspace.ModeCacheOnly, MaxBytes: 1 << 20})
@@ -268,11 +271,30 @@ func TestDeleteManyJoinErrors(t *testing.T) {
 	cli, stop := startCache(t, eng)
 	defer stop()
 	ctx := context.Background()
-	_, _ = cli.Put(ctx, &cachev1.PutRequest{Keyspace: "c", Key: "k1", Value: []byte("1")})
-	_, _ = cli.Put(ctx, &cachev1.PutRequest{Keyspace: "c", Key: "k2", Value: []byte("2")})
-	resp, err := cli.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: "c", Keys: []string{"k1", "k2"}})
+	// Only put keys owned by "a" so Delete is DeleteAsOwner (not forward to down b).
+	var keys []string
+	for i := 0; len(keys) < 2 && i < 3000; i++ {
+		k := fmt.Sprintf("own-%d", i)
+		if o, ok := eng.OwnerOf(k); ok && o.ID == "a" {
+			keys = append(keys, k)
+			if _, err := cli.Put(ctx, &cachev1.PutRequest{Keyspace: "c", Key: k, Value: []byte("v")}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(keys) < 2 {
+		t.Fatal("need two keys owned by a")
+	}
+	resp, err := cli.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: "c", Keys: keys})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp
+	if len(resp.Errors) == 0 {
+		t.Fatal("expected per-key errors when peers are down")
+	}
+	for _, ke := range resp.Errors {
+		if len(ke.PeerFailures) == 0 {
+			t.Fatalf("key %q missing peer_failures: %+v", ke.Key, ke)
+		}
+	}
 }

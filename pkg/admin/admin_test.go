@@ -124,3 +124,77 @@ func TestDocsAndOpenAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminRejectsNonGETAndNilProvider(t *testing.T) {
+	s := admin.New(nil)
+	h := s.Handler()
+
+	for _, path := range []string{"/healthz", "/readyz", "/peers", "/keyspaces", "/metrics"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, nil))
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s POST: %d", path, rr.Code)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatal(rr.Code)
+	}
+	for _, path := range []string{"/peers", "/keyspaces", "/metrics"} {
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, rr.Code)
+		}
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodHead, "/docs/", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("HEAD docs: %d", rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/docs/", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatal(rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/docs/nope.yaml", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatal(rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodHead, "/openapi.yaml", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/openapi.yaml", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatal(rr.Code)
+	}
+}
+
+func TestPeersIncludesKeyspaceHashes(t *testing.T) {
+	eng := engine.New()
+	defer eng.Close()
+	eng.SetNodeInfo("n1", "addr")
+	_ = eng.UpdateKeySpace(keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 1024, TTL: time.Minute})
+	s := admin.New(eng)
+	s.SetReady(true)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/peers", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "keyspace_hashes") {
+		t.Fatal(rr.Body.String())
+	}
+}
