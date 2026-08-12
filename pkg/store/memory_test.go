@@ -249,6 +249,237 @@ func TestMemoryTombstoneSurvivesLRUPressure(t *testing.T) {
 	}
 }
 
+func TestAcceptNegativeBranches(t *testing.T) {
+	m := NewMemory(0)
+	defer m.Close()
+
+	// Fresh negative.
+	if !m.AcceptNegative("k", Entry{Version: 1, Flags: FlagNegative}) {
+		t.Fatal("install negative")
+	}
+	if m.AcceptNegative("k", Entry{Version: 1, Flags: FlagNegative}) {
+		t.Fatal("equal-version negative is stale")
+	}
+	if !m.AcceptNegative("k", Entry{Version: 2, Flags: FlagNegative}) {
+		t.Fatal("higher negative should win")
+	}
+
+	// Tombstone blocks lower/equal negative.
+	if !m.DeleteIfVersion("k", 5) {
+		t.Fatal("tombstone")
+	}
+	if m.AcceptNegative("k", Entry{Version: 5, Flags: FlagNegative}) {
+		t.Fatal("negative must not beat equal tombstone")
+	}
+	if m.AcceptNegative("k", Entry{Version: 4, Flags: FlagNegative}) {
+		t.Fatal("negative must not beat higher tombstone")
+	}
+	// Higher version may replace tombstone with a negative (miss path after delete).
+	if !m.AcceptNegative("k", Entry{Version: 6, Flags: FlagNegative}) {
+		t.Fatal("negative after tombstone with higher version")
+	}
+	ent, ok := m.Peek("k")
+	if !ok || !ent.IsNegative() || ent.Version != 6 {
+		t.Fatalf("want negative v6, got ok=%v %+v", ok, ent)
+	}
+}
+
+func TestBloomMergeAndFlags(t *testing.T) {
+	const bits, k = 2048, 4
+	m := NewMemory(0)
+	defer m.Close()
+
+	if !m.BloomAdd("f", []byte("a"), bits, k, 1, 0) {
+		t.Fatal("add a")
+	}
+	// Build a second filter with only "b", then merge into store.
+	m2 := NewMemory(0)
+	defer m2.Close()
+	if !m2.BloomAdd("f", []byte("b"), bits, k, 1, 0) {
+		t.Fatal("add b on m2")
+	}
+	ent2, ok := m2.Peek("f")
+	if !ok || !ent2.IsBloom() {
+		t.Fatal("m2 bloom")
+	}
+	if !m.BloomMerge("f", ent2.Value, bits, k, 1, 0) {
+		t.Fatal("merge")
+	}
+	if !m.BloomTest("f", []byte("a"), bits, k) || !m.BloomTest("f", []byte("b"), bits, k) {
+		t.Fatal("merge must keep both items")
+	}
+	// Non-bloom live entry blocks bloom ops.
+	_ = m.Set("plain", Entry{Value: []byte("x"), Version: 1})
+	if m.BloomAdd("plain", []byte("z"), bits, k, 2, 0) {
+		t.Fatal("must not bloom-add over plain entry")
+	}
+	if m.BloomMerge("plain", ent2.Value, bits, k, 2, 0) {
+		t.Fatal("must not bloom-merge over plain entry")
+	}
+	add := Entry{Flags: FlagBloomAdd}
+	empty := Entry{}
+	if !add.IsBloomAdd() || empty.IsBloomAdd() {
+		t.Fatal("IsBloomAdd")
+	}
+}
+
+func TestBloomSurvivesLRUPressure(t *testing.T) {
+	const bits, k = 256, 3 // small bitset
+	m := NewMemory(500)
+	defer m.Close()
+	if !m.BloomAdd("keep", []byte("item"), bits, k, 1, 0) {
+		t.Fatal("bloom")
+	}
+	for i := 0; i < 40; i++ {
+		_ = m.Set(fmt.Sprintf("n-%02d", i), Entry{Value: make([]byte, 40), Version: 1})
+	}
+	if !m.BloomTest("keep", []byte("item"), bits, k) {
+		t.Fatal("LRU must not evict live bloom")
+	}
+}
+
+func TestWithTombstoneTTLNeverExpires(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := base
+	m := NewMemory(0, WithClock(func() time.Time { return now }), WithTombstoneTTL(0))
+	defer m.Close()
+	_ = m.Set("k", Entry{Value: []byte("v"), Version: 1})
+	if !m.DeleteIfVersion("k", 2) {
+		t.Fatal("delete")
+	}
+	now = base.Add(100 * 24 * time.Hour)
+	if m.AcceptIfNewer("k", Entry{Value: []byte("old"), Version: 1}) {
+		t.Fatal("tombstone with TTL=0 must not expire")
+	}
+}
+
+func TestSetReplaceAndRejectTooLarge(t *testing.T) {
+	m := NewMemory(100)
+	defer m.Close()
+	// Entire entry larger than MaxBytes is rejected.
+	if m.Set("big", Entry{Value: make([]byte, 200), Version: 1}) {
+		t.Fatal("oversized set must fail")
+	}
+	if !m.Set("k", Entry{Value: []byte("a"), Version: 1}) {
+		t.Fatal("set")
+	}
+	if !m.Set("k", Entry{Value: []byte("bb"), Version: 2}) {
+		t.Fatal("replace")
+	}
+	e, ok := m.Get("k")
+	if !ok || string(e.Value) != "bb" || e.Version != 2 {
+		t.Fatalf("got %+v ok=%v", e, ok)
+	}
+	if m.Delete("missing") {
+		t.Fatal("delete missing")
+	}
+}
+
+func TestBloomTestMissPaths(t *testing.T) {
+	const bits, k = 1024, 3
+	base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	now := base
+	m := NewMemory(0, WithClock(func() time.Time { return now }))
+	defer m.Close()
+
+	if m.BloomTest("nope", []byte("x"), bits, k) {
+		t.Fatal("missing filter")
+	}
+	_ = m.DeleteIfVersion("tomb", 1)
+	if m.BloomTest("tomb", []byte("x"), bits, k) {
+		t.Fatal("tombstone is not a bloom")
+	}
+	_ = m.Set("plain", Entry{Value: []byte("v"), Version: 1})
+	if m.BloomTest("plain", []byte("x"), bits, k) {
+		t.Fatal("plain kv is not a bloom")
+	}
+	// Expired bloom is purged and tests false.
+	if !m.BloomAdd("exp", []byte("a"), bits, k, 1, base.Add(time.Second).UnixNano()) {
+		t.Fatal("add exp")
+	}
+	now = base.Add(2 * time.Second)
+	if m.BloomTest("exp", []byte("a"), bits, k) {
+		t.Fatal("expired bloom")
+	}
+	// Wrong bit length Open fails → Test false.
+	if !m.BloomAdd("f", []byte("a"), bits, k, 1, 0) {
+		t.Fatal("add f")
+	}
+	if m.BloomTest("f", []byte("a"), bits+64, k) {
+		t.Fatal("mismatched mBits must not report true")
+	}
+	// Stale bloom add after tombstone.
+	_ = m.DeleteIfVersion("f", 5)
+	if m.BloomAdd("f", []byte("z"), bits, k, 4, 0) {
+		t.Fatal("stale version must not replace tombstone")
+	}
+	// Invalid merge bit length.
+	if m.BloomMerge("g", []byte{1, 2}, bits, k, 1, 0) {
+		t.Fatal("short bitset merge must fail")
+	}
+	// BloomAdd after higher tombstone version.
+	if !m.BloomAdd("f", []byte("z"), bits, k, 6, 0) {
+		t.Fatal("higher version after tombstone")
+	}
+	if !m.BloomTest("f", []byte("z"), bits, k) {
+		t.Fatal("want z present")
+	}
+}
+
+func TestRangeStopEarlyAndNil(t *testing.T) {
+	m := NewMemory(0)
+	defer m.Close()
+	_ = m.Set("a", Entry{Value: []byte("1"), Version: 1})
+	_ = m.Set("b", Entry{Value: []byte("2"), Version: 1})
+	n := 0
+	m.Range(func(string, Entry) bool {
+		n++
+		return false
+	})
+	if n != 1 {
+		t.Fatalf("Range stop early: n=%d", n)
+	}
+	n = 0
+	m.RangeAll(func(string, Entry) bool {
+		n++
+		return false
+	})
+	if n != 1 {
+		t.Fatalf("RangeAll stop early: n=%d", n)
+	}
+	// nil receiver / fn must not panic
+	var nilM *Memory
+	nilM.Range(nil)
+	nilM.RangeAll(nil)
+	m.Range(nil)
+	m.RangeAll(nil)
+}
+
+func TestPeekExpiredAndAcceptIfNewerTooLarge(t *testing.T) {
+	base := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	now := base
+	m := NewMemory(80, WithClock(func() time.Time { return now }))
+	defer m.Close()
+	_ = m.Set("e", Entry{Value: []byte("v"), Version: 1, ExpireAt: base.Add(time.Second).UnixNano()})
+	now = base.Add(2 * time.Second)
+	if _, ok := m.Peek("e"); ok {
+		t.Fatal("Peek must drop expired")
+	}
+	_ = m.Set("k", Entry{Value: []byte("a"), Version: 1})
+	// Replace with a value that exceeds MaxBytes → reject, keep old.
+	if m.AcceptIfNewer("k", Entry{Value: make([]byte, 200), Version: 2}) {
+		t.Fatal("oversized AcceptIfNewer must fail")
+	}
+	e, ok := m.Get("k")
+	if !ok || string(e.Value) != "a" {
+		t.Fatalf("old value must remain: %+v ok=%v", e, ok)
+	}
+	// New key oversized.
+	if m.AcceptIfNewer("n", Entry{Value: make([]byte, 200), Version: 1}) {
+		t.Fatal("new oversized key")
+	}
+}
+
 // Tombstones expire so they do not pin memory forever.
 func TestMemoryTombstoneExpiry(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
