@@ -66,6 +66,9 @@ func TestModeString(t *testing.T) {
 	if ModeBloom.String() != "Bloom" {
 		t.Fatal(ModeBloom.String())
 	}
+	if ModeSet.String() != "Set" {
+		t.Fatal(ModeSet.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}

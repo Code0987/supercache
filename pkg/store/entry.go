@@ -8,6 +8,9 @@ const (
 	FlagTombstone uint32 = 1 << 1 // versioned delete marker (blocks stale ApplyPut)
 	FlagBloom     uint32 = 1 << 2 // value is a Bloom bitset
 	FlagBloomAdd  uint32 = 1 << 3 // fan-out only: value is an item to OR into the filter
+	FlagSet       uint32 = 1 << 4 // value is encoded exact-set membership
+	FlagSetAdd    uint32 = 1 << 5 // fan-out only: value is an item to insert
+	FlagSetRemove uint32 = 1 << 6 // fan-out only: value is an item to remove
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -36,6 +39,21 @@ func (e Entry) IsBloom() bool {
 // IsBloomAdd reports a replica item-add (Value is the item, not the bitset).
 func (e Entry) IsBloomAdd() bool {
 	return e.Flags&FlagBloomAdd != 0
+}
+
+// IsSet reports whether Value is an encoded exact set.
+func (e Entry) IsSet() bool {
+	return e.Flags&FlagSet != 0
+}
+
+// IsSetAdd reports a replica set item-add.
+func (e Entry) IsSetAdd() bool {
+	return e.Flags&FlagSetAdd != 0
+}
+
+// IsSetRemove reports a replica set item-remove.
+func (e Entry) IsSetRemove() bool {
+	return e.Flags&FlagSetRemove != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

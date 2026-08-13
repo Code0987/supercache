@@ -22,6 +22,8 @@ const (
 	ModeCacheOnly
 	// ModeBloom is a named Bloom filter (BloomAdd / BloomTest).
 	ModeBloom
+	// ModeSet is a named exact set (SetAdd / SetRemove / SetContains / …).
+	ModeSet
 )
 
 func (m Mode) String() string {
@@ -32,6 +34,8 @@ func (m Mode) String() string {
 		return "CacheOnly"
 	case ModeBloom:
 		return "Bloom"
+	case ModeSet:
+		return "Set"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
