@@ -13,6 +13,11 @@ service Cache {
   rpc DeleteMany(DeleteManyRequest) returns (DeleteManyResponse);
   rpc BloomAdd(BloomAddRequest) returns (BloomAddResponse);
   rpc BloomTest(BloomTestRequest) returns (BloomTestResponse);
+  rpc SetAdd(SetAddRequest) returns (SetAddResponse);
+  rpc SetRemove(SetRemoveRequest) returns (SetRemoveResponse);
+  rpc SetContains(SetContainsRequest) returns (SetContainsResponse);
+  rpc SetCard(SetCardRequest) returns (SetCardResponse);
+  rpc SetMembers(SetMembersRequest) returns (SetMembersResponse);
 }
 
 message GetRequest {
@@ -97,4 +102,48 @@ message BloomTestRequest {
 
 message BloomTestResponse {
   bool maybe = 1; // false = definitely not present
+}
+
+message SetAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+
+message SetAddResponse {}
+
+message SetRemoveRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+
+message SetRemoveResponse {}
+
+message SetContainsRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+
+message SetContainsResponse {
+  bool present = 1;
+}
+
+message SetCardRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+
+message SetCardResponse {
+  int64 card = 1;
+}
+
+message SetMembersRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+
+message SetMembersResponse {
+  repeated bytes members = 1;
 }

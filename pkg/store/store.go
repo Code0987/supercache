@@ -69,6 +69,23 @@ type Store interface {
 	// BloomMerge ORs a remote bitset into the named filter (handoff).
 	BloomMerge(key string, bits []byte, mBits, k int, version uint64, expireAt int64) bool
 
+	// SetAdd inserts item into the named exact set (creates if missing).
+	SetAdd(key string, item []byte, version uint64, expireAt int64) bool
+	// SetRemove removes item from the named set.
+	SetRemove(key string, item []byte, version uint64, expireAt int64) bool
+	// SetContains reports exact membership.
+	SetContains(key string, item []byte) bool
+	// HasSet reports a live (non-tombstone, non-expired) FlagSet entry without copying Value.
+	HasSet(key string) bool
+	// PeekVersion returns entry version without cloning Value (and without flushing dirty sets).
+	PeekVersion(key string) (uint64, bool)
+	// SetCard returns element count (0 if missing).
+	SetCard(key string) int
+	// SetMembers returns defensive copies of all members.
+	SetMembers(key string) [][]byte
+	// SetInstall installs a versioned full-set snapshot (handoff).
+	SetInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

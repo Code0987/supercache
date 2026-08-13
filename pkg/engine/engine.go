@@ -248,6 +248,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeBloom {
 		return nil, fmt.Errorf("%w: use BloomTest", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeSet {
+		return nil, fmt.Errorf("%w: use SetContains", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -433,8 +436,13 @@ func (e *Engine) storeNegative(ks *ksRuntime, key string, allowFanout bool) {
 func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte, opts ...PutOption) error {
 	ctx, end := e.startSpan(ctx, "engine.Put")
 	defer end()
-	if ks, err := e.getKS(keyspaceName); err == nil && ks.cfg.Mode == keyspace.ModeBloom {
-		return fmt.Errorf("%w: use BloomAdd", ErrInvalidArgument)
+	if ks, err := e.getKS(keyspaceName); err == nil {
+		if ks.cfg.Mode == keyspace.ModeBloom {
+			return fmt.Errorf("%w: use BloomAdd", ErrInvalidArgument)
+		}
+		if ks.cfg.Mode == keyspace.ModeSet {
+			return fmt.Errorf("%w: use SetAdd", ErrInvalidArgument)
+		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
@@ -508,6 +516,31 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsBloom() {
 		return e.applyBloomMerge(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsSetAdd() {
+		ok := e.applySetAdd(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		if ok {
+			if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+				if owner, yes := c.Ring.Owner(key); yes && owner.ID == c.SelfID {
+					e.replicate(keyspaceName, key, ent, false)
+				}
+			}
+		}
+		return ok, nil
+	}
+	if ent.IsSetRemove() {
+		ok := e.applySetRemove(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		if ok {
+			if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+				if owner, yes := c.Ring.Owner(key); yes && owner.ID == c.SelfID {
+					e.replicate(keyspaceName, key, ent, false)
+				}
+			}
+		}
+		return ok, nil
+	}
+	if ent.IsSet() {
+		return e.applySetInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).
@@ -625,7 +658,7 @@ func (e *Engine) expireAt(ttl time.Duration) int64 {
 // nextVersion allocates a monotonic version for key.
 // Seeds from lastVer and any live store entry so ownership transfer does not mint v=1
 // below peers' observed versions (PLAN §6).
-// Lock order: verMu then store.Peek (store never takes verMu).
+// Lock order: verMu then store.PeekVersion (store never takes verMu).
 func (ks *ksRuntime) nextVersion(key string, atLeast uint64) uint64 {
 	ks.verMu.Lock()
 	defer ks.verMu.Unlock()
@@ -633,8 +666,8 @@ func (ks *ksRuntime) nextVersion(key string, atLeast uint64) uint64 {
 	if atLeast > cur {
 		cur = atLeast
 	}
-	if ent, ok := ks.store.Peek(key); ok && ent.Version > cur {
-		cur = ent.Version
+	if ver, ok := ks.store.PeekVersion(key); ok && ver > cur {
+		cur = ver
 	}
 	n := cur + 1
 	ks.lastVer[key] = n

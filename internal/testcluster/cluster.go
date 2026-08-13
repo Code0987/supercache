@@ -200,8 +200,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, berr := cli.BloomTest(ctx, ks, "__testcluster_ready__", []byte("x"))
-		_ = cli.Close()
 		if berr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, serr := cli.SetContains(ctx, ks, "__testcluster_ready__", []byte("x"))
+		_ = cli.Close()
+		if serr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

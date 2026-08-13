@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.28.3
-// source: api/proto/cache.proto
+// source: cache.proto
 
 package cachev1
 
@@ -19,13 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Cache_Get_FullMethodName        = "/supercache.cache.v1.Cache/Get"
-	Cache_Put_FullMethodName        = "/supercache.cache.v1.Cache/Put"
-	Cache_PutMany_FullMethodName    = "/supercache.cache.v1.Cache/PutMany"
-	Cache_Delete_FullMethodName     = "/supercache.cache.v1.Cache/Delete"
-	Cache_DeleteMany_FullMethodName = "/supercache.cache.v1.Cache/DeleteMany"
-	Cache_BloomAdd_FullMethodName   = "/supercache.cache.v1.Cache/BloomAdd"
-	Cache_BloomTest_FullMethodName  = "/supercache.cache.v1.Cache/BloomTest"
+	Cache_Get_FullMethodName         = "/supercache.cache.v1.Cache/Get"
+	Cache_Put_FullMethodName         = "/supercache.cache.v1.Cache/Put"
+	Cache_PutMany_FullMethodName     = "/supercache.cache.v1.Cache/PutMany"
+	Cache_Delete_FullMethodName      = "/supercache.cache.v1.Cache/Delete"
+	Cache_DeleteMany_FullMethodName  = "/supercache.cache.v1.Cache/DeleteMany"
+	Cache_BloomAdd_FullMethodName    = "/supercache.cache.v1.Cache/BloomAdd"
+	Cache_BloomTest_FullMethodName   = "/supercache.cache.v1.Cache/BloomTest"
+	Cache_SetAdd_FullMethodName      = "/supercache.cache.v1.Cache/SetAdd"
+	Cache_SetRemove_FullMethodName   = "/supercache.cache.v1.Cache/SetRemove"
+	Cache_SetContains_FullMethodName = "/supercache.cache.v1.Cache/SetContains"
+	Cache_SetCard_FullMethodName     = "/supercache.cache.v1.Cache/SetCard"
+	Cache_SetMembers_FullMethodName  = "/supercache.cache.v1.Cache/SetMembers"
 )
 
 // CacheClient is the client API for Cache service.
@@ -41,6 +46,11 @@ type CacheClient interface {
 	DeleteMany(ctx context.Context, in *DeleteManyRequest, opts ...grpc.CallOption) (*DeleteManyResponse, error)
 	BloomAdd(ctx context.Context, in *BloomAddRequest, opts ...grpc.CallOption) (*BloomAddResponse, error)
 	BloomTest(ctx context.Context, in *BloomTestRequest, opts ...grpc.CallOption) (*BloomTestResponse, error)
+	SetAdd(ctx context.Context, in *SetAddRequest, opts ...grpc.CallOption) (*SetAddResponse, error)
+	SetRemove(ctx context.Context, in *SetRemoveRequest, opts ...grpc.CallOption) (*SetRemoveResponse, error)
+	SetContains(ctx context.Context, in *SetContainsRequest, opts ...grpc.CallOption) (*SetContainsResponse, error)
+	SetCard(ctx context.Context, in *SetCardRequest, opts ...grpc.CallOption) (*SetCardResponse, error)
+	SetMembers(ctx context.Context, in *SetMembersRequest, opts ...grpc.CallOption) (*SetMembersResponse, error)
 }
 
 type cacheClient struct {
@@ -121,6 +131,56 @@ func (c *cacheClient) BloomTest(ctx context.Context, in *BloomTestRequest, opts 
 	return out, nil
 }
 
+func (c *cacheClient) SetAdd(ctx context.Context, in *SetAddRequest, opts ...grpc.CallOption) (*SetAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAddResponse)
+	err := c.cc.Invoke(ctx, Cache_SetAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) SetRemove(ctx context.Context, in *SetRemoveRequest, opts ...grpc.CallOption) (*SetRemoveResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetRemoveResponse)
+	err := c.cc.Invoke(ctx, Cache_SetRemove_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) SetContains(ctx context.Context, in *SetContainsRequest, opts ...grpc.CallOption) (*SetContainsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetContainsResponse)
+	err := c.cc.Invoke(ctx, Cache_SetContains_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) SetCard(ctx context.Context, in *SetCardRequest, opts ...grpc.CallOption) (*SetCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetCardResponse)
+	err := c.cc.Invoke(ctx, Cache_SetCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) SetMembers(ctx context.Context, in *SetMembersRequest, opts ...grpc.CallOption) (*SetMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetMembersResponse)
+	err := c.cc.Invoke(ctx, Cache_SetMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -134,6 +194,11 @@ type CacheServer interface {
 	DeleteMany(context.Context, *DeleteManyRequest) (*DeleteManyResponse, error)
 	BloomAdd(context.Context, *BloomAddRequest) (*BloomAddResponse, error)
 	BloomTest(context.Context, *BloomTestRequest) (*BloomTestResponse, error)
+	SetAdd(context.Context, *SetAddRequest) (*SetAddResponse, error)
+	SetRemove(context.Context, *SetRemoveRequest) (*SetRemoveResponse, error)
+	SetContains(context.Context, *SetContainsRequest) (*SetContainsResponse, error)
+	SetCard(context.Context, *SetCardRequest) (*SetCardResponse, error)
+	SetMembers(context.Context, *SetMembersRequest) (*SetMembersResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -164,6 +229,21 @@ func (UnimplementedCacheServer) BloomAdd(context.Context, *BloomAddRequest) (*Bl
 }
 func (UnimplementedCacheServer) BloomTest(context.Context, *BloomTestRequest) (*BloomTestResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BloomTest not implemented")
+}
+func (UnimplementedCacheServer) SetAdd(context.Context, *SetAddRequest) (*SetAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetAdd not implemented")
+}
+func (UnimplementedCacheServer) SetRemove(context.Context, *SetRemoveRequest) (*SetRemoveResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetRemove not implemented")
+}
+func (UnimplementedCacheServer) SetContains(context.Context, *SetContainsRequest) (*SetContainsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetContains not implemented")
+}
+func (UnimplementedCacheServer) SetCard(context.Context, *SetCardRequest) (*SetCardResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetCard not implemented")
+}
+func (UnimplementedCacheServer) SetMembers(context.Context, *SetMembersRequest) (*SetMembersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetMembers not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -312,6 +392,96 @@ func _Cache_BloomTest_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_SetAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).SetAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_SetAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).SetAdd(ctx, req.(*SetAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_SetRemove_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRemoveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).SetRemove(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_SetRemove_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).SetRemove(ctx, req.(*SetRemoveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_SetContains_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetContainsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).SetContains(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_SetContains_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).SetContains(ctx, req.(*SetContainsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_SetCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).SetCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_SetCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).SetCard(ctx, req.(*SetCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_SetMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).SetMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_SetMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).SetMembers(ctx, req.(*SetMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -347,7 +517,27 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "BloomTest",
 			Handler:    _Cache_BloomTest_Handler,
 		},
+		{
+			MethodName: "SetAdd",
+			Handler:    _Cache_SetAdd_Handler,
+		},
+		{
+			MethodName: "SetRemove",
+			Handler:    _Cache_SetRemove_Handler,
+		},
+		{
+			MethodName: "SetContains",
+			Handler:    _Cache_SetContains_Handler,
+		},
+		{
+			MethodName: "SetCard",
+			Handler:    _Cache_SetCard_Handler,
+		},
+		{
+			MethodName: "SetMembers",
+			Handler:    _Cache_SetMembers_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/proto/cache.proto",
+	Metadata: "cache.proto",
 }

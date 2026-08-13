@@ -162,6 +162,44 @@ func (s *Server) BloomTest(ctx context.Context, req *cachev1.BloomTestRequest) (
 	return &cachev1.BloomTestResponse{Maybe: maybe}, nil
 }
 
+func (s *Server) SetAdd(ctx context.Context, req *cachev1.SetAddRequest) (*cachev1.SetAddResponse, error) {
+	if err := s.eng.SetAdd(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.SetAddResponse{}, nil
+}
+
+func (s *Server) SetRemove(ctx context.Context, req *cachev1.SetRemoveRequest) (*cachev1.SetRemoveResponse, error) {
+	if err := s.eng.SetRemove(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.SetRemoveResponse{}, nil
+}
+
+func (s *Server) SetContains(ctx context.Context, req *cachev1.SetContainsRequest) (*cachev1.SetContainsResponse, error) {
+	present, err := s.eng.SetContains(ctx, req.Keyspace, req.Name, req.Item)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.SetContainsResponse{Present: present}, nil
+}
+
+func (s *Server) SetCard(ctx context.Context, req *cachev1.SetCardRequest) (*cachev1.SetCardResponse, error) {
+	n, err := s.eng.SetCard(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.SetCardResponse{Card: int64(n)}, nil
+}
+
+func (s *Server) SetMembers(ctx context.Context, req *cachev1.SetMembersRequest) (*cachev1.SetMembersResponse, error) {
+	mem, err := s.eng.SetMembers(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.SetMembersResponse{Members: mem}, nil
+}
+
 // ListenAndServe starts the Cache gRPC API on addr.
 // Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS; omit for plaintext (dev only).
 func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {

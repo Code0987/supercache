@@ -165,6 +165,45 @@ func (c *Client) BloomTest(ctx context.Context, keyspace, name string, item []by
 	return resp.GetMaybe(), nil
 }
 
+// SetAdd inserts item into a ModeSet named name.
+func (c *Client) SetAdd(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.SetAdd(ctx, &cachev1.SetAddRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+// SetRemove removes item from the named set.
+func (c *Client) SetRemove(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.SetRemove(ctx, &cachev1.SetRemoveRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+// SetContains reports exact membership.
+func (c *Client) SetContains(ctx context.Context, keyspace, name string, item []byte) (bool, error) {
+	resp, err := c.api.SetContains(ctx, &cachev1.SetContainsRequest{Keyspace: keyspace, Name: name, Item: item})
+	if err != nil {
+		return false, err
+	}
+	return resp.GetPresent(), nil
+}
+
+// SetCard returns the number of elements (0 if missing).
+func (c *Client) SetCard(ctx context.Context, keyspace, name string) (int, error) {
+	resp, err := c.api.SetCard(ctx, &cachev1.SetCardRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, err
+	}
+	return int(resp.GetCard()), nil
+}
+
+// SetMembers returns all members (defensive copies from the wire).
+func (c *Client) SetMembers(ctx context.Context, keyspace, name string) ([][]byte, error) {
+	resp, err := c.api.SetMembers(ctx, &cachev1.SetMembersRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetMembers(), nil
+}
+
 // DeleteMany deletes many keys (not atomic).
 func (c *Client) DeleteMany(ctx context.Context, keyspace string, keys []string) error {
 	resp, err := c.api.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: keyspace, Keys: keys})
