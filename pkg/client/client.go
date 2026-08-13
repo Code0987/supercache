@@ -204,6 +204,75 @@ func (c *Client) SetMembers(ctx context.Context, keyspace, name string) ([][]byt
 	return resp.GetMembers(), nil
 }
 
+// ZMember is a scored sorted-set element.
+type ZMember struct {
+	Member []byte
+	Score  float64
+}
+
+// ZAdd inserts or updates member score in a ModeZSet.
+func (c *Client) ZAdd(ctx context.Context, keyspace, name string, member []byte, score float64) error {
+	_, err := c.api.ZAdd(ctx, &cachev1.ZAddRequest{Keyspace: keyspace, Name: name, Member: member, Score: score})
+	return err
+}
+
+// ZRem removes a member from a ModeZSet.
+func (c *Client) ZRem(ctx context.Context, keyspace, name string, member []byte) error {
+	_, err := c.api.ZRem(ctx, &cachev1.ZRemRequest{Keyspace: keyspace, Name: name, Member: member})
+	return err
+}
+
+// ZScore returns the score if the member is present.
+func (c *Client) ZScore(ctx context.Context, keyspace, name string, member []byte) (score float64, ok bool, err error) {
+	resp, err := c.api.ZScore(ctx, &cachev1.ZScoreRequest{Keyspace: keyspace, Name: name, Member: member})
+	if err != nil {
+		return 0, false, err
+	}
+	return resp.GetScore(), resp.GetPresent(), nil
+}
+
+// ZCard returns the number of members (0 if missing).
+func (c *Client) ZCard(ctx context.Context, keyspace, name string) (int, error) {
+	resp, err := c.api.ZCard(ctx, &cachev1.ZCardRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, err
+	}
+	return int(resp.GetCard()), nil
+}
+
+// ZRange returns members by rank (Redis-style start/stop).
+func (c *Client) ZRange(ctx context.Context, keyspace, name string, start, stop int) ([]ZMember, error) {
+	resp, err := c.api.ZRange(ctx, &cachev1.ZRangeRequest{
+		Keyspace: keyspace, Name: name, Start: int32(start), Stop: int32(stop),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return zMembersFromProto(resp.GetMembers()), nil
+}
+
+// ZRangeByScore returns members with min <= score <= max.
+func (c *Client) ZRangeByScore(ctx context.Context, keyspace, name string, min, max float64) ([]ZMember, error) {
+	resp, err := c.api.ZRangeByScore(ctx, &cachev1.ZRangeByScoreRequest{
+		Keyspace: keyspace, Name: name, Min: min, Max: max,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return zMembersFromProto(resp.GetMembers()), nil
+}
+
+func zMembersFromProto(in []*cachev1.ZMember) []ZMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ZMember, len(in))
+	for i, m := range in {
+		out[i] = ZMember{Member: m.GetMember(), Score: m.GetScore()}
+	}
+	return out
+}
+
 // DeleteMany deletes many keys (not atomic).
 func (c *Client) DeleteMany(ctx context.Context, keyspace string, keys []string) error {
 	resp, err := c.api.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: keyspace, Keys: keys})

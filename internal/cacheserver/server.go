@@ -200,6 +200,63 @@ func (s *Server) SetMembers(ctx context.Context, req *cachev1.SetMembersRequest)
 	return &cachev1.SetMembersResponse{Members: mem}, nil
 }
 
+func (s *Server) ZAdd(ctx context.Context, req *cachev1.ZAddRequest) (*cachev1.ZAddResponse, error) {
+	if err := s.eng.ZAdd(ctx, req.Keyspace, req.Name, req.Member, req.Score); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZAddResponse{}, nil
+}
+
+func (s *Server) ZRem(ctx context.Context, req *cachev1.ZRemRequest) (*cachev1.ZRemResponse, error) {
+	if err := s.eng.ZRem(ctx, req.Keyspace, req.Name, req.Member); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZRemResponse{}, nil
+}
+
+func (s *Server) ZScore(ctx context.Context, req *cachev1.ZScoreRequest) (*cachev1.ZScoreResponse, error) {
+	sc, present, err := s.eng.ZScore(ctx, req.Keyspace, req.Name, req.Member)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZScoreResponse{Present: present, Score: sc}, nil
+}
+
+func (s *Server) ZCard(ctx context.Context, req *cachev1.ZCardRequest) (*cachev1.ZCardResponse, error) {
+	n, err := s.eng.ZCard(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZCardResponse{Card: int64(n)}, nil
+}
+
+func (s *Server) ZRange(ctx context.Context, req *cachev1.ZRangeRequest) (*cachev1.ZRangeResponse, error) {
+	mem, err := s.eng.ZRange(ctx, req.Keyspace, req.Name, int(req.Start), int(req.Stop))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZRangeResponse{Members: zMembersToProto(mem)}, nil
+}
+
+func (s *Server) ZRangeByScore(ctx context.Context, req *cachev1.ZRangeByScoreRequest) (*cachev1.ZRangeResponse, error) {
+	mem, err := s.eng.ZRangeByScore(ctx, req.Keyspace, req.Name, req.Min, req.Max)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.ZRangeResponse{Members: zMembersToProto(mem)}, nil
+}
+
+func zMembersToProto(in []engine.ZMember) []*cachev1.ZMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*cachev1.ZMember, len(in))
+	for i, m := range in {
+		out[i] = &cachev1.ZMember{Member: m.Member, Score: m.Score}
+	}
+	return out
+}
+
 // ListenAndServe starts the Cache gRPC API on addr.
 // Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS; omit for plaintext (dev only).
 func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {

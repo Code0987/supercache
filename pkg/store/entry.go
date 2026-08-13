@@ -11,6 +11,9 @@ const (
 	FlagSet       uint32 = 1 << 4 // value is encoded exact-set membership
 	FlagSetAdd    uint32 = 1 << 5 // fan-out only: value is an item to insert
 	FlagSetRemove uint32 = 1 << 6 // fan-out only: value is an item to remove
+	FlagZSet      uint32 = 1 << 7 // value is encoded sorted set
+	FlagZSetAdd   uint32 = 1 << 8 // fan-out: single scored member
+	FlagZSetRem   uint32 = 1 << 9 // fan-out: member to remove
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -54,6 +57,21 @@ func (e Entry) IsSetAdd() bool {
 // IsSetRemove reports a replica set item-remove.
 func (e Entry) IsSetRemove() bool {
 	return e.Flags&FlagSetRemove != 0
+}
+
+// IsZSet reports whether Value is an encoded sorted set.
+func (e Entry) IsZSet() bool {
+	return e.Flags&FlagZSet != 0
+}
+
+// IsZSetAdd reports a replica zset scored-member upsert.
+func (e Entry) IsZSetAdd() bool {
+	return e.Flags&FlagZSetAdd != 0
+}
+
+// IsZSetRem reports a replica zset member remove.
+func (e Entry) IsZSetRem() bool {
+	return e.Flags&FlagZSetRem != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

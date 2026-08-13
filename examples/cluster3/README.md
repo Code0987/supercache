@@ -1,8 +1,8 @@
 # 3-node cluster demo
 
-Exercises **CacheOnly** (`demo`: sessions / KV) and **ModeSet** (`tags`: feature flags via `SetAdd` / `SetContains` / `SetRemove`).
+Exercises **CacheOnly** (`demo`: sessions / KV), **ModeSet** (`tags`: feature flags), and **ModeZSet** (`board`: leaderboard via `ZAdd` / `ZScore` / `ZRange` / `ZRem`).
 
-Requires `supercache-node` with `-demo-keyspace` (default), which registers both keyspaces.
+Requires `supercache-node` with `-demo-keyspace` (default), which registers `demo`, `tags`, and `board`.
 
 Start three nodes (separate terminals), then run this example.
 

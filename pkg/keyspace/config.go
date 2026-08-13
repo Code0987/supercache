@@ -24,6 +24,8 @@ const (
 	ModeBloom
 	// ModeSet is a named exact set (SetAdd / SetRemove / SetContains / …).
 	ModeSet
+	// ModeZSet is a named sorted set (ZAdd / ZRem / ZScore / ZRange / …).
+	ModeZSet
 )
 
 func (m Mode) String() string {
@@ -36,6 +38,8 @@ func (m Mode) String() string {
 		return "Bloom"
 	case ModeSet:
 		return "Set"
+	case ModeZSet:
+		return "ZSet"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}

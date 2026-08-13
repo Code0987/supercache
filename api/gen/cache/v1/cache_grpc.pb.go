@@ -19,18 +19,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Cache_Get_FullMethodName         = "/supercache.cache.v1.Cache/Get"
-	Cache_Put_FullMethodName         = "/supercache.cache.v1.Cache/Put"
-	Cache_PutMany_FullMethodName     = "/supercache.cache.v1.Cache/PutMany"
-	Cache_Delete_FullMethodName      = "/supercache.cache.v1.Cache/Delete"
-	Cache_DeleteMany_FullMethodName  = "/supercache.cache.v1.Cache/DeleteMany"
-	Cache_BloomAdd_FullMethodName    = "/supercache.cache.v1.Cache/BloomAdd"
-	Cache_BloomTest_FullMethodName   = "/supercache.cache.v1.Cache/BloomTest"
-	Cache_SetAdd_FullMethodName      = "/supercache.cache.v1.Cache/SetAdd"
-	Cache_SetRemove_FullMethodName   = "/supercache.cache.v1.Cache/SetRemove"
-	Cache_SetContains_FullMethodName = "/supercache.cache.v1.Cache/SetContains"
-	Cache_SetCard_FullMethodName     = "/supercache.cache.v1.Cache/SetCard"
-	Cache_SetMembers_FullMethodName  = "/supercache.cache.v1.Cache/SetMembers"
+	Cache_Get_FullMethodName           = "/supercache.cache.v1.Cache/Get"
+	Cache_Put_FullMethodName           = "/supercache.cache.v1.Cache/Put"
+	Cache_PutMany_FullMethodName       = "/supercache.cache.v1.Cache/PutMany"
+	Cache_Delete_FullMethodName        = "/supercache.cache.v1.Cache/Delete"
+	Cache_DeleteMany_FullMethodName    = "/supercache.cache.v1.Cache/DeleteMany"
+	Cache_BloomAdd_FullMethodName      = "/supercache.cache.v1.Cache/BloomAdd"
+	Cache_BloomTest_FullMethodName     = "/supercache.cache.v1.Cache/BloomTest"
+	Cache_SetAdd_FullMethodName        = "/supercache.cache.v1.Cache/SetAdd"
+	Cache_SetRemove_FullMethodName     = "/supercache.cache.v1.Cache/SetRemove"
+	Cache_SetContains_FullMethodName   = "/supercache.cache.v1.Cache/SetContains"
+	Cache_SetCard_FullMethodName       = "/supercache.cache.v1.Cache/SetCard"
+	Cache_SetMembers_FullMethodName    = "/supercache.cache.v1.Cache/SetMembers"
+	Cache_ZAdd_FullMethodName          = "/supercache.cache.v1.Cache/ZAdd"
+	Cache_ZRem_FullMethodName          = "/supercache.cache.v1.Cache/ZRem"
+	Cache_ZScore_FullMethodName        = "/supercache.cache.v1.Cache/ZScore"
+	Cache_ZCard_FullMethodName         = "/supercache.cache.v1.Cache/ZCard"
+	Cache_ZRange_FullMethodName        = "/supercache.cache.v1.Cache/ZRange"
+	Cache_ZRangeByScore_FullMethodName = "/supercache.cache.v1.Cache/ZRangeByScore"
 )
 
 // CacheClient is the client API for Cache service.
@@ -51,6 +57,12 @@ type CacheClient interface {
 	SetContains(ctx context.Context, in *SetContainsRequest, opts ...grpc.CallOption) (*SetContainsResponse, error)
 	SetCard(ctx context.Context, in *SetCardRequest, opts ...grpc.CallOption) (*SetCardResponse, error)
 	SetMembers(ctx context.Context, in *SetMembersRequest, opts ...grpc.CallOption) (*SetMembersResponse, error)
+	ZAdd(ctx context.Context, in *ZAddRequest, opts ...grpc.CallOption) (*ZAddResponse, error)
+	ZRem(ctx context.Context, in *ZRemRequest, opts ...grpc.CallOption) (*ZRemResponse, error)
+	ZScore(ctx context.Context, in *ZScoreRequest, opts ...grpc.CallOption) (*ZScoreResponse, error)
+	ZCard(ctx context.Context, in *ZCardRequest, opts ...grpc.CallOption) (*ZCardResponse, error)
+	ZRange(ctx context.Context, in *ZRangeRequest, opts ...grpc.CallOption) (*ZRangeResponse, error)
+	ZRangeByScore(ctx context.Context, in *ZRangeByScoreRequest, opts ...grpc.CallOption) (*ZRangeResponse, error)
 }
 
 type cacheClient struct {
@@ -181,6 +193,66 @@ func (c *cacheClient) SetMembers(ctx context.Context, in *SetMembersRequest, opt
 	return out, nil
 }
 
+func (c *cacheClient) ZAdd(ctx context.Context, in *ZAddRequest, opts ...grpc.CallOption) (*ZAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZAddResponse)
+	err := c.cc.Invoke(ctx, Cache_ZAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) ZRem(ctx context.Context, in *ZRemRequest, opts ...grpc.CallOption) (*ZRemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZRemResponse)
+	err := c.cc.Invoke(ctx, Cache_ZRem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) ZScore(ctx context.Context, in *ZScoreRequest, opts ...grpc.CallOption) (*ZScoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZScoreResponse)
+	err := c.cc.Invoke(ctx, Cache_ZScore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) ZCard(ctx context.Context, in *ZCardRequest, opts ...grpc.CallOption) (*ZCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZCardResponse)
+	err := c.cc.Invoke(ctx, Cache_ZCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) ZRange(ctx context.Context, in *ZRangeRequest, opts ...grpc.CallOption) (*ZRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZRangeResponse)
+	err := c.cc.Invoke(ctx, Cache_ZRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) ZRangeByScore(ctx context.Context, in *ZRangeByScoreRequest, opts ...grpc.CallOption) (*ZRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ZRangeResponse)
+	err := c.cc.Invoke(ctx, Cache_ZRangeByScore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -199,6 +271,12 @@ type CacheServer interface {
 	SetContains(context.Context, *SetContainsRequest) (*SetContainsResponse, error)
 	SetCard(context.Context, *SetCardRequest) (*SetCardResponse, error)
 	SetMembers(context.Context, *SetMembersRequest) (*SetMembersResponse, error)
+	ZAdd(context.Context, *ZAddRequest) (*ZAddResponse, error)
+	ZRem(context.Context, *ZRemRequest) (*ZRemResponse, error)
+	ZScore(context.Context, *ZScoreRequest) (*ZScoreResponse, error)
+	ZCard(context.Context, *ZCardRequest) (*ZCardResponse, error)
+	ZRange(context.Context, *ZRangeRequest) (*ZRangeResponse, error)
+	ZRangeByScore(context.Context, *ZRangeByScoreRequest) (*ZRangeResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -244,6 +322,24 @@ func (UnimplementedCacheServer) SetCard(context.Context, *SetCardRequest) (*SetC
 }
 func (UnimplementedCacheServer) SetMembers(context.Context, *SetMembersRequest) (*SetMembersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetMembers not implemented")
+}
+func (UnimplementedCacheServer) ZAdd(context.Context, *ZAddRequest) (*ZAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZAdd not implemented")
+}
+func (UnimplementedCacheServer) ZRem(context.Context, *ZRemRequest) (*ZRemResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZRem not implemented")
+}
+func (UnimplementedCacheServer) ZScore(context.Context, *ZScoreRequest) (*ZScoreResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZScore not implemented")
+}
+func (UnimplementedCacheServer) ZCard(context.Context, *ZCardRequest) (*ZCardResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZCard not implemented")
+}
+func (UnimplementedCacheServer) ZRange(context.Context, *ZRangeRequest) (*ZRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZRange not implemented")
+}
+func (UnimplementedCacheServer) ZRangeByScore(context.Context, *ZRangeByScoreRequest) (*ZRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ZRangeByScore not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -482,6 +578,114 @@ func _Cache_SetMembers_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_ZAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZAdd(ctx, req.(*ZAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_ZRem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZRemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZRem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZRem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZRem(ctx, req.(*ZRemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_ZScore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZScoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZScore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZScore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZScore(ctx, req.(*ZScoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_ZCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZCard(ctx, req.(*ZCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_ZRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZRange(ctx, req.(*ZRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_ZRangeByScore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ZRangeByScoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).ZRangeByScore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_ZRangeByScore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).ZRangeByScore(ctx, req.(*ZRangeByScoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -536,6 +740,30 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetMembers",
 			Handler:    _Cache_SetMembers_Handler,
+		},
+		{
+			MethodName: "ZAdd",
+			Handler:    _Cache_ZAdd_Handler,
+		},
+		{
+			MethodName: "ZRem",
+			Handler:    _Cache_ZRem_Handler,
+		},
+		{
+			MethodName: "ZScore",
+			Handler:    _Cache_ZScore_Handler,
+		},
+		{
+			MethodName: "ZCard",
+			Handler:    _Cache_ZCard_Handler,
+		},
+		{
+			MethodName: "ZRange",
+			Handler:    _Cache_ZRange_Handler,
+		},
+		{
+			MethodName: "ZRangeByScore",
+			Handler:    _Cache_ZRangeByScore_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

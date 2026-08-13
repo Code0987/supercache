@@ -86,6 +86,29 @@ type Store interface {
 	// SetInstall installs a versioned full-set snapshot (handoff).
 	SetInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// ZAdd upserts member/score in a sorted set.
+	ZAdd(key string, member []byte, score float64, version uint64, expireAt int64) bool
+	// ZRem removes a member from a sorted set.
+	ZRem(key string, member []byte, version uint64, expireAt int64) bool
+	// ZScore returns score if present.
+	ZScore(key string, member []byte) (float64, bool)
+	// ZCard returns member count.
+	ZCard(key string) int
+	// HasZSet reports a live FlagZSet entry without cloning Value.
+	HasZSet(key string) bool
+	// ZRange returns members by rank (start/stop Redis-style).
+	ZRange(key string, start, stop int) []ZMember
+	// ZRangeByScore returns members in an inclusive score window.
+	ZRangeByScore(key string, min, max float64) []ZMember
+	// ZInstall installs a versioned full zset snapshot.
+	ZInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
+}
+
+// ZMember is a scored sorted-set element returned by store range ops.
+type ZMember struct {
+	Member []byte
+	Score  float64
 }

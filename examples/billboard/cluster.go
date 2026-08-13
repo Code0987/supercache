@@ -117,6 +117,18 @@ func startNode(spec nodeSpec, shared *ChartSource, logger *log.Logger) (*running
 	}
 	nlog.Printf("keyspace tags mode=ModeSet ttl=30m")
 
+	// board: ModeZSet scored rankings (listener votes, fan-out)
+	if err := eng.UpdateKeySpace(keyspace.Config{
+		Name:     "board",
+		Mode:     keyspace.ModeZSet,
+		MaxBytes: 8 << 20,
+		TTL:      30 * time.Minute,
+	}); err != nil {
+		eng.Close()
+		return nil, fmt.Errorf("keyspace board: %w", err)
+	}
+	nlog.Printf("keyspace board mode=ModeZSet ttl=30m")
+
 	wm := warmup.NewManager(eng, warmup.Config{Workers: 4, TopN: 32})
 	eng.AttachWarmup(wm, wm)
 	wm.Start(context.Background())

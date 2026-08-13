@@ -18,6 +18,12 @@ service Cache {
   rpc SetContains(SetContainsRequest) returns (SetContainsResponse);
   rpc SetCard(SetCardRequest) returns (SetCardResponse);
   rpc SetMembers(SetMembersRequest) returns (SetMembersResponse);
+  rpc ZAdd(ZAddRequest) returns (ZAddResponse);
+  rpc ZRem(ZRemRequest) returns (ZRemResponse);
+  rpc ZScore(ZScoreRequest) returns (ZScoreResponse);
+  rpc ZCard(ZCardRequest) returns (ZCardResponse);
+  rpc ZRange(ZRangeRequest) returns (ZRangeResponse);
+  rpc ZRangeByScore(ZRangeByScoreRequest) returns (ZRangeResponse);
 }
 
 message GetRequest {
@@ -146,4 +152,64 @@ message SetMembersRequest {
 
 message SetMembersResponse {
   repeated bytes members = 1;
+}
+
+message ZMember {
+  bytes member = 1;
+  double score = 2;
+}
+
+message ZAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+  double score = 4;
+}
+
+message ZAddResponse {}
+
+message ZRemRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+
+message ZRemResponse {}
+
+message ZScoreRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+
+message ZScoreResponse {
+  bool present = 1;
+  double score = 2;
+}
+
+message ZCardRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+
+message ZCardResponse {
+  int64 card = 1;
+}
+
+message ZRangeRequest {
+  string keyspace = 1;
+  string name = 2;
+  int32 start = 3;
+  int32 stop = 4;
+}
+
+message ZRangeByScoreRequest {
+  string keyspace = 1;
+  string name = 2;
+  double min = 3;
+  double max = 4;
+}
+
+message ZRangeResponse {
+  repeated ZMember members = 1;
 }
