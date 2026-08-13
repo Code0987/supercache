@@ -1,5 +1,9 @@
 # 3-node cluster demo
 
+Exercises **CacheOnly** (`demo`: sessions / KV) and **ModeSet** (`tags`: feature flags via `SetAdd` / `SetContains` / `SetRemove`).
+
+Requires `supercache-node` with `-demo-keyspace` (default), which registers both keyspaces.
+
 Start three nodes (separate terminals), then run this example.
 
 ```bash

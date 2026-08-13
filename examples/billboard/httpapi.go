@@ -56,6 +56,7 @@ func (a *appServer) Handler() http.Handler {
 	mux.HandleFunc("/v1/tracks/", a.handleTrack)
 	mux.HandleFunc("/v1/admin/invalidate/", a.handleInvalidate)
 	mux.HandleFunc("/v1/admin/pin/", a.handlePin)
+	mux.HandleFunc("/v1/tags/", a.handleTags)
 	mux.HandleFunc("/v1/demo/stampede", a.handleStampede)
 	mux.HandleFunc("/v1/demo/load", a.handleLoad)
 	mux.HandleFunc("/v1/status", a.handleStatus)
@@ -211,6 +212,83 @@ func (a *appServer) handlePin(w http.ResponseWriter, r *http.Request) {
 		"read_err":  fmt.Sprintf("%v", err),
 		"payload":   msg,
 	})
+}
+
+// handleTags exercises ModeSet: /v1/tags/{setName}
+//   GET  → SetMembers + SetCard
+//   POST → body is one tag to SetAdd (text/plain or JSON {"tag":"..."})
+//   DELETE ?tag=x → SetRemove
+func (a *appServer) handleTags(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/v1/tags/")
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		http.Error(w, "set name required: /v1/tags/{name}", http.StatusBadRequest)
+		return
+	}
+	cli, node := a.pick()
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	switch r.Method {
+	case http.MethodGet:
+		mem, err := cli.SetMembers(ctx, "tags", name)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		card, _ := cli.SetCard(ctx, "tags", name)
+		items := make([]string, 0, len(mem))
+		for _, m := range mem {
+			items = append(items, string(m))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"set": name, "card": card, "members": items, "via": node.ID,
+		})
+	case http.MethodPost:
+		tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+		if tag == "" {
+			b, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+			tag = strings.TrimSpace(string(b))
+			if strings.HasPrefix(tag, "{") {
+				var body struct {
+					Tag string `json:"tag"`
+				}
+				_ = json.Unmarshal(b, &body)
+				if body.Tag != "" {
+					tag = body.Tag
+				}
+			}
+		}
+		if tag == "" {
+			http.Error(w, "tag required (?tag= or body)", http.StatusBadRequest)
+			return
+		}
+		if err := cli.SetAdd(ctx, "tags", name, []byte(tag)); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		// Read-back via another node after short fan-out wait.
+		time.Sleep(80 * time.Millisecond)
+		other := a.clients[(int(a.rr.Load()))%len(a.clients)]
+		ok, err := other.SetContains(ctx, "tags", name, []byte(tag))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"set": name, "added": tag, "via": node.ID,
+			"contains_readback": ok, "read_err": fmt.Sprintf("%v", err),
+		})
+	case http.MethodDelete:
+		tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+		if tag == "" {
+			http.Error(w, "tag query required", http.StatusBadRequest)
+			return
+		}
+		if err := cli.SetRemove(ctx, "tags", name, []byte(tag)); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"set": name, "removed": tag, "via": node.ID})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (a *appServer) handleStampede(w http.ResponseWriter, r *http.Request) {

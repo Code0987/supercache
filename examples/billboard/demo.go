@@ -175,6 +175,21 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
 		logger.Printf("    %s → %d %s", u, resp.StatusCode, truncate(string(b), 160))
 	}
 
+	// ── ModeSet tags (exact membership, fan-out)
+	banner("ModeSet tags (SetAdd + SetContains fan-out)")
+	for _, tag := range []string{"editorial", "homepage", "nsfw_safe"} {
+		code, body, err = post("/v1/tags/billboard?tag=" + tag)
+		if err != nil {
+			return err
+		}
+		logger.Printf("    SetAdd %q → HTTP %d %s", tag, code, truncate(string(body), 100))
+	}
+	code, body, hdr, err = get("/v1/tags/billboard")
+	if err != nil {
+		return err
+	}
+	logger.Printf("    SetMembers HTTP %d via=%s %s", code, hdr.Get("X-SuperCache-Node"), truncate(string(body), 160))
+
 	// ── summary
 	loads, fails, gen := src.Stats()
 	logger.Println()
@@ -182,11 +197,13 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
 	logger.Println("  ✓ 3-node cluster (gossip membership + peer mesh + cache gRPC)")
 	logger.Println("  ✓ LoadThrough keyspace (charts) + DataSource SoT")
 	logger.Println("  ✓ CacheOnly keyspace (meta editorial pins)")
+	logger.Println("  ✓ ModeSet keyspace (tags exact membership)")
 	logger.Println("  ✓ TTL / NegativeTTL configured on charts")
 	logger.Println("  ✓ singleflight stampede coalescing")
 	logger.Println("  ✓ protect: rate limit + circuit breaker wired")
 	logger.Println("  ✓ Delete cluster invalidate + SoT reload")
 	logger.Println("  ✓ Put + async fan-out (pin read-back)")
+	logger.Println("  ✓ SetAdd + SetContains fan-out (tags)")
 	logger.Println("  ✓ WarmKeys / topology prefetch / refresh-ahead")
 	logger.Println("  ✓ Admin /healthz /peers /keyspaces /metrics")
 	logger.Println("  ✓ pkg/client round-robin across cache ports")

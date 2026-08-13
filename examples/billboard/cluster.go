@@ -105,6 +105,18 @@ func startNode(spec nodeSpec, shared *ChartSource, logger *log.Logger) (*running
 	}
 	nlog.Printf("keyspace meta mode=CacheOnly ttl=10m")
 
+	// tags: ModeSet exact membership (editorial tag sets, allow-lists)
+	if err := eng.UpdateKeySpace(keyspace.Config{
+		Name:     "tags",
+		Mode:     keyspace.ModeSet,
+		MaxBytes: 8 << 20,
+		TTL:      30 * time.Minute,
+	}); err != nil {
+		eng.Close()
+		return nil, fmt.Errorf("keyspace tags: %w", err)
+	}
+	nlog.Printf("keyspace tags mode=ModeSet ttl=30m")
+
 	wm := warmup.NewManager(eng, warmup.Config{Workers: 4, TopN: 32})
 	eng.AttachWarmup(wm, wm)
 	wm.Start(context.Background())
