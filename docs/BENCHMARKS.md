@@ -58,9 +58,9 @@ go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -bench
 
 In-process mesh: `internal/testcluster` (`Start` N=1, 3, or 10). CI: `bash scripts/bench-ci.sh` (micro + `bench/ci-smoke.yaml`). Laptop/full: `bash scripts/bench-local.sh laptop|full`.
 
-On pull requests the `bench` job runs the suite **once on `main` and once on the PR, same runner**, then comments the diff. One run each (no multi-trial average). **Not** a merge gate.
+On pull requests the `bench` job runs the suite **once on `main` and once on the PR, same runner**, then comments the diff. One run each (no multi-trial average).
 
-Read the comment as: ops/s up is better; ns/op down is better. Moves under ~15–20% on `ubuntu-latest` are usually noise.
+Read the comment as: ops/s up is better; ns/op down is better. **Merge bar (WORKFLOW):** shared smoke/micro cells within **±10%**, and Get-hit / StoreGetHit **allocs/op** unchanged. One-run CI is still noisy; alloc jumps are real even if ns/op is inside 10%.
 
 ### Fairness
 
