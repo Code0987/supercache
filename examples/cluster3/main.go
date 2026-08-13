@@ -1,4 +1,4 @@
-// Example: exercise a 3-node SuperCache cluster (CacheOnly + ModeSet).
+// Example: exercise a 3-node SuperCache cluster (CacheOnly + ModeSet + ModeZSet).
 package main
 
 import (
@@ -90,7 +90,71 @@ func main() {
 	ok, err := clients[1].SetContains(ctx, "tags", "features", []byte("beta"))
 	fmt.Printf("    n2 contains beta = %v err=%v (expect false)\n", ok, err)
 
-	fmt.Println("\n=== 6) Delete session:user1 via n3 ===")
+	fmt.Println("\n=== 6) ModeZSet leaderboard via n2 (ZAdd into board name top_tracks) ===")
+	scores := []struct {
+		member string
+		score  float64
+	}{
+		{"alice", 100},
+		{"bob", 250},
+		{"carol", 180},
+	}
+	for _, s := range scores {
+		if err := clients[1].ZAdd(ctx, "board", "top_tracks", []byte(s.member), s.score); err != nil {
+			fmt.Printf("    ZAdd %s err: %v\n", s.member, err)
+			os.Exit(1)
+		}
+	}
+	fmt.Println("    ZAdd alice=100 bob=250 carol=180 OK on n2")
+	time.Sleep(500 * time.Millisecond)
+
+	fmt.Println("\n=== 7) ZScore / ZCard / ZRange from n3 ===")
+	for _, m := range []string{"alice", "bob", "nobody"} {
+		sc, ok, err := clients[2].ZScore(ctx, "board", "top_tracks", []byte(m))
+		if err != nil {
+			fmt.Printf("    zscore %s ERROR: %v\n", m, err)
+		} else {
+			fmt.Printf("    zscore %s = %v present=%v\n", m, sc, ok)
+		}
+	}
+	n, err = clients[2].ZCard(ctx, "board", "top_tracks")
+	if err != nil {
+		fmt.Println("    zcard ERROR:", err)
+	} else {
+		fmt.Printf("    ZCard(top_tracks) = %d\n", n)
+	}
+	rank, err := clients[2].ZRange(ctx, "board", "top_tracks", 0, -1)
+	if err != nil {
+		fmt.Println("    zrange ERROR:", err)
+	} else {
+		fmt.Printf("    ZRange(0,-1) =")
+		for _, m := range rank {
+			fmt.Printf(" %s=%.0f", m.Member, m.Score)
+		}
+		fmt.Println()
+	}
+	win, err := clients[2].ZRangeByScore(ctx, "board", "top_tracks", 150, 300)
+	if err != nil {
+		fmt.Println("    zrangebyscore ERROR:", err)
+	} else {
+		fmt.Printf("    ZRangeByScore(150,300) =")
+		for _, m := range win {
+			fmt.Printf(" %s=%.0f", m.Member, m.Score)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println("\n=== 8) ZRem alice via n1; confirm on n2 ===")
+	if err := clients[0].ZRem(ctx, "board", "top_tracks", []byte("alice")); err != nil {
+		fmt.Println("    zrem err:", err)
+	} else {
+		fmt.Println("    ZRem alice OK")
+	}
+	time.Sleep(400 * time.Millisecond)
+	_, ok, err = clients[1].ZScore(ctx, "board", "top_tracks", []byte("alice"))
+	fmt.Printf("    n2 zscore alice present=%v err=%v (expect false)\n", ok, err)
+
+	fmt.Println("\n=== 9) Delete session:user1 via n3 ===")
 	if err := clients[2].Delete(ctx, "demo", "session:user1"); err != nil {
 		fmt.Println("    delete note:", err)
 	} else {
@@ -98,13 +162,13 @@ func main() {
 	}
 	time.Sleep(300 * time.Millisecond)
 
-	fmt.Println("\n=== 7) Confirm session miss on all nodes ===")
+	fmt.Println("\n=== 10) Confirm session miss on all nodes ===")
 	for i, c := range clients {
 		_, err := c.Get(ctx, "demo", "session:user1")
 		fmt.Printf("    n%d: %v\n", i+1, err)
 	}
 
-	fmt.Println("\n=== 8) Spread 12 KV keys (write rotate, read next node) ===")
+	fmt.Println("\n=== 11) Spread 12 KV keys (write rotate, read next node) ===")
 	for i := 0; i < 12; i++ {
 		k := fmt.Sprintf("item:%d", i)
 		_ = clients[i%3].Put(ctx, "demo", k, []byte(fmt.Sprintf("value-%d", i)))

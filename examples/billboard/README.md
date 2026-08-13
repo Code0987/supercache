@@ -10,6 +10,7 @@ A full use-case example: a **read-heavy music trending billboard** backed by a *
 | `LoadThrough` keyspace `charts` | Global/genre boards + track cards via mock chart aggregator |
 | `CacheOnly` keyspace `meta` | Editorial pins |
 | `ModeSet` keyspace `tags` | Exact membership (editorial tag sets via `SetAdd` / `SetContains`) |
+| `ModeZSet` keyspace `board` | Scored rankings (listener votes via `ZAdd` / `ZRange` / `ZRem`) |
 | DataSource + latency | Expensive SoT with detailed `[SoT]` logs |
 | singleflight | `/v1/demo/stampede` — concurrent miss coalescing |
 | protect | Per-keyspace + global rate limit / circuit breaker |
@@ -54,6 +55,8 @@ curl -s http://127.0.0.1:18080/v1/charts/pop | jq .
 curl -s -X POST http://127.0.0.1:18080/v1/admin/invalidate/global
 curl -s -X POST 'http://127.0.0.1:18080/v1/tags/billboard?tag=editorial' | jq .
 curl -s http://127.0.0.1:18080/v1/tags/billboard | jq .
+curl -s -X POST 'http://127.0.0.1:18080/v1/board/top_tracks?member=alice&score=100' | jq .
+curl -s http://127.0.0.1:18080/v1/board/top_tracks | jq .
 curl -s 'http://127.0.0.1:18080/v1/demo/stampede?board=global' | jq .
 curl -s http://127.0.0.1:8081/peers | jq .
 curl -s http://127.0.0.1:8081/keyspaces | jq .

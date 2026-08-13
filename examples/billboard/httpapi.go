@@ -57,6 +57,7 @@ func (a *appServer) Handler() http.Handler {
 	mux.HandleFunc("/v1/admin/invalidate/", a.handleInvalidate)
 	mux.HandleFunc("/v1/admin/pin/", a.handlePin)
 	mux.HandleFunc("/v1/tags/", a.handleTags)
+	mux.HandleFunc("/v1/board/", a.handleBoard)
 	mux.HandleFunc("/v1/demo/stampede", a.handleStampede)
 	mux.HandleFunc("/v1/demo/load", a.handleLoad)
 	mux.HandleFunc("/v1/status", a.handleStatus)
@@ -286,6 +287,90 @@ func (a *appServer) handleTags(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"set": name, "removed": tag, "via": node.ID})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleBoard exercises ModeZSet: /v1/board/{name}
+//   GET  → ZRange 0 -1 + ZCard
+//   POST → ?member=&score=  ZAdd
+//   DELETE ?member= → ZRem
+func (a *appServer) handleBoard(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/v1/board/")
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		http.Error(w, "board name required: /v1/board/{name}", http.StatusBadRequest)
+		return
+	}
+	cli, node := a.pick()
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	switch r.Method {
+	case http.MethodGet:
+		rank, err := cli.ZRange(ctx, "board", name, 0, -1)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		card, _ := cli.ZCard(ctx, "board", name)
+		items := make([]map[string]any, 0, len(rank))
+		for _, m := range rank {
+			items = append(items, map[string]any{"member": string(m.Member), "score": m.Score})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"board": name, "card": card, "members": items, "via": node.ID,
+		})
+	case http.MethodPost:
+		member := strings.TrimSpace(r.URL.Query().Get("member"))
+		scoreStr := strings.TrimSpace(r.URL.Query().Get("score"))
+		if member == "" || scoreStr == "" {
+			b, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+			var body struct {
+				Member string  `json:"member"`
+				Score  float64 `json:"score"`
+			}
+			if json.Unmarshal(b, &body) == nil {
+				if member == "" {
+					member = body.Member
+				}
+				if scoreStr == "" {
+					scoreStr = fmt.Sprintf("%g", body.Score)
+				}
+			}
+		}
+		if member == "" || scoreStr == "" {
+			http.Error(w, "member and score required (?member=&score= or JSON)", http.StatusBadRequest)
+			return
+		}
+		var score float64
+		if _, err := fmt.Sscanf(scoreStr, "%g", &score); err != nil {
+			http.Error(w, "bad score", http.StatusBadRequest)
+			return
+		}
+		if err := cli.ZAdd(ctx, "board", name, []byte(member), score); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+		other := a.clients[(int(a.rr.Load()))%len(a.clients)]
+		sc, ok, err := other.ZScore(ctx, "board", name, []byte(member))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"board": name, "member": member, "score": score, "via": node.ID,
+			"score_readback": sc, "present": ok, "read_err": fmt.Sprintf("%v", err),
+		})
+	case http.MethodDelete:
+		member := strings.TrimSpace(r.URL.Query().Get("member"))
+		if member == "" {
+			http.Error(w, "member query required", http.StatusBadRequest)
+			return
+		}
+		if err := cli.ZRem(ctx, "board", name, []byte(member)); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"board": name, "removed": member, "via": node.ID})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

@@ -47,6 +47,10 @@ func main() {
 		_ = e.UpdateKeySpace(keyspace.Config{
 			Name: "tags", Mode: keyspace.ModeSet, MaxBytes: 4 << 20, TTL: time.Minute,
 		})
+		// ModeZSet: scored rankings handoff (FlagZSet snapshot)
+		_ = e.UpdateKeySpace(keyspace.Config{
+			Name: "board", Mode: keyspace.ModeZSet, MaxBytes: 4 << 20, TTL: time.Minute,
+		})
 		return e
 	}
 
@@ -125,6 +129,16 @@ func main() {
 			fail("set add: %v", err)
 		}
 	}
+	// ModeZSet: leaderboard with scores (handoff FlagZSet).
+	const zName = "top_tracks"
+	for _, row := range []struct {
+		m string
+		s float64
+	}{{"alice", 10}, {"bob", 30}, {"carol", 20}} {
+		if err := engA.ZAdd(ctx, "board", zName, []byte(row.m), row.s); err != nil {
+			fail("zadd: %v", err)
+		}
+	}
 	seedLoads := dsLoads
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -141,7 +155,7 @@ func main() {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Printf("   seeded %d keys; B hits=%d/%d; DS loads=%d; set tags=3\n", nKeys, bHits, nKeys, seedLoads)
+	fmt.Printf("   seeded %d keys; B hits=%d/%d; DS loads=%d; set tags=3; zset members=3\n", nKeys, bHits, nKeys, seedLoads)
 
 	fmt.Println("2) Join empty node C (ring expand only)")
 	three := []ring.Peer{
@@ -235,11 +249,26 @@ func main() {
 	}
 	card, _ := engC.SetCard(ctx, "tags", setName)
 
+	// ModeZSet: wait for leaderboard on C.
+	zOK := false
+	var zCard int
+	for time.Now().Before(t0.Add(5 * time.Second)) {
+		sc, ok, err := engC.ZScore(ctx, "board", zName, []byte("bob"))
+		n, cerr := engC.ZCard(ctx, "board", zName)
+		if err == nil && cerr == nil && ok && sc == 30 && n == 3 {
+			zOK = true
+			zCard = n
+			break
+		}
+		zCard = n
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	fmt.Printf("   handoff %v; C hits hot=%d/15 total=%d/%d; jobs A/B/C=%d/%d/%d\n",
 		elapsed.Round(time.Millisecond), hotHits, allHits, nKeys,
 		wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
-	fmt.Printf("   sample on C err=%v; LT filled=%v extra_ds=%d; set contains alpha/beta=%v card=%d\n",
-		sampleErr, ltFilled, extraLT, setOK, card)
+	fmt.Printf("   sample on C err=%v; LT filled=%v extra_ds=%d; set contains alpha/beta=%v card=%d; zset ok=%v card=%d\n",
+		sampleErr, ltFilled, extraLT, setOK, card, zOK, zCard)
 
 	ok := true
 	if cold != 0 {
@@ -266,10 +295,14 @@ func main() {
 		fmt.Printf("FAIL: ModeSet tags handoff/forward missing members on C\n")
 		ok = false
 	}
+	if !zOK {
+		fmt.Printf("FAIL: ModeZSet board handoff/forward missing scores on C\n")
+		ok = false
+	}
 	if !ok {
 		os.Exit(1)
 	}
-	fmt.Println("OK: join handoff warm complete (KV + LT + ModeSet)")
+	fmt.Println("OK: join handoff warm complete (KV + LT + ModeSet + ModeZSet)")
 }
 
 func countHits(e *engine.Engine, ks string, n int, keyAt func(int) string) int {
