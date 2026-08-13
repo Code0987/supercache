@@ -126,10 +126,10 @@ func TestPeerApplyForwardGetOrLoad(t *testing.T) {
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("ApplyDelete empty: %v", err)
 	}
-	// ForwardDelete missing keyspace → non-MultiError path (raw error)
+	// ForwardDelete missing keyspace → gRPC NotFound (via grpcmap.Status, not bare error)
 	_, err = cli.ForwardDelete(ctx, &peerv1.ForwardDeleteRequest{Keyspace: "nope", Key: "k"})
-	if err == nil {
-		t.Fatal("ForwardDelete missing ks")
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("ForwardDelete missing ks: code=%v err=%v", status.Code(err), err)
 	}
 }
 
