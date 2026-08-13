@@ -25,8 +25,65 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `zadd`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
+
+## Keyspace modes
+
+Each keyspace has exactly one mode. Verbs that do not match the mode return invalid argument.
+
+| Mode | Purpose | App verbs |
+|------|---------|-----------|
+| `ModeCacheOnly` | Opaque `key → []byte`, no SoT | `Get`, `Put`, `Delete` (+ batch) |
+| `ModeLoadThrough` | Opaque KV + `DataSource` on miss | same as CacheOnly |
+| `ModeBloom` | Approximate membership (named filter) | `BloomAdd`, `BloomTest`; `Delete(name)` wipes filter |
+| `ModeSet` | Exact membership (named set) | `SetAdd`, `SetRemove`, `SetContains`, `SetCard`, `SetMembers`; `Delete(name)` |
+| `ModeZSet` | Scored sorted set (named zset) | `ZAdd`, `ZRem`, `ZScore`, `ZCard`, `ZRange`, `ZRangeByScore`; `Delete(name)` |
+
+Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
+
+## Cache gRPC RPCs
+
+Service `supercache.cache.v1.Cache` on the **`-cache`** port. Full shapes: [`api/proto/cache.proto`](../api/proto/cache.proto).
+
+### KV (`ModeCacheOnly` / `ModeLoadThrough`)
+
+| RPC | Notes |
+|-----|--------|
+| `Get` | Local observation; CacheOnly miss may owner-forward |
+| `Put` / `PutMany` | Owner ACK; async fan-out to R−1 replicas |
+| `Delete` / `DeleteMany` | Owner tombstone + replica apply/hint |
+
+### Bloom (`ModeBloom`)
+
+| RPC | Notes |
+|-----|--------|
+| `BloomAdd` | OR bits on owner + replicas (not LWW of the bitset) |
+| `BloomTest` | `maybe=false` ⇒ definitely not; missing filter ⇒ false |
+| `Delete(name)` | Tombstone whole filter |
+
+### Set (`ModeSet`)
+
+| RPC | Notes |
+|-----|--------|
+| `SetAdd` / `SetRemove` | Exact membership; item-level fan-out |
+| `SetContains` | Exact; missing set ⇒ false |
+| `SetCard` / `SetMembers` | Count / full members (defensive copies) |
+| `Delete(name)` | Tombstone whole set |
+
+### Sorted set (`ModeZSet`)
+
+| RPC | Notes |
+|-----|--------|
+| `ZAdd` | Upsert member score (`float64`; NaN rejected) |
+| `ZRem` | Remove member if present |
+| `ZScore` | Score + present; missing ⇒ present=false |
+| `ZCard` | Member count |
+| `ZRange` | By rank (Redis-style start/stop, negatives OK) |
+| `ZRangeByScore` | Inclusive score window, ascending |
+| `Delete(name)` | Tombstone whole zset |
+
+Equal scores order by member bytes. Wire: `ZMember { bytes member; double score }`.
 
 ## Enabling GitHub Pages
 

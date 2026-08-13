@@ -321,12 +321,28 @@ flowchart TD
 
 ---
 
+## Structured types (Bloom / Set / ZSet)
+
+KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
+
+| Mode | Mutate | Read | Handoff snapshot |
+|------|--------|------|------------------|
+| ModeBloom | `BloomAdd` → bit OR fan-out | `BloomTest` local or owner-forward | bitset merge |
+| ModeSet | `SetAdd` / `SetRemove` item fan-out | `SetContains` / Card / Members | full set blob |
+| ModeZSet | `ZAdd` / `ZRem` item fan-out | `ZScore` / Card / Range* | full zset blob |
+
+`Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
+
+See [API.md](./API.md) and design docs under `docs/design/`.
+
+---
+
 ## End-to-end ops
 
 ```mermaid
 flowchart TB
   subgraph Client
-    OPS["Get / Put / PutMany<br/>Delete / DeleteMany"]
+    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z*"]
   end
 
   subgraph Node["Any of N nodes"]
@@ -387,6 +403,8 @@ flowchart TD
   E --> E7["Handoff job"]
   E --> E8["Owner down on Get"]
   E --> E9["Owner down on ForwardPut"]
+  E --> E10["SetAdd / ZAdd / BloomAdd"]
+  E --> E11["SetContains / ZScore / BloomTest"]
 
   E1 --> A1["Owner apply + async ApplyPut × R−1"]
   E2 --> A2["Local store only"]
@@ -397,4 +415,6 @@ flowchart TD
   E7 --> A7["force ApplyPut of local entry to peers"]
   E8 --> A8["Local loadThrough no fan-out"]
   E9 --> A9["Error or force local apply path"]
+  E10 --> A10["Owner mutate + item-level fan-out flags"]
+  E11 --> A11["Local if replica else owner forward"]
 ```

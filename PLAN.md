@@ -202,7 +202,7 @@ Last **owner-accepted** Put with highest version wins cluster-wide **as fan-outs
 
 ## 7. Keyspace modes (decision gate 4)
 
-Each keyspace has a mode:
+Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes reject Get/Put and expose type-specific verbs (see `docs/API.md`).
 
 ### `LoadThrough` (default for backend offload)
 
@@ -218,6 +218,27 @@ Each keyspace has a mode:
 - Get miss → not found (no load)
 - Put / Delete are the only mutators
 - Eviction / TTL → data gone (acceptable; no persistence)
+
+### `ModeBloom` (approximate membership)
+
+- Named filter per key (`name`); `BloomAdd` / `BloomTest`
+- Bit OR on add (not LWW of the whole bitset); no per-item delete
+- `Delete(name)` tombstones the filter; handoff merges bitsets
+- Config: `BloomBits` / `BloomHashes` (defaults in `pkg/keyspace`)
+- Design: [docs/design/2026-08-11-bloom-filter.md](./docs/design/2026-08-11-bloom-filter.md)
+
+### `ModeSet` (exact membership)
+
+- Named set; `SetAdd` / `SetRemove` / `SetContains` / `SetCard` / `SetMembers`
+- Owner-serialized writes; item-level fan-out; versioned snapshot handoff
+- Design: [docs/design/2026-08-13-mode-set.md](./docs/design/2026-08-13-mode-set.md)
+
+### `ModeZSet` (sorted set)
+
+- Named zset; `ZAdd` / `ZRem` / `ZScore` / `ZCard` / `ZRange` / `ZRangeByScore`
+- Score is `float64` (NaN rejected); equal scores ordered by member bytes
+- Same ownership / item-level fan-out / snapshot handoff pattern as ModeSet
+- Design: [docs/design/2026-08-13-mode-zset.md](./docs/design/2026-08-13-mode-zset.md)
 
 ### Precedence matrix
 

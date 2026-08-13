@@ -56,17 +56,33 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 2. Compare `GET /peers` → `keyspace_hashes` across nodes.
 3. Drift is unsupported: divergent TTLs/MaxBytes change behavior silently.
 
+## Keyspace modes (ops view)
+
+| Mode | Verbs | Notes |
+|------|-------|--------|
+| `CacheOnly` | Get / Put / Delete | Miss = not found (may owner-forward for repair) |
+| `LoadThrough` | Get / Put / Delete | Miss loads `DataSource` on owner |
+| `ModeBloom` | BloomAdd / BloomTest / Delete(name) | Approximate membership; no per-item delete |
+| `ModeSet` | SetAdd / SetRemove / SetContains / SetCard / SetMembers / Delete(name) | Exact membership |
+| `ModeZSet` | ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore / Delete(name) | Scored sorted set |
+
+Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
+
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet).
+
 ## Consistency cheatsheet
 
 | Op | Guarantee |
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. |
-| BloomAdd / BloomTest | `ModeBloom` only. Add ORs bits on the owner and replicas (not LWW). Test is local on a replica, owner-forward otherwise. There is no per-item delete. |
-| Failures | Fan-out errors are metrics-only on Put |
+| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet entries. |
+| BloomAdd / BloomTest | `ModeBloom` only. Add ORs bits on the owner and replicas (not LWW of the bitset). Test is local on a replica, owner-forward otherwise. There is no per-item delete. |
+| SetAdd / SetRemove / SetContains | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains is local on a replica, owner-forward otherwise. |
+| ZAdd / ZRem / ZScore / ZRange* | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; handoff ships full encoded zset (`FlagZSet`). |
+| Failures | Fan-out errors are metrics-only on Put (and analogous async set/zset fan-out) |
 
-Set TTLs to your max acceptable staleness.
+Set TTLs to your max acceptable staleness (TTL applies to the **whole** named Bloom/set/zset, not per member).
 
 ### `ring_generation` on peer Apply*
 
