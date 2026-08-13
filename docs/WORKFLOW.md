@@ -2,24 +2,54 @@
 
 Same order for humans and agents. **Never push or commit to `main`.**
 
-## Which track
+## Default path (product / data-path work)
 
-| Kind of change | Design | Tests first | Bench before merge |
-|----------------|:------:|:-----------:|:------------------:|
-| New product behavior (types, API, replication, consistency) | yes | yes | yes |
-| Bugfix on Get / Put / Delete / store / fan-out / membership | yes (can be short) | yes | yes |
-| Refactor with no contract change | short note in PR is enough if you can name the invariant you are not breaking | keep existing tests green; add only if a path is untested | yes |
-| Docs, comments, workflow, OpenAPI wording | no | no | no (still a PR) |
+```text
+docs → review → revision* → tests → coding → review → revision*
+  → bench (local) → revision* → commit → PR → bench monitor (CI)
+  → merge only if overall drift < 10%  (and user says merge)
+```
 
-If you are unsure, use the **product behavior** track.
+`revision*` means: fix feedback, re-stop for the next gate. Do not skip a gate.
+
+| Step | What | Stop until |
+|------|------|------------|
+| **1. Docs** | Design doc (draft) | — |
+| **2. Review** | Person reviews design in chat/PR | Explicit go-ahead (`looks good` / `do it` / `implement`) |
+| **3. Revision** | Update design from feedback | Re-approval if the contract changed |
+| **4. Tests** | Failing tests for the design table | — |
+| **5. Coding** | Minimum code to pass `go test ./...` | — |
+| **6. Review** | Self-check vs design + person feedback if given | Issues fixed |
+| **7. Revision** | Address code review | Tests still green |
+| **8. Bench** | Local micros / smoke that the design flagged | No Get-hit alloc jump; no ugly local cells |
+| **9. Revision** | Perf or correctness fixes from local bench | Re-run tests + local bench |
+| **10. Commit** | On `feat/` / `fix/` / `refactor/` only | User asked to commit, or path says commit after green local work |
+| **11. PR** | `gh pr create` (never straight to `main`) | — |
+| **12. Bench monitor** | `gh pr checks <n> --watch` + read `<!-- supercache-bench-comment -->` | CI `test` + `bench` green |
+| **13. Merge** | Only if **overall drift &lt; 10%** and user says **merge** | See [Merge gate](#13-merge-gate) |
+
+Refactor / docs-only tracks skip or shorten steps (below). When unsure, use the full path.
 
 One design → one PR. Do not stack a second feature on the same branch.
 
-## 1. Design
+---
+
+## Which track
+
+| Kind of change | Path |
+|----------------|------|
+| New product behavior (types, API, replication, consistency) | Full path above |
+| Bug fix on Get / Put / Delete / store / fan-out / membership | Full path (design can be short) |
+| Refactor with no contract change | Short design note in PR; keep tests; local bench if hot path; still PR + CI bench + merge gate |
+| Docs, comments, this workflow | Docs → commit → PR (no product tests/bench required) |
+
+---
+
+## 1. Docs (design)
 
 Create `docs/design/<yyyy-mm-dd>-<short-name>.md` from the template below.
 
-Do **not** write tests or production code yet. Commit the design on a branch if you want review as a PR, or paste it in chat. **Stop.** Wait for an explicit go-ahead (`looks good`, `do it`, `implement`).
+Do **not** write tests or production code yet. Commit the design on a branch if you want review as a PR, or paste it in chat.
 
 ### Template
 
@@ -55,17 +85,19 @@ Which CI smoke cells / micro names could move and why.
 Hot path? (Get-hit, Put, store mutex) yes/no.
 ```
 
-## 2. Review
+## 2–3. Design review → revision
 
 Review means a person approved the **design**, not the code.
 
 Until that happens: no tests, no implementation, no “quick spike on main”.
 
-If review asks for a different approach, update the design doc and stop again.
+If review asks for a different approach, update the design doc (**revision**), set status back to draft if needed, and stop again for go-ahead.
 
-## 3. Tests first
+Approval phrases: `looks good`, `do it`, `implement`. Mark the design **Status: approved**.
 
-After approval, on `feat/<short-name>` (or `fix/` / `refactor/`):
+## 4. Tests first
+
+After design approval, on `feat/<short-name>` (or `fix/` / `refactor/`):
 
 1. Add or extend tests from the design table **before** changing product code.
 2. Run them. New tests should fail (or fail to compile) for the new behavior.
@@ -84,7 +116,7 @@ Where tests live:
 
 Prefer one focused test that would fail if the design is not implemented over a pile of similar cases.
 
-## 4. Code
+## 5. Coding
 
 Implement only what the approved design listed. Stop when those tests pass and `go test ./...` is green.
 
@@ -96,10 +128,37 @@ Do not:
 
 `gofmt` the files you touched.
 
-## 5. PR
+## 6–7. Code review → revision
+
+Check implementation against the design contract (API, flags, RF, mode guards, CLI if required).
+
+If the user or a reviewer requests changes: fix, re-run `go test ./...`, then continue. Do not open a PR while known review items are open.
+
+## 8–9. Local bench → revision
+
+Before commit, exercise what the design listed under **Bench risk**:
 
 ```text
-git checkout -b feat/<short-name>   # fix/ refactor/ chore/ docs/
+go test ./pkg/store ./pkg/engine -run=^$ -bench='Benchmark(Store|Engine)' -benchmem -benchtime=200ms -count=1
+# plus any new micros for the feature
+```
+
+Hard local stops (same as CI):
+
+- Get-hit / StoreGetHit **allocs/op** must not jump
+- No intentional hot-path regression “to fix later”
+
+If local numbers look bad: **revision**, then re-test and re-bench. Details: [BENCHMARKS.md](./BENCHMARKS.md).
+
+## 10. Commit
+
+Commit on the feature branch only (never `main`). Prefer readable history (design / tests+code / demos as separate commits when useful).
+
+Do not commit secrets or generated noise outside the usual `api/gen` path for this repo.
+
+## 11. PR
+
+```text
 git push -u origin HEAD
 gh pr create
 ```
@@ -109,11 +168,12 @@ PR body must include:
 - link to the design doc (path or prior comment)
 - what landed vs the design
 - test commands already run (`go test ./...`)
+- local bench notes if any
 - bench risk (copy from the design)
 
-Do not merge your own PR from this step.
+Do not merge from this step.
 
-## 6. Bench
+## 12. Bench monitor (CI)
 
 Wait until both `test` and `bench` checks are green:
 
@@ -123,21 +183,38 @@ gh pr checks <n> --watch
 
 Then read the sticky comment `<!-- supercache-bench-comment -->`.
 
-Same runner, one run each side. Ops/s up is better; ns/op down is better. Details: [BENCHMARKS.md](./BENCHMARKS.md).
+Same runner, one run each side. Ops/s up is better; ns/op down is better.
+
+### Drift rules (overall &lt; 10%)
+
+Compare PR vs `main` on the same runner. **Overall drift** means every reported smoke cell and every existing micro that appears on both sides:
+
+| Check | Pass condition |
+|-------|----------------|
+| Smoke Δ ops/s | each cell within **±10%** (ops/s down worse) |
+| Micro Δ ns/op | each shared bench within **±10%** (ns/op up worse) |
+| Get-hit / StoreGetHit **allocs/op** | **unchanged** (any increase = fail) |
+| New benches (n/a on main) | report only; do not fail on “new” alone |
 
 | Result | What to do |
 |--------|------------|
-| All smoke Δ ops/s and micro Δ ns/op **inside ±20%**, allocs/op **unchanged** on Get-hit / StoreGetHit | Noise. Say so and ask to merge. |
-| Get-hit or StoreGetHit **allocs/op** increased | Not noise. Investigate; do not merge. |
-| Any cell **worse than 20%** (ops/s down or ns/op up) | Investigate. Re-run once if you suspect a flake; still do not merge on a single ugly cell without saying why. |
+| All shared cells inside **±10%**, Get-hit allocs flat | Eligible. Summarize and **ask to merge** (or merge if user already said merge / merge-if-green). |
+| Get-hit or StoreGetHit **allocs/op** increased | Not eligible. Investigate; **revision** on the branch; do not merge. |
+| Any shared cell **worse than 10%** | Not eligible. Investigate; re-run once if flake suspected; still do not merge without fixing or an explicit user override. |
 | `bench` or `test` red | Fix on the same branch. Do not merge. |
-| No bench comment after a green `bench` job | Something is wrong with the workflow. Do not merge. |
+| No bench comment after a green `bench` job | Workflow broken. Do not merge. |
 
-Post the smoke table (or a 3-line summary) in the PR or chat before merge.
+Post the smoke table (or a short summary) in chat before merge.
 
-## 7. Merge
+±10% is the **merge bar**, not a claim of statistical significance. One-run CI is noisy; treat clear Get-hit alloc jumps as real even inside 10% ns/op.
 
-Merge **only after the user says to merge**.
+## 13. Merge gate
+
+Merge **only when**:
+
+1. User said **merge** (or clearly pre-authorized: e.g. “merge if green / if drift ok”), **and**
+2. CI merge gate above is satisfied (**overall drift &lt; 10%**, Get-hit allocs flat), **and**
+3. `test` + `bench` are green.
 
 ```text
 gh pr merge <n> --merge --delete-branch
@@ -146,9 +223,14 @@ git checkout main && git pull origin main
 
 Do not squash unless asked (keeps design/test/code commits readable). Do not `--admin` around failing checks.
 
+If the user says merge but drift is ≥10% or allocs jumped: **do not merge**; report the numbers and wait.
+
+---
+
 ## Resume in a later session
 
 1. Read this file and [AGENTS.md](../AGENTS.md).
 2. `git status`, `git branch`, `gh pr list`.
-3. If a design is `draft`, do not code. If `approved`, continue from tests or implementation.
-4. Never assume an open PR was approved for merge.
+3. Locate the last completed step in the path; continue from the next gate.
+4. If a design is `draft`, do not code. If `approved`, continue from tests or implementation.
+5. Never assume an open PR was approved for merge.
