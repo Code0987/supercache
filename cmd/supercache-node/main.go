@@ -95,6 +95,16 @@ func main() {
 		}); err != nil {
 			log.Fatal(err)
 		}
+		// ModeSet for exact membership demos (feature tags, allow-lists, …).
+		if err := eng.UpdateKeySpace(keyspace.Config{
+			Name:     "tags",
+			Mode:     keyspace.ModeSet,
+			MaxBytes: 16 << 20,
+			TTL:      30 * time.Minute,
+		}); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet")
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(

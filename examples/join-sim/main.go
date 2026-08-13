@@ -43,6 +43,10 @@ func main() {
 			Name: "lt", Mode: keyspace.ModeLoadThrough, MaxBytes: 8 << 20,
 			TTL: time.Minute, DataSource: src, LoadTimeout: 2 * time.Second,
 		})
+		// ModeSet: exact membership handoff alongside KV
+		_ = e.UpdateKeySpace(keyspace.Config{
+			Name: "tags", Mode: keyspace.ModeSet, MaxBytes: 4 << 20, TTL: time.Minute,
+		})
 		return e
 	}
 
@@ -114,6 +118,13 @@ func main() {
 	if _, err := engA.Get(ctx, "lt", ltKey); err != nil {
 		fail("lt seed: %v", err)
 	}
+	// ModeSet: one named set with a few tags (handoff should carry FlagSet snapshot).
+	const setName = "features"
+	for _, tag := range []string{"alpha", "beta", "gamma"} {
+		if err := engA.SetAdd(ctx, "tags", setName, []byte(tag)); err != nil {
+			fail("set add: %v", err)
+		}
+	}
 	seedLoads := dsLoads
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -130,7 +141,7 @@ func main() {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Printf("   seeded %d keys; B hits=%d/%d; DS loads=%d\n", nKeys, bHits, nKeys, seedLoads)
+	fmt.Printf("   seeded %d keys; B hits=%d/%d; DS loads=%d; set tags=3\n", nKeys, bHits, nKeys, seedLoads)
 
 	fmt.Println("2) Join empty node C (ring expand only)")
 	three := []ring.Peer{
@@ -151,8 +162,9 @@ func main() {
 			ownedByC++
 		}
 	}
-	cold := countHits(engC, "demo", nKeys, keyAt)
-	fmt.Printf("   owned by C=%d/%d; C hits before handoff=%d/%d\n", ownedByC, nKeys, cold, nKeys)
+	// Local inventory only (Get would owner-forward and inflate "cold" hits).
+	cold := countLocal(engC, "demo", nKeys, keyAt)
+	fmt.Printf("   owned by C=%d/%d; C local before handoff=%d/%d\n", ownedByC, nKeys, cold, nKeys)
 
 	var sample string
 	for i := 0; i < nKeys; i++ {
@@ -210,15 +222,28 @@ func main() {
 	ltVal, ltErr := engC.Get(ctx, "lt", ltKey)
 	extraLT := dsLoads - loadsBeforeLTGet
 
+	// ModeSet: wait for features set on C (local or owner forward).
+	setOK := false
+	for time.Now().Before(t0.Add(5 * time.Second)) {
+		okA, errA := engC.SetContains(ctx, "tags", setName, []byte("alpha"))
+		okB, errB := engC.SetContains(ctx, "tags", setName, []byte("beta"))
+		if errA == nil && errB == nil && okA && okB {
+			setOK = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	card, _ := engC.SetCard(ctx, "tags", setName)
+
 	fmt.Printf("   handoff %v; C hits hot=%d/15 total=%d/%d; jobs A/B/C=%d/%d/%d\n",
 		elapsed.Round(time.Millisecond), hotHits, allHits, nKeys,
 		wmA.HandoffStats(), wmB.HandoffStats(), wmC.HandoffStats())
-	fmt.Printf("   sample on C err=%v; LT filled=%v extra_ds=%d\n",
-		sampleErr, ltFilled, extraLT)
+	fmt.Printf("   sample on C err=%v; LT filled=%v extra_ds=%d; set contains alpha/beta=%v card=%d\n",
+		sampleErr, ltFilled, extraLT, setOK, card)
 
 	ok := true
 	if cold != 0 {
-		fmt.Printf("FAIL: C should be cold before handoff (hits=%d)\n", cold)
+		fmt.Printf("FAIL: C should have no local demo keys before handoff (local=%d)\n", cold)
 		ok = false
 	}
 	if allHits < int(float64(nKeys)*0.9) {
@@ -237,10 +262,14 @@ func main() {
 		fmt.Printf("FAIL: LoadThrough handoff (filled=%v extra_ds=%d err=%v)\n", ltFilled, extraLT, ltErr)
 		ok = false
 	}
+	if !setOK {
+		fmt.Printf("FAIL: ModeSet tags handoff/forward missing members on C\n")
+		ok = false
+	}
 	if !ok {
 		os.Exit(1)
 	}
-	fmt.Println("OK: join handoff warm complete")
+	fmt.Println("OK: join handoff warm complete (KV + LT + ModeSet)")
 }
 
 func countHits(e *engine.Engine, ks string, n int, keyAt func(int) string) int {
@@ -251,6 +280,16 @@ func countHits(e *engine.Engine, ks string, n int, keyAt func(int) string) int {
 			hits++
 		} else if !errors.Is(err, engine.ErrNotFound) {
 			// ignore
+		}
+	}
+	return hits
+}
+
+func countLocal(e *engine.Engine, ks string, n int, keyAt func(int) string) int {
+	hits := 0
+	for i := 0; i < n; i++ {
+		if e.HasLocal(ks, keyAt(i)) {
+			hits++
 		}
 	}
 	return hits
