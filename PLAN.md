@@ -5,6 +5,72 @@
 
 This document freezes product intent and the technical decisions for v1.
 
+**How to change this product** (humans and agents) is normative below and detailed in [docs/WORKFLOW.md](./docs/WORKFLOW.md) and [AGENTS.md](./AGENTS.md). Do not invent a shorter path for data-plane work.
+
+---
+
+## 0. Change workflow (agents + humans)
+
+### Default path
+
+```text
+docs → review → revision → tests → coding → review → revision
+  → bench (local) → revision → commit → PR → bench monitor (CI)
+  → merge only if overall drift < 10%  (and user says merge)
+```
+
+| Step | What | Gate |
+|------|------|------|
+| **Docs** | Design in `docs/design/<yyyy-mm-dd>-<short-name>.md` | — |
+| **Review** | Person reviews design | Explicit go-ahead: `looks good` / `do it` / `implement` |
+| **Revision** | Update design from feedback | Re-approval if contract changed |
+| **Tests** | Failing tests from the design table | — |
+| **Coding** | Minimum code to pass `go test ./...` | — |
+| **Review** | Check vs design / reviewer feedback | Issues fixed |
+| **Revision** | Address code review | Tests still green |
+| **Bench (local)** | Micros / smoke flagged in the design | No Get-hit alloc jump |
+| **Revision** | Perf/correctness from local bench | Re-test + re-bench |
+| **Commit** | Feature branch only — never `main` | — |
+| **PR** | `gh pr create` | — |
+| **Bench monitor** | `gh pr checks <n> --watch` + `<!-- supercache-bench-comment -->` | CI `test` + `bench` green |
+| **Merge** | User says **merge** (or merge-if-green) **and** gate passes | See below |
+
+`revision` means fix feedback and re-stop at the next gate. Do not skip gates.
+
+### Tracks
+
+| Kind of change | Path |
+|----------------|------|
+| New product behavior (types, API, replication, consistency) | Full path above |
+| Bug on Get / Put / Delete / store / fan-out / membership | Full path (design may be short) |
+| Refactor, same contract | Short design note in PR; keep tests; PR + CI bench + 10% gate |
+| Docs / comments / this workflow | Docs → commit → PR (no product bench required) |
+
+One design → one PR. No stacking a second feature on the same branch. Never push or commit to `main`.
+
+### Merge gate (CI)
+
+After a green `bench` job, read the sticky PR comment `<!-- supercache-bench-comment -->` (same runner, main vs PR).
+
+| Check | Pass |
+|-------|------|
+| Shared smoke Δ ops/s | each cell within **±10%** |
+| Shared micro Δ ns/op | each bench within **±10%** |
+| Get-hit / StoreGetHit **allocs/op** | **unchanged** (any increase = fail) |
+| New micros only on PR | report only; not a fail by themselves |
+
+Eligible to merge only if the table passes **and** the user said **merge** (or clearly pre-authorized merge-if-green). CI green alone is not ship. If the user said merge but drift ≥10% or allocs jumped: **do not merge**; report numbers.
+
+```text
+gh pr create
+gh pr checks <n> --watch
+# read <!-- supercache-bench-comment -->
+# summarize; wait for merge
+gh pr merge <n> --merge --delete-branch
+```
+
+Full template, stop rules, and resume checklist: [docs/WORKFLOW.md](./docs/WORKFLOW.md). Agent short card: [AGENTS.md](./AGENTS.md). Bench how-to: [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
+
 ---
 
 ## 1. Goals and non-goals
@@ -821,4 +887,15 @@ Do **not** use SuperCache for:
 
 ---
 
-*End of plan. Implement against this document unless a later revision supersedes it.*
+## 26. Related process docs
+
+| Doc | Role |
+|-----|------|
+| [docs/WORKFLOW.md](./docs/WORKFLOW.md) | Normative change path (design → TDD → PR → bench → merge) |
+| [AGENTS.md](./AGENTS.md) | Short agent rules + 10% drift bar |
+| [docs/BENCHMARKS.md](./docs/BENCHMARKS.md) | How to read CI and local benches |
+| [docs/design/](./docs/design/) | Per-change design drafts (approved before code) |
+
+---
+
+*End of plan. Implement against this document unless a later revision supersedes it. Process changes go through §0 / WORKFLOW.md first.*
