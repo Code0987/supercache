@@ -101,7 +101,8 @@ func run(args []string) int {
 	case "repl", "shell", "i":
 		return runREPL(cfg)
 	case "get", "put", "set", "del", "delete", "rm", "ping",
-		"peers", "keyspaces", "ks", "metrics", "health", "healthz", "ready", "readyz":
+		"peers", "keyspaces", "ks", "metrics", "health", "healthz", "ready", "readyz",
+		"bloom", "zadd", "zrem", "zscore", "zcard", "zrange", "zrangebyscore":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -297,6 +298,13 @@ Cache commands (gRPC -addr seeds):
   put <key> -file <path>       Put file bytes (-file - = stdin)
   del <key> [key...]           Delete key(s) cluster-wide (best-effort)
   set ...                      Alias for put
+  bloom add|test <name> <item> ModeBloom membership
+  zadd <name> <score> <member> ModeZSet upsert score
+  zrem <name> <member>         ModeZSet remove member
+  zscore <name> <member>       ModeZSet score (or (nil))
+  zcard <name>                 ModeZSet member count
+  zrange <name> <start> <stop> ModeZSet by rank (Redis-style)
+  zrangebyscore <name> <min> <max>
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):
@@ -320,6 +328,8 @@ Environment: SC_ADDR, SC_ADMIN, SC_KEYSPACE, SC_TLS_CA, SC_TLS_CERT, SC_TLS_KEY,
 Examples:
   sc put greeting "hello world"
   sc get greeting
+  sc -keyspace board zadd lb 100 alice
+  sc -keyspace board zrange lb 0 -1
   sc -addr 127.0.0.1:9000,127.0.0.1:9010,127.0.0.1:9020 ping
   sc -admin 127.0.0.1:8081,127.0.0.1:8082 peers
   sc                                    # REPL

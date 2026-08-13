@@ -205,8 +205,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, serr := cli.SetContains(ctx, ks, "__testcluster_ready__", []byte("x"))
-		_ = cli.Close()
 		if serr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, zerr := cli.ZScore(ctx, ks, "__testcluster_ready__", []byte("x"))
+		_ = cli.Close()
+		if zerr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -37,6 +38,18 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdAdmin(ctx, sess.cfg, "/readyz")
 	case "bloom":
 		return cmdBloom(ctx, sess, args)
+	case "zadd":
+		return cmdZAdd(ctx, sess, args)
+	case "zrem":
+		return cmdZRem(ctx, sess, args)
+	case "zscore":
+		return cmdZScore(ctx, sess, args)
+	case "zcard":
+		return cmdZCard(ctx, sess, args)
+	case "zrange":
+		return cmdZRange(ctx, sess, args)
+	case "zrangebyscore":
+		return cmdZRangeByScore(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -302,6 +315,171 @@ func cmdBloom(ctx context.Context, sess *session, args []string) int {
 		fmt.Printf("OK bloom add %s %s\n", name, item)
 	}
 	return 0
+}
+
+func cmdZAdd(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: zadd <name> <score> <member>")
+		return 2
+	}
+	name, scoreStr, member := args[0], args[1], args[2]
+	score, err := parseFloat(scoreStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zadd: bad score %q: %v\n", scoreStr, err)
+		return 2
+	}
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.ZAdd(ctx, sess.cfg.keyspace, name, []byte(member), score)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zadd: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK zadd %s %g %s\n", name, score, member)
+	}
+	return 0
+}
+
+func cmdZRem(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: zrem <name> <member>")
+		return 2
+	}
+	name, member := args[0], args[1]
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.ZRem(ctx, sess.cfg.keyspace, name, []byte(member))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrem: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK zrem %s %s\n", name, member)
+	}
+	return 0
+}
+
+func cmdZScore(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: zscore <name> <member>")
+		return 2
+	}
+	name, member := args[0], args[1]
+	var (
+		score float64
+		ok    bool
+	)
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		score, ok, e = cli.ZScore(ctx, sess.cfg.keyspace, name, []byte(member))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zscore: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(score)
+	return 0
+}
+
+func cmdZCard(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: zcard <name>")
+		return 2
+	}
+	name := args[0]
+	var n int
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.ZCard(ctx, sess.cfg.keyspace, name)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zcard: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdZRange(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: zrange <name> <start> <stop>")
+		return 2
+	}
+	name := args[0]
+	start, err := parseInt(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrange: bad start %q: %v\n", args[1], err)
+		return 2
+	}
+	stop, err := parseInt(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrange: bad stop %q: %v\n", args[2], err)
+		return 2
+	}
+	var mem []client.ZMember
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		mem, e = cli.ZRange(ctx, sess.cfg.keyspace, name, start, stop)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrange: %v\n", err)
+		return 1
+	}
+	printZMembers(mem)
+	return 0
+}
+
+func cmdZRangeByScore(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: zrangebyscore <name> <min> <max>")
+		return 2
+	}
+	name := args[0]
+	min, err := parseFloat(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrangebyscore: bad min %q: %v\n", args[1], err)
+		return 2
+	}
+	max, err := parseFloat(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrangebyscore: bad max %q: %v\n", args[2], err)
+		return 2
+	}
+	var mem []client.ZMember
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		mem, e = cli.ZRangeByScore(ctx, sess.cfg.keyspace, name, min, max)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zrangebyscore: %v\n", err)
+		return 1
+	}
+	printZMembers(mem)
+	return 0
+}
+
+func printZMembers(mem []client.ZMember) {
+	for _, m := range mem {
+		fmt.Printf("%g %s\n", m.Score, string(m.Member))
+	}
+}
+
+func parseFloat(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
+}
+
+func parseInt(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	return n, err
 }
 
 func cmdPing(ctx context.Context, sess *session) int {
