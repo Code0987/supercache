@@ -18,7 +18,8 @@ This document freezes product intent and the technical decisions for v1.
 - **Bounded memory** with per-keyspace LRU (`MaxBytes`) and **TTL** / optional **negative TTL**
 - **Automatic node discovery** and reaction to topology changes among **cache nodes**
 - **KeySpace** isolation with runtime updates, warmup, hot-key tracking, and DataSource protection
-- **Ops surface**: admin diagnostics, health probes, cluster events, OpenTelemetry
+- **Structured keyspace types** (in addition to opaque KV): Bloom filters, exact sets, sorted sets — same owner + RF fan-out model
+- **Ops surface**: admin diagnostics, health probes, cluster events, OpenTelemetry, hosted OpenAPI
 - **Secure peer mesh**: TLS, Client vs Peer isolation, optional gossip membership auth
 
 ### Non-goals (v1)
@@ -27,7 +28,7 @@ This document freezes product intent and the technical decisions for v1.
 - Quorum, fencing, or split-brain prevention
 - Disk persistence / WAL / snapshots
 - Multi-key atomicity or strict global write order (beyond per-entry LWW versioning)
-- Full Redis protocol or rich data structures
+- Full Redis protocol; hashes, lists, streams, geospatial, HyperLogLog, multi-key ZUNION/ZINTER
 - Counters or CRDTs
 - **Memory capacity that scales linearly with node count** under the v1 replication model
 - Embedding every application replica as a ring peer (anti-pattern; see §4)
@@ -43,9 +44,9 @@ v1 is an **eventually consistent, multi-replica cache**:
 | Concern | Behavior |
 |---------|----------|
 | **Memory** | Each node holds its own LRU-bounded working set. After fan-out, a key exists on **R** ring members (owner + successors), not every node. Cluster memory ≈ **R × unique working set / N** per node. |
-| **Owner** | Consistent-hash **coordinator** for Put ACK, preferred miss-load coalescing, and version allocation — **not** a sole storage shard. |
-| **Reads** | Local hit if this node has a copy. CacheOnly miss **forwards to the owner** (replicas store the repair; non-replicas do not). |
-| **Writes** | Owner applies + assigns version → ACK → **async fan-out** `ApplyPut` to the other **R−1 replicas** (no retry). |
+| **Owner** | Consistent-hash **coordinator** for write ACK, preferred miss-load coalescing, and version allocation — **not** a sole storage shard. Ring owner of a **name** (KV key, Bloom/set/zset name). |
+| **Reads** | Local hit if this node has a copy. CacheOnly miss **forwards to the owner** (replicas store the repair; non-replicas do not). Structured reads (BloomTest / SetContains / ZScore / range) local on replica, owner-forward otherwise. |
+| **Writes** | Owner applies + assigns version → ACK → **async fan-out** to the other **R−1 replicas** (KV `ApplyPut`; structured types use item-level flags or bit OR — see §7 / §9.6). |
 | **Scale-out value** | More nodes → more **unique key capacity** (at fixed R) and more read QPS; HA is R copies, not N. |
 
 ### Capacity formula (ops)
@@ -73,8 +74,8 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | Peer write path | Owner ACK + **async fan-out to R−1 replicas**; peer failures **logged, not retried, not returned** on Put |
 | Persistence | **None** |
 | Workload | **Read-heavy** |
-| Client API | **gRPC** `Cache` service + optional in-process Engine |
-| Local store | **Ristretto** (or thin custom sharded map+LRU if Ristretto constraints bite) — **not** stock groupcache |
+| Client API | **gRPC** `Cache` service (KV + Bloom + Set + ZSet) + optional in-process Engine + `cmd/sc` |
+| Local store | Custom versioned **LRU** (`pkg/store`) with structure caches for set/zset — **not** stock groupcache |
 | Membership | **hashicorp/memberlist** (gossip); optional `WithGossipSecret` |
 | Hash ring | Consistent hash with virtual nodes over **cache-node** peers only |
 | v1 topology | **Only `supercache-node` processes join the ring**; apps use `pkg/client` |
@@ -121,18 +122,21 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. |
-| **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet. |
+| **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset entries. |
+| **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
+| **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
+| **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put | Get sees the new value immediately. |
-| **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Put success means owner has the value; other nodes (including “nearby” clients’ next hop) may lag until fan-out.* |
-| **Optional v1.1** | Client library may cache last Put locally for RYOW within process — not server contract. |
+| **Owner node** after successful Put / SetAdd / ZAdd / BloomAdd | Local read verbs see the update immediately. |
+| **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
+| **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
 This **replaces** the earlier ambiguous “same node sees Put immediately” wording that conflicted with owner-only apply.
 
@@ -219,25 +223,45 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 - Put / Delete are the only mutators
 - Eviction / TTL → data gone (acceptable; no persistence)
 
+### Mode summary (product surface)
+
+| Mode | Ring identity | App verbs | Wire flags (peer ApplyPut) |
+|------|---------------|-----------|----------------------------|
+| `LoadThrough` / `CacheOnly` | KV key | Get, Put, Delete (+ batch) | value entry / negative |
+| `ModeBloom` | filter `name` | BloomAdd, BloomTest; Delete(name) | `FlagBloom` snapshot, item-add OR path |
+| `ModeSet` | set `name` | SetAdd, SetRemove, SetContains, SetCard, SetMembers; Delete(name) | `FlagSet`, `FlagSetAdd`, `FlagSetRemove` |
+| `ModeZSet` | zset `name` | ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore; Delete(name) | `FlagZSet`, `FlagZSetAdd`, `FlagZSetRem` |
+
+Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
+
 ### `ModeBloom` (approximate membership)
 
 - Named filter per key (`name`); `BloomAdd` / `BloomTest`
 - Bit OR on add (not LWW of the whole bitset); no per-item delete
-- `Delete(name)` tombstones the filter; handoff merges bitsets
-- Config: `BloomBits` / `BloomHashes` (defaults in `pkg/keyspace`)
+- `Delete(name)` tombstones the filter; handoff **OR-merges** bitsets
+- Config: `BloomBits` / `BloomHashes` (defaults in `pkg/keyspace`); bitset size must fit `MaxBytes`
+- Package: `pkg/bloom`
 - Design: [docs/design/2026-08-11-bloom-filter.md](./docs/design/2026-08-11-bloom-filter.md)
 
 ### `ModeSet` (exact membership)
 
 - Named set; `SetAdd` / `SetRemove` / `SetContains` / `SetCard` / `SetMembers`
-- Owner-serialized writes; item-level fan-out; versioned snapshot handoff
+- Owner-serialized writes; item-level fan-out; versioned **full-set** handoff snapshot
+- Encode: length-prefixed members; store keeps live set cache + lazy encode on Peek/handoff
+- Empty set after last remove may remain until `Delete(name)` (Card 0)
+- Package: `pkg/set`
 - Design: [docs/design/2026-08-13-mode-set.md](./docs/design/2026-08-13-mode-set.md)
 
 ### `ModeZSet` (sorted set)
 
 - Named zset; `ZAdd` / `ZRem` / `ZScore` / `ZCard` / `ZRange` / `ZRangeByScore`
-- Score is `float64` (NaN rejected); equal scores ordered by member bytes
-- Same ownership / item-level fan-out / snapshot handoff pattern as ModeSet
+- Score is IEEE-754 `float64` (NaN → invalid argument; ±Inf allowed)
+- Equal scores ordered by raw **member** byte order (Redis-like)
+- `ZRange` ranks: 0-based inclusive, negative indices like Redis (`-1` = last)
+- `ZRangeByScore`: inclusive `[min, max]`, ascending
+- Owner-serialized writes; item-level fan-out; versioned **full zset** handoff
+- Encode: sorted records of `float64 LE score` + uvarint(len) + member
+- Package: `pkg/zset`; CLI: `sc zadd|zrem|zscore|zcard|zrange|zrangebyscore`
 - Design: [docs/design/2026-08-13-mode-zset.md](./docs/design/2026-08-13-mode-zset.md)
 
 ### Precedence matrix
@@ -251,6 +275,8 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | Prefetch | same as load fill rules |
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
 | ApplyDelete adequate version | present or missing | install tombstone |
+| FlagSetAdd / FlagZSetAdd / Bloom item-add | structure present | mutate under mutex; version gate |
+| FlagSet / FlagZSet / FlagBloom snapshot | structure or tombstone | install if version ≥ local (tombstone blocks stale) |
 
 ---
 
@@ -258,9 +284,10 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 
 ```
                  App services
-                 pkg/client (not in ring)
+                 pkg/client · cmd/sc (not in ring)
                          │
                     gRPC Cache :client
+                    (KV · Bloom · Set · ZSet)
                          ▼
               ┌─────────────────────┐
               │  supercache-node    │
@@ -271,14 +298,16 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
   Local store      Owner routing     Peer mesh
-  (Ristretto       (hash ring)       gRPC Peer :peer
-   + TTL/version)                     async fan-out
+  (LRU + TTL/      (hash ring)       gRPC Peer :peer
+   version +                         async fan-out
+   set/zset/bloom                    (value / item flags)
+   caches)
         │                │                │
         ▼                ▼                ▼
   DataSource ◄── protect          memberlist gossip
   (LoadThrough only)
         │
-  Admin HTTP · OpenTelemetry
+  Admin HTTP · /docs · OpenTelemetry
 ```
 
 ---
@@ -363,32 +392,57 @@ Ownership change does **not** migrate bytes; refill via Get miss, Put, or warmup
 
 ### 9.5 UpdateKeySpace / DeleteKeySpace
 
-Local only; validate; atomic swap config; if MaxBytes shrinks, rely on Ristretto cost eviction.  
+Local only; validate; atomic swap config; if MaxBytes shrinks, rely on store cost eviction.  
 `/peers` and metrics expose `keyspace_config_hash` for drift detection. Cluster rollout = ops re-issue.
+
+### 9.6 Structured types (Bloom / Set / ZSet)
+
+Normative shape shared by Set and ZSet (Bloom differs only in mutate semantics):
+
+```
+Mutate (SetAdd / SetRemove / ZAdd / ZRem / BloomAdd) on node N:
+  1. reject if keyspace.mode wrong or member/score invalid
+  2. owner := ring.Owner(name)
+  3. if self != owner → peer.ApplyPut(owner, name, Flag*Add|Rem, payload)
+  4. else: nextVersion(name); store mutate under mutex; async fan-out Flag* to R−1
+  5. return OK  // fan-out failures: metric/hint (like Put)
+
+Read (SetContains / ZScore / ZCard / ZRange* / BloomTest):
+  1. if local live structure → answer from store cache
+  2. else if owner self → missing → empty/false
+  3. else → peer.GetOrLoad(owner) structure snapshot; optional install if holdsReplica
+  4. decode / answer
+
+Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagBloom
+         if incoming version ≥ local (tombstone still blocks stale).
+```
+
+Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops apply under version gates; concurrent ZAdd same member → last owner write wins for that score.
 
 ---
 
 ## 10. Local store (decision gate 2)
 
-### Choice: **Ristretto** (primary)
+### Choice: **custom versioned LRU** (`pkg/store`) — shipped
 
 | Need | Approach |
 |------|----------|
-| MaxBytes | Ristretto `MaxCost` = MaxBytes; cost = len(value)+overhead |
-| TTL | Ristretto TTL **or** store `expire_at` in value envelope and lazy-expire on Get |
-| Set / Delete | First-class |
-| Negative | Envelope flag in stored blob |
-| Concurrent | Yes |
+| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet protected while live |
+| TTL | `expire_at` on entry; lazy expire |
+| Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
+| Negative | Envelope flag |
+| Concurrent | Store mutex |
+| ModeSet / ModeZSet | Live `setCache` / `zCache` + dirty lazy encode |
+| ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
-
-**Fallback:** small custom `sharded map + list LRU + expiry heap` if Ristretto admission rejects too many writes for cache-Put workloads (Ristretto is admission-oriented). Validate in milestone 1 benchmarks; interface:
 
 ```go
 type Store interface {
     Get(key string) (Entry, bool)
-    Set(key string, e Entry) // respects MaxBytes
-    Delete(key string)
+    Peek(key string) (Entry, bool)
+    AcceptIfNewer(key string, e Entry) bool
+    // Bloom / Set / ZSet methods (see pkg/store)
     // metrics: items, cost, hits, misses, evictions
 }
 ```
@@ -401,11 +455,32 @@ type Store interface {
 
 ```go
 type Engine interface {
+    // KV — ModeCacheOnly / ModeLoadThrough
     Get(ctx context.Context, keyspace, key string) ([]byte, error)
     Put(ctx context.Context, keyspace, key string, value []byte, opts ...PutOption) error
     PutMany(ctx context.Context, keyspace string, kvs []KV, opts ...PutOption) error
     Delete(ctx context.Context, keyspace, key string) error
     DeleteMany(ctx context.Context, keyspace string, keys []string) error
+
+    // ModeBloom
+    BloomAdd(ctx context.Context, keyspace, name string, item []byte) error
+    BloomTest(ctx context.Context, keyspace, name string, item []byte) (bool, error)
+
+    // ModeSet
+    SetAdd(ctx context.Context, keyspace, name string, item []byte) error
+    SetRemove(ctx context.Context, keyspace, name string, item []byte) error
+    SetContains(ctx context.Context, keyspace, name string, item []byte) (bool, error)
+    SetCard(ctx context.Context, keyspace, name string) (int, error)
+    SetMembers(ctx context.Context, keyspace, name string) ([][]byte, error)
+
+    // ModeZSet
+    ZAdd(ctx context.Context, keyspace, name string, member []byte, score float64) error
+    ZRem(ctx context.Context, keyspace, name string, member []byte) error
+    ZScore(ctx context.Context, keyspace, name string, member []byte) (float64, bool, error)
+    ZCard(ctx context.Context, keyspace, name string) (int, error)
+    ZRange(ctx context.Context, keyspace, name string, start, stop int) ([]ZMember, error)
+    ZRangeByScore(ctx context.Context, keyspace, name string, min, max float64) ([]ZMember, error)
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -433,13 +508,16 @@ type KeySpaceMode int
 const (
     ModeLoadThrough KeySpaceMode = iota
     ModeCacheOnly
+    ModeBloom
+    ModeSet
+    ModeZSet
 )
 
 type KeySpaceConfig struct {
     Name           string
     Mode           KeySpaceMode
     TTL            time.Duration
-    NegativeTTL    time.Duration // 0 = disabled
+    NegativeTTL    time.Duration // 0 = disabled; ignored for structure modes
     TombstoneTTL   time.Duration // 0 = 5m; negative = never expire
     MaxBytes       int64
     LoadTimeout    time.Duration
@@ -449,6 +527,9 @@ type KeySpaceConfig struct {
     RateLimitRPS   float64        // 0 = use global
     CircuitBreaker CircuitConfig
     DataSource     DataSource     // required if LoadThrough
+    ReplicationFactor int         // 0 = default 3; negative = all peers
+    BloomBits      int            // ModeBloom; 0 = default
+    BloomHashes    int            // ModeBloom; 0 = default
 }
 ```
 
@@ -461,16 +542,18 @@ type KeySpaceConfig struct {
 | Automatic fetch on miss | LoadThrough Get path §9.1 |
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
-| TTL + LRU + MaxBytes + negative TTL | Store envelope + Ristretto |
+| TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
+| ModeBloom / ModeSet / ModeZSet | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
 | Warmup / hot keys / refresh-ahead | warmup pkg; version-checked apply |
 | DataSource protection | protect pkg global + per-KS |
 | Cluster events | Engine.Events buffered; drop-oldest on slow consumer |
-| Admin diagnostics | admin HTTP |
+| Admin diagnostics + OpenAPI docs | admin HTTP `/docs`; GitHub Pages |
 | OTel | telemetry pkg |
 | TLS + gossip auth | transport + memberlist secret |
+| CLI | `cmd/sc` get/put/del, bloom, z* |
 
 ---
 
@@ -503,21 +586,39 @@ type KeySpaceConfig struct {
 
 ### gRPC
 
-**Client listener** (`Cache` only):
+**Client listener** (`Cache` only) — see `api/proto/cache.proto` and OpenAPI `api/openapi/cache.openapi.yaml`:
 
 ```text
 service Cache {
+  // KV
   rpc Get(GetRequest) returns (GetResponse);
   rpc Put(PutRequest) returns (PutResponse);
   rpc PutMany(PutManyRequest) returns (PutManyResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc DeleteMany(DeleteManyRequest) returns (DeleteManyResponse);
+  // ModeBloom
+  rpc BloomAdd(BloomAddRequest) returns (BloomAddResponse);
+  rpc BloomTest(BloomTestRequest) returns (BloomTestResponse);
+  // ModeSet
+  rpc SetAdd(SetAddRequest) returns (SetAddResponse);
+  rpc SetRemove(SetRemoveRequest) returns (SetRemoveResponse);
+  rpc SetContains(SetContainsRequest) returns (SetContainsResponse);
+  rpc SetCard(SetCardRequest) returns (SetCardResponse);
+  rpc SetMembers(SetMembersRequest) returns (SetMembersResponse);
+  // ModeZSet
+  rpc ZAdd(ZAddRequest) returns (ZAddResponse);
+  rpc ZRem(ZRemRequest) returns (ZRemResponse);
+  rpc ZScore(ZScoreRequest) returns (ZScoreResponse);
+  rpc ZCard(ZCardRequest) returns (ZCardResponse);
+  rpc ZRange(ZRangeRequest) returns (ZRangeResponse);
+  rpc ZRangeByScore(ZRangeByScoreRequest) returns (ZRangeResponse);
 }
 
-// Messages carry: keyspace, key, value, ttl_nanos,
+// Messages carry: keyspace, key/name, value/item/member, score, start/stop,
 // and on internal paths: version, expire_at_unix_nano, flags, ring_generation
 // DeleteResponse / DeleteManyResponse: repeated PeerFailure { peer_id, message }
 // PutManyResponse: repeated KeyError { key, message }  // partial OK
+// ZMember { bytes member; double score }
 ```
 
 **Peer listener** (internal only — **never** same port/credentials as public Cache):
@@ -705,8 +806,9 @@ Do **not** use SuperCache for:
 | Sharding vs fan-out | §2 replicated mesh; capacity formula; non-goal linear memory scale |
 | RYOW contradiction | §5 owner-only immediate visibility; client lag documented |
 | No versioning | §6 owner versions + LWW apply rules |
-| groupcache unfit | §10 Ristretto + Store interface |
+| groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |
