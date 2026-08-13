@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.2.0
+  version: 0.3.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,14 +14,25 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `sc put` / `sc del` |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `zadd` … |
     | Proto | `api/proto/cache.proto` |
+
+    ### Keyspace modes
+
+    | Mode | RPCs |
+    |------|------|
+    | CacheOnly / LoadThrough | Get, Put, PutMany, Delete, DeleteMany |
+    | ModeBloom | BloomAdd, BloomTest; Delete(name) |
+    | ModeSet | SetAdd, SetRemove, SetContains, SetCard, SetMembers; Delete(name) |
+    | ModeZSet | ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore; Delete(name) |
+
+    Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get** — value observed on the **queried node** (may lag peers until fan-out)
-    - **Put** — ACK after **ring owner** accepts; async fan-out to peers (no retry)
-    - **Delete** — best-effort to owner + all peers; peer failures returned
+    - **Get / SetContains / ZScore / BloomTest** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / BloomAdd** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
   contact:
@@ -40,19 +51,26 @@ servers:
         default: "9000"
 
 tags:
-  - name: Cache
-    description: Application-facing gRPC RPCs
+  - name: KV
+    description: Opaque key/value (ModeCacheOnly / ModeLoadThrough)
+  - name: Bloom
+    description: Approximate membership (ModeBloom)
+  - name: Set
+    description: Exact membership (ModeSet)
+  - name: ZSet
+    description: Sorted set with scores (ModeZSet)
 
 paths:
   /supercache.cache.v1.Cache/Get:
     post:
-      tags: [Cache]
+      tags: [KV]
       operationId: Cache_Get
       summary: Get a key
       description: |
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
+        Invalid on ModeBloom / ModeSet / ModeZSet.
       requestBody:
         required: true
         content:
@@ -72,7 +90,7 @@ paths:
 
   /supercache.cache.v1.Cache/Put:
     post:
-      tags: [Cache]
+      tags: [KV]
       operationId: Cache_Put
       summary: Put a key
       description: |
@@ -80,6 +98,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
+        Invalid on ModeBloom / ModeSet / ModeZSet.
       requestBody:
         required: true
         content:
@@ -102,7 +121,7 @@ paths:
 
   /supercache.cache.v1.Cache/PutMany:
     post:
-      tags: [Cache]
+      tags: [KV]
       operationId: Cache_PutMany
       summary: Put many keys (not atomic)
       description: Partial failures returned as `errors[]`.
@@ -122,10 +141,12 @@ paths:
 
   /supercache.cache.v1.Cache/Delete:
     post:
-      tags: [Cache]
+      tags: [KV]
       operationId: Cache_Delete
-      summary: Delete a key (cluster best-effort)
-      description: Peer apply failures appear in `peer_failures`.
+      summary: Delete a key or named structure
+      description: |
+        Tombstones a KV key or a named Bloom/Set/ZSet entry.
+        Peer apply failures appear in `peer_failures`.
       requestBody:
         required: true
         content:
@@ -142,7 +163,7 @@ paths:
 
   /supercache.cache.v1.Cache/DeleteMany:
     post:
-      tags: [Cache]
+      tags: [KV]
       operationId: Cache_DeleteMany
       summary: Delete many keys (not atomic)
       requestBody:
@@ -159,8 +180,292 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeleteManyResponse"
 
+  /supercache.cache.v1.Cache/BloomAdd:
+    post:
+      tags: [Bloom]
+      operationId: Cache_BloomAdd
+      summary: Add item to named Bloom filter
+      description: ModeBloom only. Creates filter if missing. ORs bits on owner + replicas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BloomAddRequest"
+            example:
+              keyspace: seen
+              name: users
+              item: dXNlcjE=
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/BloomTest:
+    post:
+      tags: [Bloom]
+      operationId: Cache_BloomTest
+      summary: Test item in named Bloom filter
+      description: |
+        `maybe=false` means definitely not present.
+        Missing filter → maybe=false. ModeBloom only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BloomTestRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BloomTestResponse"
+
+  /supercache.cache.v1.Cache/SetAdd:
+    post:
+      tags: [Set]
+      operationId: Cache_SetAdd
+      summary: Add item to named exact set
+      description: ModeSet only. Idempotent if already present.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetItemRequest"
+            example:
+              keyspace: tags
+              name: features
+              item: ZGFya19tb2Rl
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/SetRemove:
+    post:
+      tags: [Set]
+      operationId: Cache_SetRemove
+      summary: Remove item from named set
+      description: ModeSet only. No-op if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetItemRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/SetContains:
+    post:
+      tags: [Set]
+      operationId: Cache_SetContains
+      summary: Exact membership test
+      description: Missing set → present=false. ModeSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetItemRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetContainsResponse"
+
+  /supercache.cache.v1.Cache/SetCard:
+    post:
+      tags: [Set]
+      operationId: Cache_SetCard
+      summary: Set cardinality
+      description: Missing set → card=0. ModeSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+
+  /supercache.cache.v1.Cache/SetMembers:
+    post:
+      tags: [Set]
+      operationId: Cache_SetMembers
+      summary: All set members
+      description: Missing set → empty list. ModeSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetMembersResponse"
+
+  /supercache.cache.v1.Cache/ZAdd:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZAdd
+      summary: Add or update scored member
+      description: ModeZSet only. NaN score rejected. Creates zset if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZAddRequest"
+            example:
+              keyspace: board
+              name: top_tracks
+              member: YWxpY2U=
+              score: 100
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/ZRem:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZRem
+      summary: Remove member from sorted set
+      description: ModeZSet only. No-op if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZMemberRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/ZScore:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZScore
+      summary: Get member score
+      description: Missing member/zset → present=false. ModeZSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZMemberRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZScoreResponse"
+
+  /supercache.cache.v1.Cache/ZCard:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZCard
+      summary: Sorted set cardinality
+      description: Missing zset → card=0. ModeZSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+
+  /supercache.cache.v1.Cache/ZRange:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZRange
+      summary: Range by rank
+      description: |
+        Inclusive ranks; Redis-style negatives (`-1` = last).
+        Order: score ascending, then member bytes. ModeZSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZRangeRequest"
+            example:
+              keyspace: board
+              name: top_tracks
+              start: 0
+              stop: -1
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZRangeResponse"
+
+  /supercache.cache.v1.Cache/ZRangeByScore:
+    post:
+      tags: [ZSet]
+      operationId: Cache_ZRangeByScore
+      summary: Range by score window
+      description: Inclusive min/max scores. ModeZSet only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZRangeByScoreRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZRangeResponse"
+
 components:
   schemas:
+    Empty:
+      type: object
     GetRequest:
       type: object
       required: [keyspace, key]
@@ -252,6 +557,7 @@ components:
           type: string
         key:
           type: string
+          description: KV key or structure name (Bloom/Set/ZSet)
     DeleteResponse:
       type: object
       properties:
@@ -276,3 +582,147 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/KeyError"
+    NameRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+          description: Structure name (set / zset / filter identity)
+    BloomAddRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+    BloomTestRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+    BloomTestResponse:
+      type: object
+      properties:
+        maybe:
+          type: boolean
+          description: false = definitely not present
+    SetItemRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+    SetContainsResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+    CardResponse:
+      type: object
+      properties:
+        card:
+          type: integer
+          format: int64
+    SetMembersResponse:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: string
+            format: byte
+    ZAddRequest:
+      type: object
+      required: [keyspace, name, member, score]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+        score:
+          type: number
+          format: double
+    ZMemberRequest:
+      type: object
+      required: [keyspace, name, member]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+    ZScoreResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+        score:
+          type: number
+          format: double
+    ZRangeRequest:
+      type: object
+      required: [keyspace, name, start, stop]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        start:
+          type: integer
+          format: int32
+        stop:
+          type: integer
+          format: int32
+    ZRangeByScoreRequest:
+      type: object
+      required: [keyspace, name, min, max]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        min:
+          type: number
+          format: double
+        max:
+          type: number
+          format: double
+    ZMember:
+      type: object
+      properties:
+        member:
+          type: string
+          format: byte
+        score:
+          type: number
+          format: double
+    ZRangeResponse:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ZMember"

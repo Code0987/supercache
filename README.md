@@ -2,7 +2,7 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-In-process Engine or dedicated nodes. Owner Put with async fan-out, local reads, gossip membership, load-through keyspaces, and a bounded per-node LRU.
+In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / sorted set), and a bounded per-node LRU.
 
 ```text
 github.com/Code0987/supercache
@@ -64,11 +64,15 @@ Optional: `-gossip-secret <key>`.
 ### CLI (`sc`)
 
 ```bash
-# With supercache-node running on defaults:
+# With supercache-node running on defaults (-demo-keyspace: demo + tags + board):
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
-go run ./cmd/sc peers          # admin HTTP
+go run ./cmd/sc -keyspace board zadd lb 100 alice
+go run ./cmd/sc -keyspace board zrange lb 0 -1
+go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
+go run ./cmd/sc peers              # admin HTTP
+# ModeSet: use pkg/client SetAdd/SetContains (sc set* not wired yet)
 
 # Multi-seed (failover entry points; owner routing is still server-side)
 go run ./cmd/sc -addr 127.0.0.1:9000,127.0.0.1:9010 ping
@@ -121,10 +125,12 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 | Package | Role |
 |---------|------|
-| `pkg/engine` | Core Get/Put/Delete, keyspaces, cluster routing |
-| `pkg/store` | Versioned LRU memory store (immediate Set / RYOW) |
-| `pkg/keyspace` | Config, `LoadThrough` / `CacheOnly` / `Bloom` |
+| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet, keyspaces, cluster routing |
+| `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; set/zset caches) |
+| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` |
 | `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
+| `pkg/set` | Exact set encode/decode for `ModeSet` |
+| `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -132,24 +138,24 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
-| `pkg/client` | Application gRPC client |
+| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary |
-| `cmd/sc` | CLI for get/put/del + admin diagnostics |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board) |
+| `cmd/sc` | CLI: get/put/del, bloom, z*, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
 ## Consistency
 
-SuperCache is **eventually consistent**. Put ACKs on the owner; fan-out is async to **R replicas** (default 3; `keyspace.Config.ReplicationFactor`). CacheOnly miss on a non-owner forwards to the owner. Delete is best-effort to the replica set. Not for linearizable or transactional workloads.
+SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is async to **R replicas** (default 3; `keyspace.Config.ReplicationFactor`). CacheOnly miss on a non-owner forwards to the owner. Delete is best-effort to the replica set. Not for linearizable or transactional workloads.
 
 - Local store is a custom LRU (not Ristretto): owner Put requires immediate visibility.
 - Peer port and Cache port are separate; do not expose Peer to applications.
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- `ModeBloom` keyspaces are membership filters: `BloomAdd` / `BloomTest` (no per-item delete). See [docs/design/2026-08-11-bloom-filter.md](./docs/design/2026-08-11-bloom-filter.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom** (approx membership), **ModeSet** (exact set), **ModeZSet** (sorted set). Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md).
 
-Details: [PLAN.md](./PLAN.md) §3 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
+Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
 ## Releases
 

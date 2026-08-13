@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\*** (sorted set) over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -51,13 +51,22 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | Command | Port | What it does |
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
-| `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) |
-| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr) |
+| `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** |
+| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset |
+| `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
+| `zadd <name> <score> <member>` | Cache gRPC | `ModeZSet` upsert score |
+| `zrem <name> <member>` | Cache gRPC | `ModeZSet` remove member |
+| `zscore <name> <member>` | Cache gRPC | Print score or `(nil)` |
+| `zcard <name>` | Cache gRPC | Member count |
+| `zrange <name> <start> <stop>` | Cache gRPC | By rank (Redis-style); lines `score member` |
+| `zrangebyscore <name> <min> <max>` | Cache gRPC | Inclusive score window |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
 | `repl` (or bare `sc` on a TTY) | — | Interactive shell |
 | `version` | — | CLI version |
+
+Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet via Go client, `board` ModeZSet, or your own). ModeSet has gRPC/client APIs; `sc set …` is not wired yet.
 
 ## REPL
 
@@ -69,11 +78,13 @@ sc -addr 127.0.0.1:9000,127.0.0.1:9010
 connected 127.0.0.1:9000  keyspace=demo  seeds=2
 sc demo@:9000> put session:1 '{"user":1}'
 sc demo@:9000> get session:1
-sc demo@:9000> keyspace charts
-sc demo@:9000> seeds
-sc demo@:9000> connect :9010
-sc demo@:9000> peers
-sc demo@:9000> quit
+sc demo@:9000> keyspace board
+sc board@:9000> zadd lb 100 alice
+sc board@:9000> zrange lb 0 -1
+sc board@:9000> seeds
+sc board@:9000> connect :9010
+sc board@:9000> peers
+sc board@:9000> quit
 ```
 
 | REPL meta | Meaning |
