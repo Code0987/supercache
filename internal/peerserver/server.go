@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	peerv1 "github.com/Code0987/supercache/api/gen/peer/v1"
+	"github.com/Code0987/supercache/internal/grpcmap"
 	"github.com/Code0987/supercache/pkg/engine"
 	"github.com/Code0987/supercache/pkg/store"
 )
@@ -40,7 +39,7 @@ func (s *Server) ApplyPut(ctx context.Context, req *peerv1.ApplyPutRequest) (*pe
 	// ring_generation is diagnostic: LWW by version remains the apply gate.
 	applied, err := s.eng.ApplyPutWithRingGen(req.Keyspace, req.Key, ent, req.RingGeneration)
 	if err != nil {
-		return nil, mapPeerErr(err)
+		return nil, grpcmap.Status(err)
 	}
 	return &peerv1.ApplyPutResponse{Applied: applied}, nil
 }
@@ -49,7 +48,7 @@ func (s *Server) ApplyPut(ctx context.Context, req *peerv1.ApplyPutRequest) (*pe
 func (s *Server) ApplyDelete(ctx context.Context, req *peerv1.ApplyDeleteRequest) (*peerv1.ApplyDeleteResponse, error) {
 	applied, err := s.eng.ApplyDeleteWithRingGen(req.Keyspace, req.Key, req.DeleteVersion, req.RingGeneration)
 	if err != nil {
-		return nil, mapPeerErr(err)
+		return nil, grpcmap.Status(err)
 	}
 	return &peerv1.ApplyDeleteResponse{Applied: applied}, nil
 }
@@ -61,7 +60,7 @@ func (s *Server) ForwardPut(ctx context.Context, req *peerv1.ForwardPutRequest) 
 		opts = append(opts, engine.WithTTL(time.Duration(req.TtlNanos)))
 	}
 	if err := s.eng.PutLocalAtHop(ctx, req.Keyspace, req.Key, req.Value, req.GetHopCount(), opts...); err != nil {
-		return nil, mapPeerErr(err)
+		return nil, grpcmap.Status(err)
 	}
 	return &peerv1.ForwardPutResponse{}, nil
 }
@@ -83,7 +82,7 @@ func (s *Server) ForwardDelete(ctx context.Context, req *peerv1.ForwardDeleteReq
 		}
 		return resp, nil
 	}
-	return nil, err
+	return nil, grpcmap.Status(err)
 }
 
 // GetOrLoad implements Peer (owner fill path, no re-forward).
@@ -103,7 +102,7 @@ func (s *Server) GetOrLoad(ctx context.Context, req *peerv1.GetOrLoadRequest) (*
 			}
 			return resp, nil
 		}
-		return nil, mapPeerErr(err)
+		return nil, grpcmap.Status(err)
 	}
 	return &peerv1.GetOrLoadResponse{
 		Found: true,
@@ -127,24 +126,4 @@ func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) 
 	peerv1.RegisterPeerServer(gs, NewServer(eng))
 	go func() { _ = gs.Serve(lis) }()
 	return gs, lis, nil
-}
-
-func mapPeerErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	switch {
-	case errors.Is(err, engine.ErrNotFound):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, engine.ErrKeyspaceNotFound):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, engine.ErrInvalidArgument),
-		errors.Is(err, engine.ErrKeyTooLarge),
-		errors.Is(err, engine.ErrValueTooLarge):
-		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, engine.ErrUnavailable):
-		return status.Error(codes.Unavailable, err.Error())
-	default:
-		return status.Error(codes.Internal, err.Error())
-	}
 }
