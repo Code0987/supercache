@@ -120,6 +120,17 @@ type Store interface {
 	// GeoInstall installs a versioned full geo snapshot.
 	GeoInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	LPush(key string, item []byte, version uint64, expireAt int64) bool
+	RPush(key string, item []byte, version uint64, expireAt int64) bool
+	// LPop pops the head. popped is false if missing/empty. applied is false if version-gated.
+	LPop(key string, version uint64, expireAt int64) (item []byte, popped, applied bool)
+	RPop(key string, version uint64, expireAt int64) (item []byte, popped, applied bool)
+	LLen(key string) int
+	HasList(key string) bool
+	LIndex(key string, idx int) ([]byte, bool)
+	LRange(key string, start, stop int) [][]byte
+	LInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

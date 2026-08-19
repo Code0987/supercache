@@ -292,6 +292,60 @@ func (s *Server) GeoRadius(ctx context.Context, req *cachev1.GeoRadiusRequest) (
 	return &cachev1.GeoRadiusResponse{Members: geoMembersToProto(mem)}, nil
 }
 
+func (s *Server) LPush(ctx context.Context, req *cachev1.LPushRequest) (*cachev1.LPushResponse, error) {
+	if err := s.eng.LPush(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.LPushResponse{}, nil
+}
+
+func (s *Server) RPush(ctx context.Context, req *cachev1.RPushRequest) (*cachev1.RPushResponse, error) {
+	if err := s.eng.RPush(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.RPushResponse{}, nil
+}
+
+func (s *Server) LPop(ctx context.Context, req *cachev1.LPopRequest) (*cachev1.LPopResponse, error) {
+	item, ok, err := s.eng.LPop(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.LPopResponse{Present: ok, Item: item}, nil
+}
+
+func (s *Server) RPop(ctx context.Context, req *cachev1.RPopRequest) (*cachev1.RPopResponse, error) {
+	item, ok, err := s.eng.RPop(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.RPopResponse{Present: ok, Item: item}, nil
+}
+
+func (s *Server) LLen(ctx context.Context, req *cachev1.LLenRequest) (*cachev1.LLenResponse, error) {
+	n, err := s.eng.LLen(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.LLenResponse{Len: int64(n)}, nil
+}
+
+func (s *Server) LIndex(ctx context.Context, req *cachev1.LIndexRequest) (*cachev1.LIndexResponse, error) {
+	item, ok, err := s.eng.LIndex(ctx, req.Keyspace, req.Name, int(req.Index))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.LIndexResponse{Present: ok, Item: item}, nil
+}
+
+func (s *Server) LRange(ctx context.Context, req *cachev1.LRangeRequest) (*cachev1.LRangeResponse, error) {
+	items, err := s.eng.LRange(ctx, req.Keyspace, req.Name, int(req.Start), int(req.Stop))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.LRangeResponse{Items: items}, nil
+}
+
 func geoMembersToProto(in []engine.GeoMember) []*cachev1.GeoMember {
 	if len(in) == 0 {
 		return nil

@@ -24,6 +24,7 @@ const (
 	Peer_ForwardPut_FullMethodName    = "/supercache.peer.v1.Peer/ForwardPut"
 	Peer_ForwardDelete_FullMethodName = "/supercache.peer.v1.Peer/ForwardDelete"
 	Peer_GetOrLoad_FullMethodName     = "/supercache.peer.v1.Peer/GetOrLoad"
+	Peer_ListPop_FullMethodName       = "/supercache.peer.v1.Peer/ListPop"
 )
 
 // PeerClient is the client API for Peer service.
@@ -35,6 +36,7 @@ type PeerClient interface {
 	ForwardPut(ctx context.Context, in *ForwardPutRequest, opts ...grpc.CallOption) (*ForwardPutResponse, error)
 	ForwardDelete(ctx context.Context, in *ForwardDeleteRequest, opts ...grpc.CallOption) (*ForwardDeleteResponse, error)
 	GetOrLoad(ctx context.Context, in *GetOrLoadRequest, opts ...grpc.CallOption) (*GetOrLoadResponse, error)
+	ListPop(ctx context.Context, in *ListPopRequest, opts ...grpc.CallOption) (*ListPopResponse, error)
 }
 
 type peerClient struct {
@@ -95,6 +97,16 @@ func (c *peerClient) GetOrLoad(ctx context.Context, in *GetOrLoadRequest, opts .
 	return out, nil
 }
 
+func (c *peerClient) ListPop(ctx context.Context, in *ListPopRequest, opts ...grpc.CallOption) (*ListPopResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPopResponse)
+	err := c.cc.Invoke(ctx, Peer_ListPop_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PeerServer is the server API for Peer service.
 // All implementations must embed UnimplementedPeerServer
 // for forward compatibility.
@@ -104,6 +116,7 @@ type PeerServer interface {
 	ForwardPut(context.Context, *ForwardPutRequest) (*ForwardPutResponse, error)
 	ForwardDelete(context.Context, *ForwardDeleteRequest) (*ForwardDeleteResponse, error)
 	GetOrLoad(context.Context, *GetOrLoadRequest) (*GetOrLoadResponse, error)
+	ListPop(context.Context, *ListPopRequest) (*ListPopResponse, error)
 	mustEmbedUnimplementedPeerServer()
 }
 
@@ -128,6 +141,9 @@ func (UnimplementedPeerServer) ForwardDelete(context.Context, *ForwardDeleteRequ
 }
 func (UnimplementedPeerServer) GetOrLoad(context.Context, *GetOrLoadRequest) (*GetOrLoadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrLoad not implemented")
+}
+func (UnimplementedPeerServer) ListPop(context.Context, *ListPopRequest) (*ListPopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPop not implemented")
 }
 func (UnimplementedPeerServer) mustEmbedUnimplementedPeerServer() {}
 func (UnimplementedPeerServer) testEmbeddedByValue()              {}
@@ -240,6 +256,24 @@ func _Peer_GetOrLoad_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Peer_ListPop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PeerServer).ListPop(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Peer_ListPop_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PeerServer).ListPop(ctx, req.(*ListPopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Peer_ServiceDesc is the grpc.ServiceDesc for Peer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +300,10 @@ var Peer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetOrLoad",
 			Handler:    _Peer_GetOrLoad_Handler,
+		},
+		{
+			MethodName: "ListPop",
+			Handler:    _Peer_ListPop_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

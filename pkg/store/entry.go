@@ -17,6 +17,9 @@ const (
 	FlagGeo       uint32 = 1 << 10 // value is encoded geo index
 	FlagGeoAdd    uint32 = 1 << 11 // fan-out: single lon/lat member
 	FlagGeoRem    uint32 = 1 << 12 // fan-out: member to remove
+	FlagList      uint32 = 1 << 13 // value is encoded list
+	FlagListLPush uint32 = 1 << 14 // owner-inbox: prepend item
+	FlagListRPush uint32 = 1 << 15 // owner-inbox: append item
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -90,6 +93,18 @@ func (e Entry) IsGeoAdd() bool {
 // IsGeoRem reports a replica geo member remove.
 func (e Entry) IsGeoRem() bool {
 	return e.Flags&FlagGeoRem != 0
+}
+
+func (e Entry) IsList() bool {
+	return e.Flags&FlagList != 0
+}
+
+func (e Entry) IsListLPush() bool {
+	return e.Flags&FlagListLPush != 0
+}
+
+func (e Entry) IsListRPush() bool {
+	return e.Flags&FlagListRPush != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

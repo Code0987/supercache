@@ -165,6 +165,21 @@ func (t *Transport) ForwardPut(ctx context.Context, addr, keyspace, key string, 
 	return err
 }
 
+// ListPop asks the owner to LPop (left) or RPop (!left).
+func (t *Transport) ListPop(ctx context.Context, addr, keyspace, name string, left bool) ([]byte, bool, error) {
+	cli, err := t.client(addr)
+	if err != nil {
+		return nil, false, err
+	}
+	ctx, cancel := t.rpcContext(ctx)
+	defer cancel()
+	resp, err := cli.ListPop(ctx, &peerv1.ListPopRequest{Keyspace: keyspace, Name: name, Left: left})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetItem(), resp.GetFound(), nil
+}
+
 // FanoutConfig controls async ApplyPut fan-out.
 type FanoutConfig struct {
 	Workers   int
