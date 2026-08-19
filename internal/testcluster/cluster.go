@@ -210,8 +210,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, _, zerr := cli.ZScore(ctx, ks, "__testcluster_ready__", []byte("x"))
-		_ = cli.Close()
 		if zerr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, _, gerr := cli.GeoPos(ctx, ks, "__testcluster_ready__", []byte("x"))
+		_ = cli.Close()
+		if gerr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

@@ -65,6 +65,12 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `zcard <name>` | Cache gRPC | Member count |
 | `zrange <name> <start> <stop>` | Cache gRPC | By rank (Redis-style); lines `score member` |
 | `zrangebyscore <name> <min> <max>` | Cache gRPC | Inclusive score window |
+| `geoadd <name> <lon> <lat> <member>` | Cache gRPC | `ModeGeo` upsert position |
+| `georem <name> <member>` | Cache gRPC | `ModeGeo` remove |
+| `geopos <name> <member>` | Cache gRPC | `lon lat` or `(nil)` |
+| `geocard <name>` | Cache gRPC | `ModeGeo` count |
+| `geodist <name> <a> <b>` | Cache gRPC | meters or `(nil)` |
+| `georadius <name> <lon> <lat> <radius_m> [limit]` | Cache gRPC | nearest first |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |

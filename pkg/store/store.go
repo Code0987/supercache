@@ -103,8 +103,33 @@ type Store interface {
 	// ZInstall installs a versioned full zset snapshot.
 	ZInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// GeoAdd upserts member position.
+	GeoAdd(key string, member []byte, lon, lat float64, version uint64, expireAt int64) bool
+	// GeoRem removes a member from a geo index.
+	GeoRem(key string, member []byte, version uint64, expireAt int64) bool
+	// GeoPos returns lon/lat if present.
+	GeoPos(key string, member []byte) (lon, lat float64, ok bool)
+	// GeoCard returns member count.
+	GeoCard(key string) int
+	// HasGeo reports a live FlagGeo entry without cloning Value.
+	HasGeo(key string) bool
+	// GeoDist returns meters between two members.
+	GeoDist(key string, a, b []byte) (meters float64, ok bool)
+	// GeoRadius returns members within radiusM (limit<=0 = all).
+	GeoRadius(key string, lon, lat, radiusM float64, limit int) []GeoMember
+	// GeoInstall installs a versioned full geo snapshot.
+	GeoInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
+}
+
+// GeoMember is a point returned by store geo queries.
+type GeoMember struct {
+	Member []byte
+	Lon    float64
+	Lat    float64
+	Dist   float64
 }
 
 // ZMember is a scored sorted-set element returned by store range ops.

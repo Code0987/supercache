@@ -26,6 +26,8 @@ const (
 	ModeSet
 	// ModeZSet is a named sorted set (ZAdd / ZRem / ZScore / ZRange / …).
 	ModeZSet
+	// ModeGeo is a named geospatial point index (GeoAdd / GeoPos / GeoRadius / …).
+	ModeGeo
 )
 
 func (m Mode) String() string {
@@ -40,6 +42,8 @@ func (m Mode) String() string {
 		return "Set"
 	case ModeZSet:
 		return "ZSet"
+	case ModeGeo:
+		return "Geo"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}

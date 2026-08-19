@@ -273,6 +273,71 @@ func zMembersFromProto(in []*cachev1.ZMember) []ZMember {
 	return out
 }
 
+// GeoMember is a point plus optional distance from a query.
+type GeoMember struct {
+	Member []byte
+	Lon    float64
+	Lat    float64
+	Dist   float64
+}
+
+func (c *Client) GeoAdd(ctx context.Context, keyspace, name string, member []byte, lon, lat float64) error {
+	_, err := c.api.GeoAdd(ctx, &cachev1.GeoAddRequest{
+		Keyspace: keyspace, Name: name, Member: member, Lon: lon, Lat: lat,
+	})
+	return err
+}
+
+func (c *Client) GeoRem(ctx context.Context, keyspace, name string, member []byte) error {
+	_, err := c.api.GeoRem(ctx, &cachev1.GeoRemRequest{Keyspace: keyspace, Name: name, Member: member})
+	return err
+}
+
+func (c *Client) GeoPos(ctx context.Context, keyspace, name string, member []byte) (lon, lat float64, ok bool, err error) {
+	resp, err := c.api.GeoPos(ctx, &cachev1.GeoPosRequest{Keyspace: keyspace, Name: name, Member: member})
+	if err != nil {
+		return 0, 0, false, err
+	}
+	return resp.GetLon(), resp.GetLat(), resp.GetPresent(), nil
+}
+
+func (c *Client) GeoCard(ctx context.Context, keyspace, name string) (int, error) {
+	resp, err := c.api.GeoCard(ctx, &cachev1.GeoCardRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, err
+	}
+	return int(resp.GetCard()), nil
+}
+
+func (c *Client) GeoDist(ctx context.Context, keyspace, name string, a, b []byte) (meters float64, ok bool, err error) {
+	resp, err := c.api.GeoDist(ctx, &cachev1.GeoDistRequest{Keyspace: keyspace, Name: name, A: a, B: b})
+	if err != nil {
+		return 0, false, err
+	}
+	return resp.GetMeters(), resp.GetPresent(), nil
+}
+
+func (c *Client) GeoRadius(ctx context.Context, keyspace, name string, lon, lat, radiusM float64, limit int) ([]GeoMember, error) {
+	resp, err := c.api.GeoRadius(ctx, &cachev1.GeoRadiusRequest{
+		Keyspace: keyspace, Name: name, Lon: lon, Lat: lat, RadiusMeters: radiusM, Limit: int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return geoMembersFromProto(resp.GetMembers()), nil
+}
+
+func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]GeoMember, len(in))
+	for i, m := range in {
+		out[i] = GeoMember{Member: m.GetMember(), Lon: m.GetLon(), Lat: m.GetLat(), Dist: m.GetDistMeters()}
+	}
+	return out
+}
+
 // DeleteMany deletes many keys (not atomic).
 func (c *Client) DeleteMany(ctx context.Context, keyspace string, keys []string) error {
 	resp, err := c.api.DeleteMany(ctx, &cachev1.DeleteManyRequest{Keyspace: keyspace, Keys: keys})

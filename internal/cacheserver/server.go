@@ -246,6 +246,63 @@ func (s *Server) ZRangeByScore(ctx context.Context, req *cachev1.ZRangeByScoreRe
 	return &cachev1.ZRangeResponse{Members: zMembersToProto(mem)}, nil
 }
 
+func (s *Server) GeoAdd(ctx context.Context, req *cachev1.GeoAddRequest) (*cachev1.GeoAddResponse, error) {
+	if err := s.eng.GeoAdd(ctx, req.Keyspace, req.Name, req.Member, req.Lon, req.Lat); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoAddResponse{}, nil
+}
+
+func (s *Server) GeoRem(ctx context.Context, req *cachev1.GeoRemRequest) (*cachev1.GeoRemResponse, error) {
+	if err := s.eng.GeoRem(ctx, req.Keyspace, req.Name, req.Member); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoRemResponse{}, nil
+}
+
+func (s *Server) GeoPos(ctx context.Context, req *cachev1.GeoPosRequest) (*cachev1.GeoPosResponse, error) {
+	lon, lat, present, err := s.eng.GeoPos(ctx, req.Keyspace, req.Name, req.Member)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoPosResponse{Present: present, Lon: lon, Lat: lat}, nil
+}
+
+func (s *Server) GeoCard(ctx context.Context, req *cachev1.GeoCardRequest) (*cachev1.GeoCardResponse, error) {
+	n, err := s.eng.GeoCard(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoCardResponse{Card: int64(n)}, nil
+}
+
+func (s *Server) GeoDist(ctx context.Context, req *cachev1.GeoDistRequest) (*cachev1.GeoDistResponse, error) {
+	m, present, err := s.eng.GeoDist(ctx, req.Keyspace, req.Name, req.A, req.B)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoDistResponse{Present: present, Meters: m}, nil
+}
+
+func (s *Server) GeoRadius(ctx context.Context, req *cachev1.GeoRadiusRequest) (*cachev1.GeoRadiusResponse, error) {
+	mem, err := s.eng.GeoRadius(ctx, req.Keyspace, req.Name, req.Lon, req.Lat, req.RadiusMeters, int(req.Limit))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.GeoRadiusResponse{Members: geoMembersToProto(mem)}, nil
+}
+
+func geoMembersToProto(in []engine.GeoMember) []*cachev1.GeoMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*cachev1.GeoMember, len(in))
+	for i, m := range in {
+		out[i] = &cachev1.GeoMember{Member: m.Member, Lon: m.Lon, Lat: m.Lat, DistMeters: m.Dist}
+	}
+	return out
+}
+
 func zMembersToProto(in []engine.ZMember) []*cachev1.ZMember {
 	if len(in) == 0 {
 		return nil
