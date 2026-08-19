@@ -30,6 +30,13 @@ service Cache {
   rpc GeoCard(GeoCardRequest) returns (GeoCardResponse);
   rpc GeoDist(GeoDistRequest) returns (GeoDistResponse);
   rpc GeoRadius(GeoRadiusRequest) returns (GeoRadiusResponse);
+  rpc LPush(LPushRequest) returns (LPushResponse);
+  rpc RPush(RPushRequest) returns (RPushResponse);
+  rpc LPop(LPopRequest) returns (LPopResponse);
+  rpc RPop(RPopRequest) returns (RPopResponse);
+  rpc LLen(LLenRequest) returns (LLenResponse);
+  rpc LIndex(LIndexRequest) returns (LIndexResponse);
+  rpc LRange(LRangeRequest) returns (LRangeResponse);
 }
 
 message GetRequest {
@@ -289,4 +296,64 @@ message GeoRadiusRequest {
 
 message GeoRadiusResponse {
   repeated GeoMember members = 1;
+}
+
+message LPushRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+message LPushResponse {}
+
+message RPushRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+message RPushResponse {}
+
+message LPopRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message LPopResponse {
+  bool present = 1;
+  bytes item = 2;
+}
+
+message RPopRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message RPopResponse {
+  bool present = 1;
+  bytes item = 2;
+}
+
+message LLenRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message LLenResponse {
+  int64 len = 1;
+}
+
+message LIndexRequest {
+  string keyspace = 1;
+  string name = 2;
+  int32 index = 3;
+}
+message LIndexResponse {
+  bool present = 1;
+  bytes item = 2;
+}
+
+message LRangeRequest {
+  string keyspace = 1;
+  string name = 2;
+  int32 start = 3;
+  int32 stop = 4;
+}
+message LRangeResponse {
+  repeated bytes items = 1;
 }

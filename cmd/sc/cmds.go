@@ -72,6 +72,20 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdGeoDist(ctx, sess, args)
 	case "georadius":
 		return cmdGeoRadius(ctx, sess, args)
+	case "lpush":
+		return cmdLPush(ctx, sess, args)
+	case "rpush":
+		return cmdRPush(ctx, sess, args)
+	case "lpop":
+		return cmdLPop(ctx, sess, args)
+	case "rpop":
+		return cmdRPop(ctx, sess, args)
+	case "llen":
+		return cmdLLen(ctx, sess, args)
+	case "lindex":
+		return cmdLIndex(ctx, sess, args)
+	case "lrange":
+		return cmdLRange(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -754,6 +768,169 @@ func cmdGeoRadius(ctx context.Context, sess *session, args []string) int {
 	}
 	for _, m := range mem {
 		fmt.Printf("%g %s %g %g\n", m.Dist, string(m.Member), m.Lon, m.Lat)
+	}
+	return 0
+}
+
+func cmdLPush(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: lpush <name> <item>")
+		return 2
+	}
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.LPush(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lpush: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK lpush %s %s\n", args[0], args[1])
+	}
+	return 0
+}
+
+func cmdRPush(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: rpush <name> <item>")
+		return 2
+	}
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.RPush(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "rpush: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK rpush %s %s\n", args[0], args[1])
+	}
+	return 0
+}
+
+func cmdLPop(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: lpop <name>")
+		return 2
+	}
+	var item []byte
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		item, ok, e = cli.LPop(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lpop: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(string(item))
+	return 0
+}
+
+func cmdRPop(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: rpop <name>")
+		return 2
+	}
+	var item []byte
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		item, ok, e = cli.RPop(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "rpop: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(string(item))
+	return 0
+}
+
+func cmdLLen(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: llen <name>")
+		return 2
+	}
+	var n int
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.LLen(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "llen: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdLIndex(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: lindex <name> <idx>")
+		return 2
+	}
+	idx, err := parseInt(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lindex: bad idx %q: %v\n", args[1], err)
+		return 2
+	}
+	var item []byte
+	var ok bool
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		item, ok, e = cli.LIndex(ctx, sess.cfg.keyspace, args[0], idx)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lindex: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(string(item))
+	return 0
+}
+
+func cmdLRange(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: lrange <name> <start> <stop>")
+		return 2
+	}
+	start, err := parseInt(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lrange: bad start %q: %v\n", args[1], err)
+		return 2
+	}
+	stop, err := parseInt(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lrange: bad stop %q: %v\n", args[2], err)
+		return 2
+	}
+	var items [][]byte
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		items, e = cli.LRange(ctx, sess.cfg.keyspace, args[0], start, stop)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lrange: %v\n", err)
+		return 1
+	}
+	for _, it := range items {
+		fmt.Println(string(it))
 	}
 	return 0
 }

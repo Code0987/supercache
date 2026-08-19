@@ -327,6 +327,58 @@ func (c *Client) GeoRadius(ctx context.Context, keyspace, name string, lon, lat,
 	return geoMembersFromProto(resp.GetMembers()), nil
 }
 
+func (c *Client) LPush(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.LPush(ctx, &cachev1.LPushRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+func (c *Client) RPush(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.RPush(ctx, &cachev1.RPushRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+func (c *Client) LPop(ctx context.Context, keyspace, name string) ([]byte, bool, error) {
+	resp, err := c.api.LPop(ctx, &cachev1.LPopRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetItem(), resp.GetPresent(), nil
+}
+
+func (c *Client) RPop(ctx context.Context, keyspace, name string) ([]byte, bool, error) {
+	resp, err := c.api.RPop(ctx, &cachev1.RPopRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetItem(), resp.GetPresent(), nil
+}
+
+func (c *Client) LLen(ctx context.Context, keyspace, name string) (int, error) {
+	resp, err := c.api.LLen(ctx, &cachev1.LLenRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, err
+	}
+	return int(resp.GetLen()), nil
+}
+
+func (c *Client) LIndex(ctx context.Context, keyspace, name string, idx int) ([]byte, bool, error) {
+	resp, err := c.api.LIndex(ctx, &cachev1.LIndexRequest{Keyspace: keyspace, Name: name, Index: int32(idx)})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetItem(), resp.GetPresent(), nil
+}
+
+func (c *Client) LRange(ctx context.Context, keyspace, name string, start, stop int) ([][]byte, error) {
+	resp, err := c.api.LRange(ctx, &cachev1.LRangeRequest{
+		Keyspace: keyspace, Name: name, Start: int32(start), Stop: int32(stop),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetItems(), nil
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil

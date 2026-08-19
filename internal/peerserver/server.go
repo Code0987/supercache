@@ -115,6 +115,23 @@ func (s *Server) GetOrLoad(ctx context.Context, req *peerv1.GetOrLoadRequest) (*
 	}, nil
 }
 
+func (s *Server) ListPop(ctx context.Context, req *peerv1.ListPopRequest) (*peerv1.ListPopResponse, error) {
+	var (
+		item []byte
+		ok   bool
+		err  error
+	)
+	if req.GetLeft() {
+		item, ok, err = s.eng.LPop(ctx, req.Keyspace, req.Name)
+	} else {
+		item, ok, err = s.eng.RPop(ctx, req.Keyspace, req.Name)
+	}
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &peerv1.ListPopResponse{Found: ok, Item: item}, nil
+}
+
 // ListenAndServe starts a gRPC server on addr (e.g. ":9001").
 // Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS/mTLS; omit for plaintext (dev only).
 func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {

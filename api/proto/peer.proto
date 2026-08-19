@@ -10,6 +10,7 @@ service Peer {
   rpc ForwardPut(ForwardPutRequest) returns (ForwardPutResponse);
   rpc ForwardDelete(ForwardDeleteRequest) returns (ForwardDeleteResponse);
   rpc GetOrLoad(GetOrLoadRequest) returns (GetOrLoadResponse);
+  rpc ListPop(ListPopRequest) returns (ListPopResponse);
 }
 
 message Entry {
@@ -76,4 +77,15 @@ message GetOrLoadRequest {
 message GetOrLoadResponse {
   bool found = 1;
   Entry entry = 2;
+}
+
+message ListPopRequest {
+  string keyspace = 1;
+  string name = 2;
+  bool left = 3; // true = LPop, false = RPop
+}
+
+message ListPopResponse {
+  bool found = 1;
+  bytes item = 2;
 }

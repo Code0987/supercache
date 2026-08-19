@@ -257,6 +257,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeGeo {
 		return nil, fmt.Errorf("%w: use GeoPos/GeoRadius", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeList {
+		return nil, fmt.Errorf("%w: use LIndex/LRange", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -455,6 +458,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		if ks.cfg.Mode == keyspace.ModeGeo {
 			return fmt.Errorf("%w: use GeoAdd", ErrInvalidArgument)
 		}
+		if ks.cfg.Mode == keyspace.ModeList {
+			return fmt.Errorf("%w: use LPush", ErrInvalidArgument)
+		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
@@ -603,6 +609,27 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsGeo() {
 		return e.applyGeoInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsListLPush() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		ok := e.applyListLPush(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		return ok, nil
+	}
+	if ent.IsListRPush() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		ok := e.applyListRPush(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		return ok, nil
+	}
+	if ent.IsList() {
+		return e.applyListInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

@@ -43,6 +43,13 @@ const (
 	Cache_GeoCard_FullMethodName       = "/supercache.cache.v1.Cache/GeoCard"
 	Cache_GeoDist_FullMethodName       = "/supercache.cache.v1.Cache/GeoDist"
 	Cache_GeoRadius_FullMethodName     = "/supercache.cache.v1.Cache/GeoRadius"
+	Cache_LPush_FullMethodName         = "/supercache.cache.v1.Cache/LPush"
+	Cache_RPush_FullMethodName         = "/supercache.cache.v1.Cache/RPush"
+	Cache_LPop_FullMethodName          = "/supercache.cache.v1.Cache/LPop"
+	Cache_RPop_FullMethodName          = "/supercache.cache.v1.Cache/RPop"
+	Cache_LLen_FullMethodName          = "/supercache.cache.v1.Cache/LLen"
+	Cache_LIndex_FullMethodName        = "/supercache.cache.v1.Cache/LIndex"
+	Cache_LRange_FullMethodName        = "/supercache.cache.v1.Cache/LRange"
 )
 
 // CacheClient is the client API for Cache service.
@@ -75,6 +82,13 @@ type CacheClient interface {
 	GeoCard(ctx context.Context, in *GeoCardRequest, opts ...grpc.CallOption) (*GeoCardResponse, error)
 	GeoDist(ctx context.Context, in *GeoDistRequest, opts ...grpc.CallOption) (*GeoDistResponse, error)
 	GeoRadius(ctx context.Context, in *GeoRadiusRequest, opts ...grpc.CallOption) (*GeoRadiusResponse, error)
+	LPush(ctx context.Context, in *LPushRequest, opts ...grpc.CallOption) (*LPushResponse, error)
+	RPush(ctx context.Context, in *RPushRequest, opts ...grpc.CallOption) (*RPushResponse, error)
+	LPop(ctx context.Context, in *LPopRequest, opts ...grpc.CallOption) (*LPopResponse, error)
+	RPop(ctx context.Context, in *RPopRequest, opts ...grpc.CallOption) (*RPopResponse, error)
+	LLen(ctx context.Context, in *LLenRequest, opts ...grpc.CallOption) (*LLenResponse, error)
+	LIndex(ctx context.Context, in *LIndexRequest, opts ...grpc.CallOption) (*LIndexResponse, error)
+	LRange(ctx context.Context, in *LRangeRequest, opts ...grpc.CallOption) (*LRangeResponse, error)
 }
 
 type cacheClient struct {
@@ -325,6 +339,76 @@ func (c *cacheClient) GeoRadius(ctx context.Context, in *GeoRadiusRequest, opts 
 	return out, nil
 }
 
+func (c *cacheClient) LPush(ctx context.Context, in *LPushRequest, opts ...grpc.CallOption) (*LPushResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LPushResponse)
+	err := c.cc.Invoke(ctx, Cache_LPush_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) RPush(ctx context.Context, in *RPushRequest, opts ...grpc.CallOption) (*RPushResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RPushResponse)
+	err := c.cc.Invoke(ctx, Cache_RPush_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) LPop(ctx context.Context, in *LPopRequest, opts ...grpc.CallOption) (*LPopResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LPopResponse)
+	err := c.cc.Invoke(ctx, Cache_LPop_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) RPop(ctx context.Context, in *RPopRequest, opts ...grpc.CallOption) (*RPopResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RPopResponse)
+	err := c.cc.Invoke(ctx, Cache_RPop_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) LLen(ctx context.Context, in *LLenRequest, opts ...grpc.CallOption) (*LLenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LLenResponse)
+	err := c.cc.Invoke(ctx, Cache_LLen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) LIndex(ctx context.Context, in *LIndexRequest, opts ...grpc.CallOption) (*LIndexResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LIndexResponse)
+	err := c.cc.Invoke(ctx, Cache_LIndex_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) LRange(ctx context.Context, in *LRangeRequest, opts ...grpc.CallOption) (*LRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LRangeResponse)
+	err := c.cc.Invoke(ctx, Cache_LRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -355,6 +439,13 @@ type CacheServer interface {
 	GeoCard(context.Context, *GeoCardRequest) (*GeoCardResponse, error)
 	GeoDist(context.Context, *GeoDistRequest) (*GeoDistResponse, error)
 	GeoRadius(context.Context, *GeoRadiusRequest) (*GeoRadiusResponse, error)
+	LPush(context.Context, *LPushRequest) (*LPushResponse, error)
+	RPush(context.Context, *RPushRequest) (*RPushResponse, error)
+	LPop(context.Context, *LPopRequest) (*LPopResponse, error)
+	RPop(context.Context, *RPopRequest) (*RPopResponse, error)
+	LLen(context.Context, *LLenRequest) (*LLenResponse, error)
+	LIndex(context.Context, *LIndexRequest) (*LIndexResponse, error)
+	LRange(context.Context, *LRangeRequest) (*LRangeResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -436,6 +527,27 @@ func (UnimplementedCacheServer) GeoDist(context.Context, *GeoDistRequest) (*GeoD
 }
 func (UnimplementedCacheServer) GeoRadius(context.Context, *GeoRadiusRequest) (*GeoRadiusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GeoRadius not implemented")
+}
+func (UnimplementedCacheServer) LPush(context.Context, *LPushRequest) (*LPushResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LPush not implemented")
+}
+func (UnimplementedCacheServer) RPush(context.Context, *RPushRequest) (*RPushResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RPush not implemented")
+}
+func (UnimplementedCacheServer) LPop(context.Context, *LPopRequest) (*LPopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LPop not implemented")
+}
+func (UnimplementedCacheServer) RPop(context.Context, *RPopRequest) (*RPopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RPop not implemented")
+}
+func (UnimplementedCacheServer) LLen(context.Context, *LLenRequest) (*LLenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LLen not implemented")
+}
+func (UnimplementedCacheServer) LIndex(context.Context, *LIndexRequest) (*LIndexResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LIndex not implemented")
+}
+func (UnimplementedCacheServer) LRange(context.Context, *LRangeRequest) (*LRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LRange not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -890,6 +1002,132 @@ func _Cache_GeoRadius_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_LPush_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LPushRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).LPush(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_LPush_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).LPush(ctx, req.(*LPushRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_RPush_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RPushRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).RPush(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_RPush_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).RPush(ctx, req.(*RPushRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_LPop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LPopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).LPop(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_LPop_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).LPop(ctx, req.(*LPopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_RPop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RPopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).RPop(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_RPop_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).RPop(ctx, req.(*RPopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_LLen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LLenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).LLen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_LLen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).LLen(ctx, req.(*LLenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_LIndex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LIndexRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).LIndex(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_LIndex_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).LIndex(ctx, req.(*LIndexRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_LRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).LRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_LRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).LRange(ctx, req.(*LRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -992,6 +1230,34 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GeoRadius",
 			Handler:    _Cache_GeoRadius_Handler,
+		},
+		{
+			MethodName: "LPush",
+			Handler:    _Cache_LPush_Handler,
+		},
+		{
+			MethodName: "RPush",
+			Handler:    _Cache_RPush_Handler,
+		},
+		{
+			MethodName: "LPop",
+			Handler:    _Cache_LPop_Handler,
+		},
+		{
+			MethodName: "RPop",
+			Handler:    _Cache_RPop_Handler,
+		},
+		{
+			MethodName: "LLen",
+			Handler:    _Cache_LLen_Handler,
+		},
+		{
+			MethodName: "LIndex",
+			Handler:    _Cache_LIndex_Handler,
+		},
+		{
+			MethodName: "LRange",
+			Handler:    _Cache_LRange_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

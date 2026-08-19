@@ -104,7 +104,8 @@ func run(args []string) int {
 		"peers", "keyspaces", "ks", "metrics", "health", "healthz", "ready", "readyz",
 		"bloom", "sadd", "srem", "sismember", "scard", "smembers",
 		"zadd", "zrem", "zscore", "zcard", "zrange", "zrangebyscore",
-		"geoadd", "georem", "geopos", "geocard", "geodist", "georadius":
+		"geoadd", "georem", "geopos", "geocard", "geodist", "georadius",
+		"lpush", "rpush", "lpop", "rpop", "llen", "lindex", "lrange":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -318,6 +319,11 @@ Cache commands (gRPC -addr seeds):
   geocard <name>               ModeGeo member count
   geodist <name> <a> <b>       ModeGeo meters (or (nil))
   georadius <name> <lon> <lat> <radius_m> [limit]
+  lpush|rpush <name> <item>    ModeList push
+  lpop|rpop <name>             ModeList pop (or (nil))
+  llen <name>                  ModeList length
+  lindex <name> <idx>          ModeList element
+  lrange <name> <start> <stop> ModeList window
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

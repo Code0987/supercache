@@ -215,8 +215,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, _, _, gerr := cli.GeoPos(ctx, ks, "__testcluster_ready__", []byte("x"))
-		_ = cli.Close()
 		if gerr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, lerr := cli.LLen(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if lerr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)
