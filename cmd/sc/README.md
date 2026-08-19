@@ -51,9 +51,14 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | Command | Port | What it does |
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
-| `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** |
+| `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
 | `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset |
 | `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
+| `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
+| `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
+| `sismember <name> <item>` | Cache gRPC | `ModeSet` contains (`true`/`false`; exit 1 if false) |
+| `scard <name>` | Cache gRPC | `ModeSet` cardinality |
+| `smembers <name>` | Cache gRPC | `ModeSet` members (one per line) |
 | `zadd <name> <score> <member>` | Cache gRPC | `ModeZSet` upsert score |
 | `zrem <name> <member>` | Cache gRPC | `ModeZSet` remove member |
 | `zscore <name> <member>` | Cache gRPC | Print score or `(nil)` |
@@ -66,7 +71,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `repl` (or bare `sc` on a TTY) | — | Interactive shell |
 | `version` | — | CLI version |
 
-Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet via Go client, `board` ModeZSet, or your own). ModeSet has gRPC/client APIs; `sc set …` is not wired yet.
+Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, or your own).
 
 ## REPL
 
