@@ -212,6 +212,9 @@ func printREPLHelp() {
   put <key> <value>        Put (quotes ok: put k "hello world")
   put <key> -file <path>   Put file bytes
   del <key> [key...]       Delete
+  sadd|srem|sismember|scard|smembers   ModeSet
+  bloom add|test           ModeBloom
+  zadd|zrem|zscore|zcard|zrange|zrangebyscore   ModeZSet
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

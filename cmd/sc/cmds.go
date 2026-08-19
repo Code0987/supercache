@@ -38,6 +38,16 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdAdmin(ctx, sess.cfg, "/readyz")
 	case "bloom":
 		return cmdBloom(ctx, sess, args)
+	case "sadd":
+		return cmdSAdd(ctx, sess, args)
+	case "srem":
+		return cmdSRem(ctx, sess, args)
+	case "sismember":
+		return cmdSIsMember(ctx, sess, args)
+	case "scard":
+		return cmdSCard(ctx, sess, args)
+	case "smembers":
+		return cmdSMembers(ctx, sess, args)
 	case "zadd":
 		return cmdZAdd(ctx, sess, args)
 	case "zrem":
@@ -313,6 +323,109 @@ func cmdBloom(ctx context.Context, sess *session, args []string) int {
 		fmt.Printf("maybe=%v\n", maybe)
 	} else if !sess.cfg.quiet {
 		fmt.Printf("OK bloom add %s %s\n", name, item)
+	}
+	return 0
+}
+
+func cmdSAdd(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: sadd <name> <item>")
+		return 2
+	}
+	name, item := args[0], args[1]
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.SetAdd(ctx, sess.cfg.keyspace, name, []byte(item))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sadd: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK sadd %s %s\n", name, item)
+	}
+	return 0
+}
+
+func cmdSRem(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: srem <name> <item>")
+		return 2
+	}
+	name, item := args[0], args[1]
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.SetRemove(ctx, sess.cfg.keyspace, name, []byte(item))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "srem: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK srem %s %s\n", name, item)
+	}
+	return 0
+}
+
+func cmdSIsMember(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: sismember <name> <item>")
+		return 2
+	}
+	name, item := args[0], args[1]
+	var present bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		present, e = cli.SetContains(ctx, sess.cfg.keyspace, name, []byte(item))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sismember: %v\n", err)
+		return 1
+	}
+	fmt.Println(present)
+	if !present {
+		return 1
+	}
+	return 0
+}
+
+func cmdSCard(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: scard <name>")
+		return 2
+	}
+	name := args[0]
+	var n int
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.SetCard(ctx, sess.cfg.keyspace, name)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "scard: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdSMembers(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: smembers <name>")
+		return 2
+	}
+	name := args[0]
+	var mem [][]byte
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		mem, e = cli.SetMembers(ctx, sess.cfg.keyspace, name)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "smembers: %v\n", err)
+		return 1
+	}
+	for _, m := range mem {
+		fmt.Println(string(m))
 	}
 	return 0
 }

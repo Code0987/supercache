@@ -68,11 +68,12 @@ Optional: `-gossip-secret <key>`.
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
+go run ./cmd/sc -keyspace tags sadd features dark_mode
+go run ./cmd/sc -keyspace tags sismember features dark_mode
 go run ./cmd/sc -keyspace board zadd lb 100 alice
 go run ./cmd/sc -keyspace board zrange lb 0 -1
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 go run ./cmd/sc peers              # admin HTTP
-# ModeSet: use pkg/client SetAdd/SetContains (sc set* not wired yet)
 
 # Multi-seed (failover entry points; owner routing is still server-side)
 go run ./cmd/sc -addr 127.0.0.1:9000,127.0.0.1:9010 ping
