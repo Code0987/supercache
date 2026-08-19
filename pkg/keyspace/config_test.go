@@ -72,6 +72,9 @@ func TestModeString(t *testing.T) {
 	if ModeZSet.String() != "ZSet" {
 		t.Fatal(ModeZSet.String())
 	}
+	if ModeGeo.String() != "Geo" {
+		t.Fatal(ModeGeo.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}

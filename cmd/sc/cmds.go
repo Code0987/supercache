@@ -60,6 +60,18 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdZRange(ctx, sess, args)
 	case "zrangebyscore":
 		return cmdZRangeByScore(ctx, sess, args)
+	case "geoadd":
+		return cmdGeoAdd(ctx, sess, args)
+	case "georem":
+		return cmdGeoRem(ctx, sess, args)
+	case "geopos":
+		return cmdGeoPos(ctx, sess, args)
+	case "geocard":
+		return cmdGeoCard(ctx, sess, args)
+	case "geodist":
+		return cmdGeoDist(ctx, sess, args)
+	case "georadius":
+		return cmdGeoRadius(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -584,6 +596,166 @@ func printZMembers(mem []client.ZMember) {
 	for _, m := range mem {
 		fmt.Printf("%g %s\n", m.Score, string(m.Member))
 	}
+}
+
+func cmdGeoAdd(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 4 {
+		fmt.Fprintln(os.Stderr, "usage: geoadd <name> <lon> <lat> <member>")
+		return 2
+	}
+	name, member := args[0], args[3]
+	lon, err := parseFloat(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geoadd: bad lon %q: %v\n", args[1], err)
+		return 2
+	}
+	lat, err := parseFloat(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geoadd: bad lat %q: %v\n", args[2], err)
+		return 2
+	}
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.GeoAdd(ctx, sess.cfg.keyspace, name, []byte(member), lon, lat)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geoadd: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK geoadd %s %g %g %s\n", name, lon, lat, member)
+	}
+	return 0
+}
+
+func cmdGeoRem(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: georem <name> <member>")
+		return 2
+	}
+	name, member := args[0], args[1]
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.GeoRem(ctx, sess.cfg.keyspace, name, []byte(member))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "georem: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK georem %s %s\n", name, member)
+	}
+	return 0
+}
+
+func cmdGeoPos(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: geopos <name> <member>")
+		return 2
+	}
+	name, member := args[0], args[1]
+	var lon, lat float64
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		lon, lat, ok, e = cli.GeoPos(ctx, sess.cfg.keyspace, name, []byte(member))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geopos: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Printf("%g %g\n", lon, lat)
+	return 0
+}
+
+func cmdGeoCard(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: geocard <name>")
+		return 2
+	}
+	var n int
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.GeoCard(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geocard: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdGeoDist(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: geodist <name> <a> <b>")
+		return 2
+	}
+	var meters float64
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		meters, ok, e = cli.GeoDist(ctx, sess.cfg.keyspace, args[0], []byte(args[1]), []byte(args[2]))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "geodist: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(meters)
+	return 0
+}
+
+func cmdGeoRadius(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 4 {
+		fmt.Fprintln(os.Stderr, "usage: georadius <name> <lon> <lat> <radius_m> [limit]")
+		return 2
+	}
+	lon, err := parseFloat(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "georadius: bad lon %q: %v\n", args[1], err)
+		return 2
+	}
+	lat, err := parseFloat(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "georadius: bad lat %q: %v\n", args[2], err)
+		return 2
+	}
+	rad, err := parseFloat(args[3])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "georadius: bad radius %q: %v\n", args[3], err)
+		return 2
+	}
+	limit := 0
+	if len(args) >= 5 {
+		limit, err = parseInt(args[4])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "georadius: bad limit %q: %v\n", args[4], err)
+			return 2
+		}
+	}
+	var mem []client.GeoMember
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		mem, e = cli.GeoRadius(ctx, sess.cfg.keyspace, args[0], lon, lat, rad, limit)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "georadius: %v\n", err)
+		return 1
+	}
+	for _, m := range mem {
+		fmt.Printf("%g %s %g %g\n", m.Dist, string(m.Member), m.Lon, m.Lat)
+	}
+	return 0
 }
 
 func parseFloat(s string) (float64, error) {

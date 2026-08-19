@@ -37,6 +37,12 @@ const (
 	Cache_ZCard_FullMethodName         = "/supercache.cache.v1.Cache/ZCard"
 	Cache_ZRange_FullMethodName        = "/supercache.cache.v1.Cache/ZRange"
 	Cache_ZRangeByScore_FullMethodName = "/supercache.cache.v1.Cache/ZRangeByScore"
+	Cache_GeoAdd_FullMethodName        = "/supercache.cache.v1.Cache/GeoAdd"
+	Cache_GeoRem_FullMethodName        = "/supercache.cache.v1.Cache/GeoRem"
+	Cache_GeoPos_FullMethodName        = "/supercache.cache.v1.Cache/GeoPos"
+	Cache_GeoCard_FullMethodName       = "/supercache.cache.v1.Cache/GeoCard"
+	Cache_GeoDist_FullMethodName       = "/supercache.cache.v1.Cache/GeoDist"
+	Cache_GeoRadius_FullMethodName     = "/supercache.cache.v1.Cache/GeoRadius"
 )
 
 // CacheClient is the client API for Cache service.
@@ -63,6 +69,12 @@ type CacheClient interface {
 	ZCard(ctx context.Context, in *ZCardRequest, opts ...grpc.CallOption) (*ZCardResponse, error)
 	ZRange(ctx context.Context, in *ZRangeRequest, opts ...grpc.CallOption) (*ZRangeResponse, error)
 	ZRangeByScore(ctx context.Context, in *ZRangeByScoreRequest, opts ...grpc.CallOption) (*ZRangeResponse, error)
+	GeoAdd(ctx context.Context, in *GeoAddRequest, opts ...grpc.CallOption) (*GeoAddResponse, error)
+	GeoRem(ctx context.Context, in *GeoRemRequest, opts ...grpc.CallOption) (*GeoRemResponse, error)
+	GeoPos(ctx context.Context, in *GeoPosRequest, opts ...grpc.CallOption) (*GeoPosResponse, error)
+	GeoCard(ctx context.Context, in *GeoCardRequest, opts ...grpc.CallOption) (*GeoCardResponse, error)
+	GeoDist(ctx context.Context, in *GeoDistRequest, opts ...grpc.CallOption) (*GeoDistResponse, error)
+	GeoRadius(ctx context.Context, in *GeoRadiusRequest, opts ...grpc.CallOption) (*GeoRadiusResponse, error)
 }
 
 type cacheClient struct {
@@ -253,6 +265,66 @@ func (c *cacheClient) ZRangeByScore(ctx context.Context, in *ZRangeByScoreReques
 	return out, nil
 }
 
+func (c *cacheClient) GeoAdd(ctx context.Context, in *GeoAddRequest, opts ...grpc.CallOption) (*GeoAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoAddResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) GeoRem(ctx context.Context, in *GeoRemRequest, opts ...grpc.CallOption) (*GeoRemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoRemResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoRem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) GeoPos(ctx context.Context, in *GeoPosRequest, opts ...grpc.CallOption) (*GeoPosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoPosResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoPos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) GeoCard(ctx context.Context, in *GeoCardRequest, opts ...grpc.CallOption) (*GeoCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoCardResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) GeoDist(ctx context.Context, in *GeoDistRequest, opts ...grpc.CallOption) (*GeoDistResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoDistResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoDist_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) GeoRadius(ctx context.Context, in *GeoRadiusRequest, opts ...grpc.CallOption) (*GeoRadiusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeoRadiusResponse)
+	err := c.cc.Invoke(ctx, Cache_GeoRadius_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -277,6 +349,12 @@ type CacheServer interface {
 	ZCard(context.Context, *ZCardRequest) (*ZCardResponse, error)
 	ZRange(context.Context, *ZRangeRequest) (*ZRangeResponse, error)
 	ZRangeByScore(context.Context, *ZRangeByScoreRequest) (*ZRangeResponse, error)
+	GeoAdd(context.Context, *GeoAddRequest) (*GeoAddResponse, error)
+	GeoRem(context.Context, *GeoRemRequest) (*GeoRemResponse, error)
+	GeoPos(context.Context, *GeoPosRequest) (*GeoPosResponse, error)
+	GeoCard(context.Context, *GeoCardRequest) (*GeoCardResponse, error)
+	GeoDist(context.Context, *GeoDistRequest) (*GeoDistResponse, error)
+	GeoRadius(context.Context, *GeoRadiusRequest) (*GeoRadiusResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -340,6 +418,24 @@ func (UnimplementedCacheServer) ZRange(context.Context, *ZRangeRequest) (*ZRange
 }
 func (UnimplementedCacheServer) ZRangeByScore(context.Context, *ZRangeByScoreRequest) (*ZRangeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ZRangeByScore not implemented")
+}
+func (UnimplementedCacheServer) GeoAdd(context.Context, *GeoAddRequest) (*GeoAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoAdd not implemented")
+}
+func (UnimplementedCacheServer) GeoRem(context.Context, *GeoRemRequest) (*GeoRemResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoRem not implemented")
+}
+func (UnimplementedCacheServer) GeoPos(context.Context, *GeoPosRequest) (*GeoPosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoPos not implemented")
+}
+func (UnimplementedCacheServer) GeoCard(context.Context, *GeoCardRequest) (*GeoCardResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoCard not implemented")
+}
+func (UnimplementedCacheServer) GeoDist(context.Context, *GeoDistRequest) (*GeoDistResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoDist not implemented")
+}
+func (UnimplementedCacheServer) GeoRadius(context.Context, *GeoRadiusRequest) (*GeoRadiusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeoRadius not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -686,6 +782,114 @@ func _Cache_ZRangeByScore_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_GeoAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoAdd(ctx, req.(*GeoAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_GeoRem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoRemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoRem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoRem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoRem(ctx, req.(*GeoRemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_GeoPos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoPosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoPos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoPos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoPos(ctx, req.(*GeoPosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_GeoCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoCard(ctx, req.(*GeoCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_GeoDist_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoDistRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoDist(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoDist_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoDist(ctx, req.(*GeoDistRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_GeoRadius_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeoRadiusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).GeoRadius(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_GeoRadius_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).GeoRadius(ctx, req.(*GeoRadiusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -764,6 +968,30 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ZRangeByScore",
 			Handler:    _Cache_ZRangeByScore_Handler,
+		},
+		{
+			MethodName: "GeoAdd",
+			Handler:    _Cache_GeoAdd_Handler,
+		},
+		{
+			MethodName: "GeoRem",
+			Handler:    _Cache_GeoRem_Handler,
+		},
+		{
+			MethodName: "GeoPos",
+			Handler:    _Cache_GeoPos_Handler,
+		},
+		{
+			MethodName: "GeoCard",
+			Handler:    _Cache_GeoCard_Handler,
+		},
+		{
+			MethodName: "GeoDist",
+			Handler:    _Cache_GeoDist_Handler,
+		},
+		{
+			MethodName: "GeoRadius",
+			Handler:    _Cache_GeoRadius_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

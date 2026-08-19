@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `zadd`…, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -39,6 +39,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeBloom` | Approximate membership (named filter) | `BloomAdd`, `BloomTest`; `Delete(name)` wipes filter |
 | `ModeSet` | Exact membership (named set) | `SetAdd`, `SetRemove`, `SetContains`, `SetCard`, `SetMembers`; `Delete(name)` |
 | `ModeZSet` | Scored sorted set (named zset) | `ZAdd`, `ZRem`, `ZScore`, `ZCard`, `ZRange`, `ZRangeByScore`; `Delete(name)` |
+| `ModeGeo` | Named geospatial point index | `GeoAdd`, `GeoRem`, `GeoPos`, `GeoCard`, `GeoDist`, `GeoRadius`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -84,6 +85,20 @@ Service `supercache.cache.v1.Cache` on the **`-cache`** port. Full shapes: [`api
 | `Delete(name)` | Tombstone whole zset |
 
 Equal scores order by member bytes. Wire: `ZMember { bytes member; double score }`.
+
+### Geo (`ModeGeo`)
+
+| RPC | Notes |
+|-----|--------|
+| `GeoAdd` | Upsert member lon/lat (WGS84; NaN/Inf/OOB rejected) |
+| `GeoRem` | Remove member if present |
+| `GeoPos` | lon + lat + present; missing ⇒ present=false |
+| `GeoCard` | Member count |
+| `GeoDist` | Haversine **meters** between two members; missing ⇒ present=false |
+| `GeoRadius` | Points within `radius_meters`; nearest first; `limit<=0` = all |
+| `Delete(name)` | Tombstone whole index |
+
+Wire: `GeoMember { bytes member; double lon; double lat; double dist_meters }`.
 
 ## Enabling GitHub Pages
 

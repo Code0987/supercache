@@ -103,7 +103,8 @@ func run(args []string) int {
 	case "get", "put", "set", "del", "delete", "rm", "ping",
 		"peers", "keyspaces", "ks", "metrics", "health", "healthz", "ready", "readyz",
 		"bloom", "sadd", "srem", "sismember", "scard", "smembers",
-		"zadd", "zrem", "zscore", "zcard", "zrange", "zrangebyscore":
+		"zadd", "zrem", "zscore", "zcard", "zrange", "zrangebyscore",
+		"geoadd", "georem", "geopos", "geocard", "geodist", "georadius":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -155,13 +156,13 @@ func configFromFlags(
 }
 
 type config struct {
-	addrs, admins                 []string
-	keyspace                      string
-	timeout                       time.Duration
-	ttl                           time.Duration
-	ttlSet                        bool
-	filePath                      string
-	base64, jsonOut, raw, quiet   bool
+	addrs, admins                     []string
+	keyspace                          string
+	timeout                           time.Duration
+	ttl                               time.Duration
+	ttlSet                            bool
+	filePath                          string
+	base64, jsonOut, raw, quiet       bool
 	tlsCA, tlsCert, tlsKey, tlsServer string
 }
 
@@ -311,6 +312,12 @@ Cache commands (gRPC -addr seeds):
   zcard <name>                 ModeZSet member count
   zrange <name> <start> <stop> ModeZSet by rank (Redis-style)
   zrangebyscore <name> <min> <max>
+  geoadd <name> <lon> <lat> <member>  ModeGeo upsert
+  georem <name> <member>       ModeGeo remove
+  geopos <name> <member>       ModeGeo lon lat (or (nil))
+  geocard <name>               ModeGeo member count
+  geodist <name> <a> <b>       ModeGeo meters (or (nil))
+  georadius <name> <lon> <lat> <radius_m> [limit]
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

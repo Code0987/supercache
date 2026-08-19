@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.3.0
+  version: 0.4.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `zadd` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -25,13 +25,14 @@ info:
     | ModeBloom | BloomAdd, BloomTest; Delete(name) |
     | ModeSet | SetAdd, SetRemove, SetContains, SetCard, SetMembers; Delete(name) |
     | ModeZSet | ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore; Delete(name) |
+    | ModeGeo | GeoAdd, GeoRem, GeoPos, GeoCard, GeoDist, GeoRadius; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / BloomTest** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / BloomAdd** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / BloomTest** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / BloomAdd** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -59,6 +60,8 @@ tags:
     description: Exact membership (ModeSet)
   - name: ZSet
     description: Sorted set with scores (ModeZSet)
+  - name: Geo
+    description: Geospatial point index (ModeGeo)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -70,7 +73,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo.
       requestBody:
         required: true
         content:
@@ -98,7 +101,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo.
       requestBody:
         required: true
         content:
@@ -462,6 +465,141 @@ paths:
               schema:
                 $ref: "#/components/schemas/ZRangeResponse"
 
+  /supercache.cache.v1.Cache/GeoAdd:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoAdd
+      summary: Add or update member position
+      description: ModeGeo only. WGS84 lon/lat; NaN, Inf, and out-of-range rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeoAddRequest"
+            example:
+              keyspace: places
+              name: city
+              member: c2hvcA==
+              lon: -74
+              lat: 40.7
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/GeoRem:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoRem
+      summary: Remove member from geo index
+      description: ModeGeo only. No-op if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeoMemberRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/GeoPos:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoPos
+      summary: Get member lon/lat
+      description: Missing member/index → present=false. ModeGeo only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeoMemberRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeoPosResponse"
+
+  /supercache.cache.v1.Cache/GeoCard:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoCard
+      summary: Geo index cardinality
+      description: Missing index → card=0. ModeGeo only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+
+  /supercache.cache.v1.Cache/GeoDist:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoDist
+      summary: Distance between two members
+      description: Haversine meters. Missing either member → present=false. ModeGeo only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeoDistRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeoDistResponse"
+
+  /supercache.cache.v1.Cache/GeoRadius:
+    post:
+      tags: [Geo]
+      operationId: Cache_GeoRadius
+      summary: Members within a radius
+      description: |
+        Inclusive radius in meters. Order: nearest first, then member bytes.
+        `limit<=0` means no cap. ModeGeo only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeoRadiusRequest"
+            example:
+              keyspace: places
+              name: city
+              lon: -74
+              lat: 40.7
+              radius_meters: 20000
+              limit: 10
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeoRadiusResponse"
+
 components:
   schemas:
     Empty:
@@ -726,3 +864,106 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ZMember"
+    GeoAddRequest:
+      type: object
+      required: [keyspace, name, member, lon, lat]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+        lon:
+          type: number
+          format: double
+        lat:
+          type: number
+          format: double
+    GeoMemberRequest:
+      type: object
+      required: [keyspace, name, member]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+    GeoPosResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+        lon:
+          type: number
+          format: double
+        lat:
+          type: number
+          format: double
+    GeoDistRequest:
+      type: object
+      required: [keyspace, name, a, b]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        a:
+          type: string
+          format: byte
+        b:
+          type: string
+          format: byte
+    GeoDistResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+        meters:
+          type: number
+          format: double
+    GeoRadiusRequest:
+      type: object
+      required: [keyspace, name, lon, lat, radius_meters]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        lon:
+          type: number
+          format: double
+        lat:
+          type: number
+          format: double
+        radius_meters:
+          type: number
+          format: double
+        limit:
+          type: integer
+          format: int32
+    GeoMember:
+      type: object
+      properties:
+        member:
+          type: string
+          format: byte
+        lon:
+          type: number
+          format: double
+        lat:
+          type: number
+          format: double
+        dist_meters:
+          type: number
+          format: double
+    GeoRadiusResponse:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeoMember"

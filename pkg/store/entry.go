@@ -5,15 +5,18 @@ import "time"
 // Flag bits for Entry.Flags.
 const (
 	FlagNegative  uint32 = 1 << 0
-	FlagTombstone uint32 = 1 << 1 // versioned delete marker (blocks stale ApplyPut)
-	FlagBloom     uint32 = 1 << 2 // value is a Bloom bitset
-	FlagBloomAdd  uint32 = 1 << 3 // fan-out only: value is an item to OR into the filter
-	FlagSet       uint32 = 1 << 4 // value is encoded exact-set membership
-	FlagSetAdd    uint32 = 1 << 5 // fan-out only: value is an item to insert
-	FlagSetRemove uint32 = 1 << 6 // fan-out only: value is an item to remove
-	FlagZSet      uint32 = 1 << 7 // value is encoded sorted set
-	FlagZSetAdd   uint32 = 1 << 8 // fan-out: single scored member
-	FlagZSetRem   uint32 = 1 << 9 // fan-out: member to remove
+	FlagTombstone uint32 = 1 << 1  // versioned delete marker (blocks stale ApplyPut)
+	FlagBloom     uint32 = 1 << 2  // value is a Bloom bitset
+	FlagBloomAdd  uint32 = 1 << 3  // fan-out only: value is an item to OR into the filter
+	FlagSet       uint32 = 1 << 4  // value is encoded exact-set membership
+	FlagSetAdd    uint32 = 1 << 5  // fan-out only: value is an item to insert
+	FlagSetRemove uint32 = 1 << 6  // fan-out only: value is an item to remove
+	FlagZSet      uint32 = 1 << 7  // value is encoded sorted set
+	FlagZSetAdd   uint32 = 1 << 8  // fan-out: single scored member
+	FlagZSetRem   uint32 = 1 << 9  // fan-out: member to remove
+	FlagGeo       uint32 = 1 << 10 // value is encoded geo index
+	FlagGeoAdd    uint32 = 1 << 11 // fan-out: single lon/lat member
+	FlagGeoRem    uint32 = 1 << 12 // fan-out: member to remove
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -72,6 +75,21 @@ func (e Entry) IsZSetAdd() bool {
 // IsZSetRem reports a replica zset member remove.
 func (e Entry) IsZSetRem() bool {
 	return e.Flags&FlagZSetRem != 0
+}
+
+// IsGeo reports whether Value is an encoded geo index.
+func (e Entry) IsGeo() bool {
+	return e.Flags&FlagGeo != 0
+}
+
+// IsGeoAdd reports a replica geo position upsert.
+func (e Entry) IsGeoAdd() bool {
+	return e.Flags&FlagGeoAdd != 0
+}
+
+// IsGeoRem reports a replica geo member remove.
+func (e Entry) IsGeoRem() bool {
+	return e.Flags&FlagGeoRem != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

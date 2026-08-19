@@ -24,6 +24,12 @@ service Cache {
   rpc ZCard(ZCardRequest) returns (ZCardResponse);
   rpc ZRange(ZRangeRequest) returns (ZRangeResponse);
   rpc ZRangeByScore(ZRangeByScoreRequest) returns (ZRangeResponse);
+  rpc GeoAdd(GeoAddRequest) returns (GeoAddResponse);
+  rpc GeoRem(GeoRemRequest) returns (GeoRemResponse);
+  rpc GeoPos(GeoPosRequest) returns (GeoPosResponse);
+  rpc GeoCard(GeoCardRequest) returns (GeoCardResponse);
+  rpc GeoDist(GeoDistRequest) returns (GeoDistResponse);
+  rpc GeoRadius(GeoRadiusRequest) returns (GeoRadiusResponse);
 }
 
 message GetRequest {
@@ -212,4 +218,75 @@ message ZRangeByScoreRequest {
 
 message ZRangeResponse {
   repeated ZMember members = 1;
+}
+
+message GeoMember {
+  bytes member = 1;
+  double lon = 2;
+  double lat = 3;
+  double dist_meters = 4;
+}
+
+message GeoAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+  double lon = 4;
+  double lat = 5;
+}
+
+message GeoAddResponse {}
+
+message GeoRemRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+
+message GeoRemResponse {}
+
+message GeoPosRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+
+message GeoPosResponse {
+  bool present = 1;
+  double lon = 2;
+  double lat = 3;
+}
+
+message GeoCardRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+
+message GeoCardResponse {
+  int64 card = 1;
+}
+
+message GeoDistRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes a = 3;
+  bytes b = 4;
+}
+
+message GeoDistResponse {
+  bool present = 1;
+  double meters = 2;
+}
+
+message GeoRadiusRequest {
+  string keyspace = 1;
+  string name = 2;
+  double lon = 3;
+  double lat = 4;
+  double radius_meters = 5;
+  int32 limit = 6;
+}
+
+message GeoRadiusResponse {
+  repeated GeoMember members = 1;
 }
