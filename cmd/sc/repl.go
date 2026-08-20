@@ -217,6 +217,7 @@ func printREPLHelp() {
   zadd|zrem|zscore|zcard|zrange|zrangebyscore   ModeZSet
   geoadd|georem|geopos|geocard|geodist|georadius   ModeGeo
   lpush|rpush|lpop|rpop|llen|lindex|lrange   ModeList
+  hset|hget|hdel|hexists|hlen|hgetall   ModeHash
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -41,6 +41,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeZSet` | Scored sorted set (named zset) | `ZAdd`, `ZRem`, `ZScore`, `ZCard`, `ZRange`, `ZRangeByScore`; `Delete(name)` |
 | `ModeGeo` | Named geospatial point index | `GeoAdd`, `GeoRem`, `GeoPos`, `GeoCard`, `GeoDist`, `GeoRadius`; `Delete(name)` |
 | `ModeList` | Named ordered list | `LPush`, `RPush`, `LPop`, `RPop`, `LLen`, `LIndex`, `LRange`; `Delete(name)` |
+| `ModeHash` | Named field map | `HSet`, `HGet`, `HDel`, `HExists`, `HLen`, `HGetAll`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -113,6 +114,20 @@ Wire: `GeoMember { bytes member; double lon; double lat; double dist_meters }`.
 | `Delete(name)` | Tombstone whole list |
 
 Replicas get a **full list snapshot** after each owner mutate (item-level fan-out would drop earlier pushes under hint coalesce). Non-owner pop uses peer `ListPop`. Empty after last pop: `LLen` 0 until `Delete(name)`.
+
+### Hash (`ModeHash`)
+
+| RPC | Notes |
+|-----|--------|
+| `HSet` | Upsert field; creates hash if missing |
+| `HGet` | Value + present; missing hash or field ⇒ `present=false` |
+| `HDel` | Remove field if present; does not `Delete` the name |
+| `HExists` | Exact; missing ⇒ false |
+| `HLen` | Field count; missing ⇒ 0 |
+| `HGetAll` | All pairs in field-byte order (defensive copies) |
+| `Delete(name)` | Tombstone whole hash |
+
+Wire: `HashField { bytes field; bytes value }`. Item-level fan-out (`FlagHashSet` / `FlagHashDel`). Replica with a local hash does **not** owner-forward a field miss. Empty after last `HDel`: `HLen` 0 until `Delete(name)`.
 
 ## Enabling GitHub Pages
 

@@ -379,6 +379,70 @@ func (c *Client) LRange(ctx context.Context, keyspace, name string, start, stop 
 	return resp.GetItems(), nil
 }
 
+// HashField is one ModeHash field/value pair.
+type HashField struct {
+	Field []byte
+	Value []byte
+}
+
+func (c *Client) HSet(ctx context.Context, keyspace, name string, field, value []byte) error {
+	_, err := c.api.HSet(ctx, &cachev1.HSetRequest{Keyspace: keyspace, Name: name, Field: field, Value: value})
+	return err
+}
+
+func (c *Client) HGet(ctx context.Context, keyspace, name string, field []byte) ([]byte, bool, error) {
+	resp, err := c.api.HGet(ctx, &cachev1.HGetRequest{Keyspace: keyspace, Name: name, Field: field})
+	if err != nil {
+		return nil, false, err
+	}
+	v, ok := resp.GetValue(), resp.GetPresent()
+	if ok && v == nil {
+		v = []byte{}
+	}
+	return v, ok, nil
+}
+
+func (c *Client) HDel(ctx context.Context, keyspace, name string, field []byte) error {
+	_, err := c.api.HDel(ctx, &cachev1.HDelRequest{Keyspace: keyspace, Name: name, Field: field})
+	return err
+}
+
+func (c *Client) HExists(ctx context.Context, keyspace, name string, field []byte) (bool, error) {
+	resp, err := c.api.HExists(ctx, &cachev1.HExistsRequest{Keyspace: keyspace, Name: name, Field: field})
+	if err != nil {
+		return false, err
+	}
+	return resp.GetPresent(), nil
+}
+
+func (c *Client) HLen(ctx context.Context, keyspace, name string) (int, error) {
+	resp, err := c.api.HLen(ctx, &cachev1.HLenRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, err
+	}
+	return int(resp.GetLen()), nil
+}
+
+func (c *Client) HGetAll(ctx context.Context, keyspace, name string) ([]HashField, error) {
+	resp, err := c.api.HGetAll(ctx, &cachev1.HGetAllRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return nil, err
+	}
+	in := resp.GetFields()
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]HashField, len(in))
+	for i, f := range in {
+		val := f.GetValue()
+		if val == nil {
+			val = []byte{}
+		}
+		out[i] = HashField{Field: f.GetField(), Value: val}
+	}
+	return out, nil
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil

@@ -86,6 +86,18 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdLIndex(ctx, sess, args)
 	case "lrange":
 		return cmdLRange(ctx, sess, args)
+	case "hset":
+		return cmdHSet(ctx, sess, args)
+	case "hget":
+		return cmdHGet(ctx, sess, args)
+	case "hdel":
+		return cmdHDel(ctx, sess, args)
+	case "hexists":
+		return cmdHExists(ctx, sess, args)
+	case "hlen":
+		return cmdHLen(ctx, sess, args)
+	case "hgetall":
+		return cmdHGetAll(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -931,6 +943,129 @@ func cmdLRange(ctx context.Context, sess *session, args []string) int {
 	}
 	for _, it := range items {
 		fmt.Println(string(it))
+	}
+	return 0
+}
+
+func cmdHSet(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: hset <name> <field> <value...>")
+		return 2
+	}
+	name, field, value := args[0], args[1], strings.Join(args[2:], " ")
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.HSet(ctx, sess.cfg.keyspace, name, []byte(field), []byte(value))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hset: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK hset %s %s\n", name, field)
+	}
+	return 0
+}
+
+func cmdHGet(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: hget <name> <field>")
+		return 2
+	}
+	var v []byte
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		v, ok, e = cli.HGet(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hget: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(string(v))
+	return 0
+}
+
+func cmdHDel(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: hdel <name> <field>")
+		return 2
+	}
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.HDel(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hdel: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK hdel %s %s\n", args[0], args[1])
+	}
+	return 0
+}
+
+func cmdHExists(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: hexists <name> <field>")
+		return 2
+	}
+	var present bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		present, e = cli.HExists(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hexists: %v\n", err)
+		return 1
+	}
+	fmt.Println(present)
+	if !present {
+		return 1
+	}
+	return 0
+}
+
+func cmdHLen(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: hlen <name>")
+		return 2
+	}
+	var n int
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.HLen(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hlen: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdHGetAll(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: hgetall <name>")
+		return 2
+	}
+	var all []client.HashField
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		all, e = cli.HGetAll(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hgetall: %v\n", err)
+		return 1
+	}
+	for _, f := range all {
+		fmt.Printf("%s\t%s\n", f.Field, f.Value)
 	}
 	return 0
 }

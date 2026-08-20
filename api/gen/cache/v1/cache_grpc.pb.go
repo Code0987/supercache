@@ -50,6 +50,12 @@ const (
 	Cache_LLen_FullMethodName          = "/supercache.cache.v1.Cache/LLen"
 	Cache_LIndex_FullMethodName        = "/supercache.cache.v1.Cache/LIndex"
 	Cache_LRange_FullMethodName        = "/supercache.cache.v1.Cache/LRange"
+	Cache_HSet_FullMethodName          = "/supercache.cache.v1.Cache/HSet"
+	Cache_HGet_FullMethodName          = "/supercache.cache.v1.Cache/HGet"
+	Cache_HDel_FullMethodName          = "/supercache.cache.v1.Cache/HDel"
+	Cache_HExists_FullMethodName       = "/supercache.cache.v1.Cache/HExists"
+	Cache_HLen_FullMethodName          = "/supercache.cache.v1.Cache/HLen"
+	Cache_HGetAll_FullMethodName       = "/supercache.cache.v1.Cache/HGetAll"
 )
 
 // CacheClient is the client API for Cache service.
@@ -89,6 +95,12 @@ type CacheClient interface {
 	LLen(ctx context.Context, in *LLenRequest, opts ...grpc.CallOption) (*LLenResponse, error)
 	LIndex(ctx context.Context, in *LIndexRequest, opts ...grpc.CallOption) (*LIndexResponse, error)
 	LRange(ctx context.Context, in *LRangeRequest, opts ...grpc.CallOption) (*LRangeResponse, error)
+	HSet(ctx context.Context, in *HSetRequest, opts ...grpc.CallOption) (*HSetResponse, error)
+	HGet(ctx context.Context, in *HGetRequest, opts ...grpc.CallOption) (*HGetResponse, error)
+	HDel(ctx context.Context, in *HDelRequest, opts ...grpc.CallOption) (*HDelResponse, error)
+	HExists(ctx context.Context, in *HExistsRequest, opts ...grpc.CallOption) (*HExistsResponse, error)
+	HLen(ctx context.Context, in *HLenRequest, opts ...grpc.CallOption) (*HLenResponse, error)
+	HGetAll(ctx context.Context, in *HGetAllRequest, opts ...grpc.CallOption) (*HGetAllResponse, error)
 }
 
 type cacheClient struct {
@@ -409,6 +421,66 @@ func (c *cacheClient) LRange(ctx context.Context, in *LRangeRequest, opts ...grp
 	return out, nil
 }
 
+func (c *cacheClient) HSet(ctx context.Context, in *HSetRequest, opts ...grpc.CallOption) (*HSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HSetResponse)
+	err := c.cc.Invoke(ctx, Cache_HSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HGet(ctx context.Context, in *HGetRequest, opts ...grpc.CallOption) (*HGetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HGetResponse)
+	err := c.cc.Invoke(ctx, Cache_HGet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HDel(ctx context.Context, in *HDelRequest, opts ...grpc.CallOption) (*HDelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HDelResponse)
+	err := c.cc.Invoke(ctx, Cache_HDel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HExists(ctx context.Context, in *HExistsRequest, opts ...grpc.CallOption) (*HExistsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HExistsResponse)
+	err := c.cc.Invoke(ctx, Cache_HExists_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HLen(ctx context.Context, in *HLenRequest, opts ...grpc.CallOption) (*HLenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HLenResponse)
+	err := c.cc.Invoke(ctx, Cache_HLen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HGetAll(ctx context.Context, in *HGetAllRequest, opts ...grpc.CallOption) (*HGetAllResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HGetAllResponse)
+	err := c.cc.Invoke(ctx, Cache_HGetAll_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -446,6 +518,12 @@ type CacheServer interface {
 	LLen(context.Context, *LLenRequest) (*LLenResponse, error)
 	LIndex(context.Context, *LIndexRequest) (*LIndexResponse, error)
 	LRange(context.Context, *LRangeRequest) (*LRangeResponse, error)
+	HSet(context.Context, *HSetRequest) (*HSetResponse, error)
+	HGet(context.Context, *HGetRequest) (*HGetResponse, error)
+	HDel(context.Context, *HDelRequest) (*HDelResponse, error)
+	HExists(context.Context, *HExistsRequest) (*HExistsResponse, error)
+	HLen(context.Context, *HLenRequest) (*HLenResponse, error)
+	HGetAll(context.Context, *HGetAllRequest) (*HGetAllResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -548,6 +626,24 @@ func (UnimplementedCacheServer) LIndex(context.Context, *LIndexRequest) (*LIndex
 }
 func (UnimplementedCacheServer) LRange(context.Context, *LRangeRequest) (*LRangeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LRange not implemented")
+}
+func (UnimplementedCacheServer) HSet(context.Context, *HSetRequest) (*HSetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HSet not implemented")
+}
+func (UnimplementedCacheServer) HGet(context.Context, *HGetRequest) (*HGetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HGet not implemented")
+}
+func (UnimplementedCacheServer) HDel(context.Context, *HDelRequest) (*HDelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HDel not implemented")
+}
+func (UnimplementedCacheServer) HExists(context.Context, *HExistsRequest) (*HExistsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HExists not implemented")
+}
+func (UnimplementedCacheServer) HLen(context.Context, *HLenRequest) (*HLenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HLen not implemented")
+}
+func (UnimplementedCacheServer) HGetAll(context.Context, *HGetAllRequest) (*HGetAllResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HGetAll not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1128,6 +1224,114 @@ func _Cache_LRange_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_HSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HSet(ctx, req.(*HSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HGet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HGet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HGet(ctx, req.(*HGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HDel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HDelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HDel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HDel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HDel(ctx, req.(*HDelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HExists_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HExistsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HExists(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HExists_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HExists(ctx, req.(*HExistsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HLen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HLenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HLen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HLen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HLen(ctx, req.(*HLenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HGetAll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HGetAllRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HGetAll(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HGetAll_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HGetAll(ctx, req.(*HGetAllRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1258,6 +1462,30 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LRange",
 			Handler:    _Cache_LRange_Handler,
+		},
+		{
+			MethodName: "HSet",
+			Handler:    _Cache_HSet_Handler,
+		},
+		{
+			MethodName: "HGet",
+			Handler:    _Cache_HGet_Handler,
+		},
+		{
+			MethodName: "HDel",
+			Handler:    _Cache_HDel_Handler,
+		},
+		{
+			MethodName: "HExists",
+			Handler:    _Cache_HExists_Handler,
+		},
+		{
+			MethodName: "HLen",
+			Handler:    _Cache_HLen_Handler,
+		},
+		{
+			MethodName: "HGetAll",
+			Handler:    _Cache_HGetAll_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

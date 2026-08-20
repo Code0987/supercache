@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\*** (sorted set) over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\*** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
 | `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
-| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset |
+| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash |
 | `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
 | `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
 | `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
@@ -76,6 +76,12 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `llen <name>` | Cache gRPC | `ModeList` length |
 | `lindex <name> <idx>` | Cache gRPC | `ModeList` element (Redis negatives) |
 | `lrange <name> <start> <stop>` | Cache gRPC | `ModeList` window (one item per line) |
+| `hset <name> <field> <value...>` | Cache gRPC | `ModeHash` upsert (`Join` remaining args) |
+| `hget <name> <field>` | Cache gRPC | Value or `(nil)` |
+| `hdel <name> <field>` | Cache gRPC | Remove field |
+| `hexists <name> <field>` | Cache gRPC | `true`/`false`; exit 1 if false |
+| `hlen <name>` | Cache gRPC | Field count |
+| `hgetall <name>` | Cache gRPC | `field<TAB>value` lines |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
