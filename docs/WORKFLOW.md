@@ -5,7 +5,7 @@ Same order for humans and agents. **Never push or commit to `main`.**
 ## Default path (product / data-path work)
 
 ```text
-docs → review → revision* → tests → coding → review → revision*
+docs → review → revision* → tests → coding → product docs* → review → revision*
   → bench (local) → revision* → commit → PR → bench monitor (CI)
   → merge only if overall drift < 10%  (and user says merge)
 ```
@@ -19,6 +19,7 @@ docs → review → revision* → tests → coding → review → revision*
 | **3. Revision** | Update design from feedback | Re-approval if the contract changed |
 | **4. Tests** | Failing tests for the design table | — |
 | **5. Coding** | Minimum code to pass `go test ./...` | — |
+| **5b. Product docs** | Update public docs to match the new surface (**same PR**) | See [Product docs](#5b-product-docs-same-pr) |
 | **6. Review** | Self-check vs design + person feedback if given | Issues fixed |
 | **7. Revision** | Address code review | Tests still green |
 | **8. Bench** | Local micros / smoke that the design flagged | No Get-hit alloc jump; no ugly local cells |
@@ -128,6 +129,27 @@ Do not:
 
 `gofmt` the files you touched.
 
+## 5b. Product docs (same PR)
+
+If the change adds or changes anything a user, client, or operator can see, **update the product docs in the same PR**. Do not ship code and “docs later.” Hosted Swagger only refreshes when OpenAPI lands on `main`.
+
+Required whenever you touch API verbs, modes, proto, `cmd/sc`, or cluster behavior:
+
+| File | Update when |
+|------|-------------|
+| `docs/API.md` | New mode, RPC, or CLI verb |
+| `api/openapi/cache.openapi.yaml` | New Cache RPC or message (bump `info.version`); copy to `docs/api/cache.openapi.yaml` |
+| `PLAN.md` | New mode / Engine method / Cache or Peer RPC / consistency row (§5, §7, §11, §14) |
+| `docs/OPERATIONS.md` | New mode, fan-out/hint rule, or ops verb |
+| `docs/CLUSTER_FLOWS.md` | New structure type or peer path (e.g. `ListPop`) |
+| `README.md` | Modes list, packages, `sc` examples |
+| `cmd/sc/README.md` + `printUsage` / REPL help | New `sc` commands |
+| `docs/design/README.md` | New approved/shipped design |
+
+Examples/node demo keyspaces may stay a **follow-up PR** if the design said so. Product catalog (API / OpenAPI / PLAN / ops / README / sc) may not.
+
+**Do not merge** a product PR if those files still describe the old surface.
+
 ## 6–7. Code review → revision
 
 Check implementation against the design contract (API, flags, RF, mode guards, CLI if required).
@@ -167,6 +189,7 @@ PR body must include:
 
 - link to the design doc (path or prior comment)
 - what landed vs the design
+- which product docs were updated (or “no public surface change”)
 - test commands already run (`go test ./...`)
 - local bench notes if any
 - bench risk (copy from the design)
@@ -214,7 +237,8 @@ Merge **only when**:
 
 1. User said **merge** (or clearly pre-authorized: e.g. “merge if green / if drift ok”), **and**
 2. CI merge gate above is satisfied (**overall drift &lt; 10%**, Get-hit allocs flat), **and**
-3. `test` + `bench` are green.
+3. `test` + `bench` are green, **and**
+4. Product docs match the shipped surface (see [§5b](#5b-product-docs-same-pr)), or the PR states “no public surface change”.
 
 ```text
 gh pr merge <n> --merge --delete-branch
