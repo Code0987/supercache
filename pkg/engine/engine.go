@@ -260,6 +260,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeList {
 		return nil, fmt.Errorf("%w: use LIndex/LRange", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeHash {
+		return nil, fmt.Errorf("%w: use HGet", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -461,6 +464,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		if ks.cfg.Mode == keyspace.ModeList {
 			return fmt.Errorf("%w: use LPush", ErrInvalidArgument)
 		}
+		if ks.cfg.Mode == keyspace.ModeHash {
+			return fmt.Errorf("%w: use HSet", ErrInvalidArgument)
+		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
@@ -630,6 +636,31 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsList() {
 		return e.applyListInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsHashSet() {
+		ok := e.applyHashSet(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		if ok {
+			if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+				if owner, yes := c.Ring.Owner(key); yes && owner.ID == c.SelfID {
+					e.replicate(keyspaceName, key, ent, false)
+				}
+			}
+		}
+		return ok, nil
+	}
+	if ent.IsHashDel() {
+		ok := e.applyHashDel(ks, key, ent.Value, ent.Version, ent.ExpireAt)
+		if ok {
+			if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+				if owner, yes := c.Ring.Owner(key); yes && owner.ID == c.SelfID {
+					e.replicate(keyspaceName, key, ent, false)
+				}
+			}
+		}
+		return ok, nil
+	}
+	if ent.IsHash() {
+		return e.applyHashInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

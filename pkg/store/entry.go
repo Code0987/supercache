@@ -20,6 +20,9 @@ const (
 	FlagList      uint32 = 1 << 13 // value is encoded list
 	FlagListLPush uint32 = 1 << 14 // owner-inbox: prepend item
 	FlagListRPush uint32 = 1 << 15 // owner-inbox: append item
+	FlagHash      uint32 = 1 << 16 // value is encoded hash
+	FlagHashSet   uint32 = 1 << 17 // fan-out: single field/value
+	FlagHashDel   uint32 = 1 << 18 // fan-out: field to remove
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -105,6 +108,18 @@ func (e Entry) IsListLPush() bool {
 
 func (e Entry) IsListRPush() bool {
 	return e.Flags&FlagListRPush != 0
+}
+
+func (e Entry) IsHash() bool {
+	return e.Flags&FlagHash != 0
+}
+
+func (e Entry) IsHashSet() bool {
+	return e.Flags&FlagHashSet != 0
+}
+
+func (e Entry) IsHashDel() bool {
+	return e.Flags&FlagHashDel != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

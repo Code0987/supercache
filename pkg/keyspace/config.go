@@ -30,6 +30,8 @@ const (
 	ModeGeo
 	// ModeList is a named ordered list (LPush / LPop / LRange / …).
 	ModeList
+	// ModeHash is a named field map (HSet / HGet / HDel / …).
+	ModeHash
 )
 
 func (m Mode) String() string {
@@ -48,6 +50,8 @@ func (m Mode) String() string {
 		return "Geo"
 	case ModeList:
 		return "List"
+	case ModeHash:
+		return "Hash"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}

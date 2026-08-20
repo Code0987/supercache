@@ -131,8 +131,28 @@ type Store interface {
 	LRange(key string, start, stop int) [][]byte
 	LInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// HSet upserts a field (creates the hash if missing).
+	HSet(key string, field, value []byte, version uint64, expireAt int64) bool
+	// HDel removes a field. Missing name: true, no insert.
+	HDel(key string, field []byte, version uint64, expireAt int64) bool
+	// HGet returns a copy of the field value.
+	HGet(key string, field []byte) (value []byte, ok bool)
+	HExists(key string, field []byte) bool
+	HLen(key string) int
+	HasHash(key string) bool
+	// HGetAll returns copies in field-byte order.
+	HGetAll(key string) []HashField
+	// HInstall installs a versioned full-hash snapshot (incoming > local).
+	HInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
+}
+
+// HashField is one field/value pair returned by HGetAll.
+type HashField struct {
+	Field []byte
+	Value []byte
 }
 
 // GeoMember is a point returned by store geo queries.

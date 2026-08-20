@@ -346,6 +346,63 @@ func (s *Server) LRange(ctx context.Context, req *cachev1.LRangeRequest) (*cache
 	return &cachev1.LRangeResponse{Items: items}, nil
 }
 
+func (s *Server) HSet(ctx context.Context, req *cachev1.HSetRequest) (*cachev1.HSetResponse, error) {
+	if err := s.eng.HSet(ctx, req.Keyspace, req.Name, req.Field, req.Value); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HSetResponse{}, nil
+}
+
+func (s *Server) HGet(ctx context.Context, req *cachev1.HGetRequest) (*cachev1.HGetResponse, error) {
+	v, ok, err := s.eng.HGet(ctx, req.Keyspace, req.Name, req.Field)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HGetResponse{Present: ok, Value: v}, nil
+}
+
+func (s *Server) HDel(ctx context.Context, req *cachev1.HDelRequest) (*cachev1.HDelResponse, error) {
+	if err := s.eng.HDel(ctx, req.Keyspace, req.Name, req.Field); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HDelResponse{}, nil
+}
+
+func (s *Server) HExists(ctx context.Context, req *cachev1.HExistsRequest) (*cachev1.HExistsResponse, error) {
+	ok, err := s.eng.HExists(ctx, req.Keyspace, req.Name, req.Field)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HExistsResponse{Present: ok}, nil
+}
+
+func (s *Server) HLen(ctx context.Context, req *cachev1.HLenRequest) (*cachev1.HLenResponse, error) {
+	n, err := s.eng.HLen(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HLenResponse{Len: int64(n)}, nil
+}
+
+func (s *Server) HGetAll(ctx context.Context, req *cachev1.HGetAllRequest) (*cachev1.HGetAllResponse, error) {
+	all, err := s.eng.HGetAll(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HGetAllResponse{Fields: hashFieldsToProto(all)}, nil
+}
+
+func hashFieldsToProto(in []engine.HashField) []*cachev1.HashField {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*cachev1.HashField, len(in))
+	for i, f := range in {
+		out[i] = &cachev1.HashField{Field: f.Field, Value: f.Value}
+	}
+	return out
+}
+
 func geoMembersToProto(in []engine.GeoMember) []*cachev1.GeoMember {
 	if len(in) == 0 {
 		return nil

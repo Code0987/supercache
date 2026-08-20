@@ -15,6 +15,7 @@ Do not implement from a draft.
 | [2026-08-13-mode-zset.md](./2026-08-13-mode-zset.md) | `ModeZSet` |
 | [2026-08-19-mode-geo.md](./2026-08-19-mode-geo.md) | `ModeGeo` |
 | [2026-08-19-mode-list.md](./2026-08-19-mode-list.md) | `ModeList` |
+| [2026-08-20-mode-hash.md](./2026-08-20-mode-hash.md) | `ModeHash` |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
 Product surface docs: [API.md](../API.md), [OPERATIONS.md](../OPERATIONS.md), [OpenAPI](../../api/openapi/cache.openapi.yaml).
