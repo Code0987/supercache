@@ -64,7 +64,7 @@ Optional: `-gossip-secret <key>`.
 ### CLI (`sc`)
 
 ```bash
-# With supercache-node running on defaults (-demo-keyspace: demo + tags + board):
+# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile):
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
@@ -117,6 +117,14 @@ go run ./examples/billboard -hold=false   # 3-node cluster + scripted walkthroug
 
 See [examples/billboard/README.md](./examples/billboard/README.md).
 
+### ModeHash user profile
+
+```bash
+go run ./examples/hash   # 3-node in-process walkthrough (HSet/HGet/HDel, concurrent fields)
+```
+
+See [examples/hash/README.md](./examples/hash/README.md). `sc -keyspace profile` talks to the node demo keyspace.
+
 ### TLS (production)
 
 ```bash
@@ -150,7 +158,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board) |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile) |
 | `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 

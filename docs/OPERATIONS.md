@@ -71,7 +71,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet). Geo/List/Hash keyspaces are configured by the app (no default demo names yet).
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash). Geo/List keyspaces are configured by the app (no default demo names yet). Detailed Hash walkthrough: [examples/hash](../examples/hash/README.md).
 
 ## Consistency cheatsheet
 
