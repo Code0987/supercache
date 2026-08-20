@@ -65,10 +65,12 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeBloom` | BloomAdd / BloomTest / Delete(name) | Approximate membership; no per-item delete |
 | `ModeSet` | SetAdd / SetRemove / SetContains / SetCard / SetMembers / Delete(name) | Exact membership |
 | `ModeZSet` | ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore / Delete(name) | Scored sorted set |
+| `ModeGeo` | GeoAdd / GeoRem / GeoPos / GeoCard / GeoDist / GeoRadius / Delete(name) | WGS84 points; radius in meters |
+| `ModeList` | LPush / RPush / LPop / RPop / LLen / LIndex / LRange / Delete(name) | Ordered list; snapshot fan-out |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet).
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet). Geo/List keyspaces are configured by the app (no default demo names yet).
 
 ## Consistency cheatsheet
 
@@ -76,13 +78,15 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet entries. |
+| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet/Geo/List entries. |
 | BloomAdd / BloomTest | `ModeBloom` only. Add ORs bits on the owner and replicas (not LWW of the bitset). Test is local on a replica, owner-forward otherwise. There is no per-item delete. |
 | SetAdd / SetRemove / SetContains | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains is local on a replica, owner-forward otherwise. |
 | ZAdd / ZRem / ZScore / ZRange* | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; handoff ships full encoded zset (`FlagZSet`). |
-| Failures | Fan-out errors are metrics-only on Put (and analogous async set/zset fan-out) |
+| GeoAdd / GeoRem / GeoPos / GeoRadius | `ModeGeo` only. Same ownership as ModeSet; item-level `FlagGeoAdd` / `FlagGeoRem`; handoff `FlagGeo`. Distance is haversine meters. |
+| LPush / RPush / LPop / RPop / LRange | `ModeList` only. Owner applies the op then fans out a **full `FlagList` snapshot** (hints coalesce per name; item-level replica apply would drop earlier pushes). Non-owner pop uses peer `ListPop`. |
+| Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
-Set TTLs to your max acceptable staleness (TTL applies to the **whole** named Bloom/set/zset, not per member).
+Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).
 
 ### `ring_generation` on peer Apply*
 

@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -40,6 +40,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeSet` | Exact membership (named set) | `SetAdd`, `SetRemove`, `SetContains`, `SetCard`, `SetMembers`; `Delete(name)` |
 | `ModeZSet` | Scored sorted set (named zset) | `ZAdd`, `ZRem`, `ZScore`, `ZCard`, `ZRange`, `ZRangeByScore`; `Delete(name)` |
 | `ModeGeo` | Named geospatial point index | `GeoAdd`, `GeoRem`, `GeoPos`, `GeoCard`, `GeoDist`, `GeoRadius`; `Delete(name)` |
+| `ModeList` | Named ordered list | `LPush`, `RPush`, `LPop`, `RPop`, `LLen`, `LIndex`, `LRange`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -99,6 +100,19 @@ Equal scores order by member bytes. Wire: `ZMember { bytes member; double score 
 | `Delete(name)` | Tombstone whole index |
 
 Wire: `GeoMember { bytes member; double lon; double lat; double dist_meters }`.
+
+### List (`ModeList`)
+
+| RPC | Notes |
+|-----|--------|
+| `LPush` / `RPush` | Prepend / append; creates list if missing |
+| `LPop` / `RPop` | Head / tail; missing or empty ⇒ `present=false` |
+| `LLen` | Length; missing ⇒ 0 |
+| `LIndex` | Element at index (Redis negatives); OOB ⇒ `present=false` |
+| `LRange` | Inclusive window, Redis-style start/stop (`-1` = last) |
+| `Delete(name)` | Tombstone whole list |
+
+Replicas get a **full list snapshot** after each owner mutate (item-level fan-out would drop earlier pushes under hint coalesce). Non-owner pop uses peer `ListPop`. Empty after last pop: `LLen` 0 until `Delete(name)`.
 
 ## Enabling GitHub Pages
 

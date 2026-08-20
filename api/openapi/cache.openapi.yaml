@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.4.0
+  version: 0.5.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -26,13 +26,14 @@ info:
     | ModeSet | SetAdd, SetRemove, SetContains, SetCard, SetMembers; Delete(name) |
     | ModeZSet | ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore; Delete(name) |
     | ModeGeo | GeoAdd, GeoRem, GeoPos, GeoCard, GeoDist, GeoRadius; Delete(name) |
+    | ModeList | LPush, RPush, LPop, RPop, LLen, LIndex, LRange; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / BloomTest** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / BloomAdd** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / BloomTest** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / BloomAdd** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -62,6 +63,8 @@ tags:
     description: Sorted set with scores (ModeZSet)
   - name: Geo
     description: Geospatial point index (ModeGeo)
+  - name: List
+    description: Ordered list (ModeList)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -73,7 +76,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList.
       requestBody:
         required: true
         content:
@@ -101,7 +104,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList.
       requestBody:
         required: true
         content:
@@ -600,6 +603,151 @@ paths:
               schema:
                 $ref: "#/components/schemas/GeoRadiusResponse"
 
+  /supercache.cache.v1.Cache/LPush:
+    post:
+      tags: [List]
+      operationId: Cache_LPush
+      summary: Prepend item
+      description: ModeList only. Creates the list if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListItemRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/RPush:
+    post:
+      tags: [List]
+      operationId: Cache_RPush
+      summary: Append item
+      description: ModeList only. Creates the list if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListItemRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/LPop:
+    post:
+      tags: [List]
+      operationId: Cache_LPop
+      summary: Pop head
+      description: Missing or empty → present=false. ModeList only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPopResponse"
+
+  /supercache.cache.v1.Cache/RPop:
+    post:
+      tags: [List]
+      operationId: Cache_RPop
+      summary: Pop tail
+      description: Missing or empty → present=false. ModeList only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPopResponse"
+
+  /supercache.cache.v1.Cache/LLen:
+    post:
+      tags: [List]
+      operationId: Cache_LLen
+      summary: List length
+      description: Missing list → len=0. ModeList only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLenResponse"
+
+  /supercache.cache.v1.Cache/LIndex:
+    post:
+      tags: [List]
+      operationId: Cache_LIndex
+      summary: Element at index
+      description: Redis-style negatives. OOB → present=false. ModeList only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LIndexRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPopResponse"
+
+  /supercache.cache.v1.Cache/LRange:
+    post:
+      tags: [List]
+      operationId: Cache_LRange
+      summary: Range by index
+      description: Inclusive start/stop; Redis-style negatives (`-1` = last). ModeList only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LRangeRequest"
+            example:
+              keyspace: inbox
+              name: q
+              start: 0
+              stop: -1
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LRangeResponse"
+
 components:
   schemas:
     Empty:
@@ -967,3 +1115,61 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GeoMember"
+    ListItemRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+    ListPopResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+        item:
+          type: string
+          format: byte
+    LLenResponse:
+      type: object
+      properties:
+        len:
+          type: integer
+          format: int64
+    LIndexRequest:
+      type: object
+      required: [keyspace, name, index]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        index:
+          type: integer
+          format: int32
+    LRangeRequest:
+      type: object
+      required: [keyspace, name, start, stop]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        start:
+          type: integer
+          format: int32
+        stop:
+          type: integer
+          format: int32
+    LRangeResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+            format: byte

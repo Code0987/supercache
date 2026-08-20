@@ -215,6 +215,8 @@ func printREPLHelp() {
   sadd|srem|sismember|scard|smembers   ModeSet
   bloom add|test           ModeBloom
   zadd|zrem|zscore|zcard|zrange|zrangebyscore   ModeZSet
+  geoadd|georem|geopos|geocard|geodist|georadius   ModeGeo
+  lpush|rpush|lpop|rpop|llen|lindex|lrange   ModeList
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

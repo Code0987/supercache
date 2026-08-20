@@ -2,7 +2,7 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / sorted set), and a bounded per-node LRU.
+In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / ZSet / Geo / List), and a bounded per-node LRU.
 
 ```text
 github.com/Code0987/supercache
@@ -72,6 +72,10 @@ go run ./cmd/sc -keyspace tags sadd features dark_mode
 go run ./cmd/sc -keyspace tags sismember features dark_mode
 go run ./cmd/sc -keyspace board zadd lb 100 alice
 go run ./cmd/sc -keyspace board zrange lb 0 -1
+go run ./cmd/sc -keyspace places geoadd city -74 40.7 shop
+go run ./cmd/sc -keyspace places georadius city -74 40.7 20000 10
+go run ./cmd/sc -keyspace inbox rpush q event1
+go run ./cmd/sc -keyspace inbox lrange q 0 -1
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 go run ./cmd/sc peers              # admin HTTP
 
@@ -126,12 +130,14 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 | Package | Role |
 |---------|------|
-| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet, keyspaces, cluster routing |
-| `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; set/zset caches) |
-| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` |
+| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List, keyspaces, cluster routing |
+| `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; structure caches) |
+| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` |
 | `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
 | `pkg/set` | Exact set encode/decode for `ModeSet` |
 | `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
+| `pkg/geo` | Point index encode/haversine for `ModeGeo` |
+| `pkg/listx` | Ordered list encode for `ModeList` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -139,10 +145,10 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
-| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet) |
+| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board) |
-| `cmd/sc` | CLI: get/put/del, bloom, z*, admin diagnostics |
+| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
 ## Consistency
@@ -154,7 +160,7 @@ SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is asy
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom** (approx membership), **ModeSet** (exact set), **ModeZSet** (sorted set). Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md).
 
 Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 
