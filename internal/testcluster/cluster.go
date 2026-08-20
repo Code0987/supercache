@@ -225,8 +225,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, herr := cli.HLen(ctx, ks, "__testcluster_ready__")
-		_ = cli.Close()
 		if herr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, cerr := cli.CounterGet(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if cerr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

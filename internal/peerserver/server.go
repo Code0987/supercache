@@ -132,6 +132,14 @@ func (s *Server) ListPop(ctx context.Context, req *peerv1.ListPopRequest) (*peer
 	return &peerv1.ListPopResponse{Found: ok, Item: item}, nil
 }
 
+func (s *Server) CounterIncr(ctx context.Context, req *peerv1.CounterIncrRequest) (*peerv1.CounterIncrResponse, error) {
+	n, err := s.eng.Incr(ctx, req.Keyspace, req.Name, req.Delta)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &peerv1.CounterIncrResponse{Value: n}, nil
+}
+
 // ListenAndServe starts a gRPC server on addr (e.g. ":9001").
 // Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS/mTLS; omit for plaintext (dev only).
 func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {

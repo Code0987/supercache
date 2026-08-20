@@ -263,6 +263,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeHash {
 		return nil, fmt.Errorf("%w: use HGet", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeCounter {
+		return nil, fmt.Errorf("%w: use CounterGet", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -467,6 +470,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		if ks.cfg.Mode == keyspace.ModeHash {
 			return fmt.Errorf("%w: use HSet", ErrInvalidArgument)
 		}
+		if ks.cfg.Mode == keyspace.ModeCounter {
+			return fmt.Errorf("%w: use Incr", ErrInvalidArgument)
+		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
@@ -661,6 +667,9 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsHash() {
 		return e.applyHashInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsCounter() {
+		return e.applyCounterInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

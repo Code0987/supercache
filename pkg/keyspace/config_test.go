@@ -81,6 +81,9 @@ func TestModeString(t *testing.T) {
 	if ModeHash.String() != "Hash" {
 		t.Fatal(ModeHash.String())
 	}
+	if ModeCounter.String() != "Counter" {
+		t.Fatal(ModeCounter.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}

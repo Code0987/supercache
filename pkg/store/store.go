@@ -145,6 +145,14 @@ type Store interface {
 	// HInstall installs a versioned full-hash snapshot (incoming > local).
 	HInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// CIncr adds delta to a named counter (creates at delta if missing).
+	CIncr(key string, delta int64, version uint64, expireAt int64) (newVal int64, applied, overflow bool)
+	// CGet returns the counter value. Missing / tombstone / non-counter → 0, false.
+	CGet(key string) (int64, bool)
+	HasCounter(key string) bool
+	// CInstall installs a versioned counter snapshot (incoming > local).
+	CInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

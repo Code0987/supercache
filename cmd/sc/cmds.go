@@ -98,6 +98,10 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdHLen(ctx, sess, args)
 	case "hgetall":
 		return cmdHGetAll(ctx, sess, args)
+	case "incr":
+		return cmdIncr(ctx, sess, args)
+	case "cget":
+		return cmdCGet(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -1067,6 +1071,58 @@ func cmdHGetAll(ctx context.Context, sess *session, args []string) int {
 	for _, f := range all {
 		fmt.Printf("%s\t%s\n", f.Field, f.Value)
 	}
+	return 0
+}
+
+func cmdIncr(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 || len(args) > 2 {
+		fmt.Fprintln(os.Stderr, "usage: incr <name> [delta]")
+		return 2
+	}
+	delta := int64(1)
+	if len(args) == 2 {
+		n, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "incr: bad delta %q: %v\n", args[1], err)
+			return 2
+		}
+		delta = n
+	}
+	var v int64
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		v, e = cli.Incr(ctx, sess.cfg.keyspace, args[0], delta)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "incr: %v\n", err)
+		return 1
+	}
+	fmt.Println(v)
+	return 0
+}
+
+func cmdCGet(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: cget <name>")
+		return 2
+	}
+	var v int64
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		v, ok, e = cli.CounterGet(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cget: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(v)
 	return 0
 }
 

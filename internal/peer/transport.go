@@ -180,6 +180,21 @@ func (t *Transport) ListPop(ctx context.Context, addr, keyspace, name string, le
 	return resp.GetItem(), resp.GetFound(), nil
 }
 
+// CounterIncr asks the owner to Incr and returns the new value.
+func (t *Transport) CounterIncr(ctx context.Context, addr, keyspace, name string, delta int64) (int64, error) {
+	cli, err := t.client(addr)
+	if err != nil {
+		return 0, err
+	}
+	ctx, cancel := t.rpcContext(ctx)
+	defer cancel()
+	resp, err := cli.CounterIncr(ctx, &peerv1.CounterIncrRequest{Keyspace: keyspace, Name: name, Delta: delta})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetValue(), nil
+}
+
 // FanoutConfig controls async ApplyPut fan-out.
 type FanoutConfig struct {
 	Workers   int

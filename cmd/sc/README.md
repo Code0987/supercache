@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\*** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -82,6 +82,8 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `hexists <name> <field>` | Cache gRPC | `true`/`false`; exit 1 if false |
 | `hlen <name>` | Cache gRPC | Field count |
 | `hgetall <name>` | Cache gRPC | `field<TAB>value` lines |
+| `incr <name> [delta]` | Cache gRPC | `ModeCounter` add (default 1); print new value. Negatives: `incr hits -- -1` |
+| `cget <name>` | Cache gRPC | Decimal or `(nil)`; exit 1 if missing |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |

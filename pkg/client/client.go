@@ -443,6 +443,22 @@ func (c *Client) HGetAll(ctx context.Context, keyspace, name string) ([]HashFiel
 	return out, nil
 }
 
+func (c *Client) Incr(ctx context.Context, keyspace, name string, delta int64) (int64, error) {
+	resp, err := c.api.Incr(ctx, &cachev1.IncrRequest{Keyspace: keyspace, Name: name, Delta: delta})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetValue(), nil
+}
+
+func (c *Client) CounterGet(ctx context.Context, keyspace, name string) (int64, bool, error) {
+	resp, err := c.api.CounterGet(ctx, &cachev1.CounterGetRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, false, err
+	}
+	return resp.GetValue(), resp.GetPresent(), nil
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil

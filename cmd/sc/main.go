@@ -106,7 +106,8 @@ func run(args []string) int {
 		"zadd", "zrem", "zscore", "zcard", "zrange", "zrangebyscore",
 		"geoadd", "georem", "geopos", "geocard", "geodist", "georadius",
 		"lpush", "rpush", "lpop", "rpop", "llen", "lindex", "lrange",
-		"hset", "hget", "hdel", "hexists", "hlen", "hgetall":
+		"hset", "hget", "hdel", "hexists", "hlen", "hgetall",
+		"incr", "cget":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -331,6 +332,8 @@ Cache commands (gRPC -addr seeds):
   hexists <name> <field>       ModeHash exists (true/false)
   hlen <name>                  ModeHash field count
   hgetall <name>               ModeHash field<TAB>value lines
+  incr <name> [delta]          ModeCounter add (default 1); print new value
+  cget <name>                  ModeCounter get (or (nil))
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

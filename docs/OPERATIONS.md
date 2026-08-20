@@ -68,10 +68,11 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeGeo` | GeoAdd / GeoRem / GeoPos / GeoCard / GeoDist / GeoRadius / Delete(name) | WGS84 points; radius in meters |
 | `ModeList` | LPush / RPush / LPop / RPop / LLen / LIndex / LRange / Delete(name) | Ordered list; snapshot fan-out |
 | `ModeHash` | HSet / HGet / HDel / HExists / HLen / HGetAll / Delete(name) | Field map; item-level fan-out |
+| `ModeCounter` | Incr / CounterGet / Delete(name) | int64; snapshot fan-out; Incr returns new n |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash). Geo/List keyspaces are configured by the app (no default demo names yet). Detailed Hash walkthrough: [examples/hash](../examples/hash/README.md).
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash). Geo/List/Counter keyspaces are configured by the app (no default counter demo name yet). Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md).
 
 ## Consistency cheatsheet
 
@@ -86,6 +87,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 | GeoAdd / GeoRem / GeoPos / GeoRadius | `ModeGeo` only. Same ownership as ModeSet; item-level `FlagGeoAdd` / `FlagGeoRem`; handoff `FlagGeo`. Distance is haversine meters. |
 | LPush / RPush / LPop / RPop / LRange | `ModeList` only. Owner applies the op then fans out a **full `FlagList` snapshot** (hints coalesce per name; item-level replica apply would drop earlier pushes). Non-owner pop uses peer `ListPop`. |
 | HSet / HGet / HDel / HGetAll | `ModeHash` only. Same ownership as ModeSet; item-level `FlagHashSet` / `FlagHashDel`; handoff `FlagHash`. Replica with a local hash is local-only on field miss (`hintID` still coalesces per name). |
+| Incr / CounterGet | `ModeCounter` only. Owner `Incr` returns the new int64 (peer `CounterIncr` from a non-owner). Replicas install a `FlagCounter` snapshot. Replica `CounterGet` may lag. Overflow is invalid argument. Fixed-window rate limits put the window id in the **name**. |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).
