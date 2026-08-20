@@ -188,19 +188,21 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
+| **GeoAdd / GeoRem / GeoPos / GeoCard / GeoDist / GeoRadius** | `ModeGeo` only. Same ownership as ModeSet; item-level `FlagGeoAdd` / `FlagGeoRem`; WGS84; radius haversine meters. |
+| **LPush / RPush / LPop / RPop / LLen / LIndex / LRange** | `ModeList` only. Owner applies the op then fans out a **full `FlagList` snapshot** (hints coalesce per name). Non-owner pop uses peer `ListPop`. Redis-style indexes. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put / SetAdd / ZAdd / BloomAdd | Local read verbs see the update immediately. |
+| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / BloomAdd | Local read verbs see the update immediately. |
 | **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
 | **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
@@ -297,6 +299,8 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeBloom` | filter `name` | BloomAdd, BloomTest; Delete(name) | `FlagBloom` snapshot, item-add OR path |
 | `ModeSet` | set `name` | SetAdd, SetRemove, SetContains, SetCard, SetMembers; Delete(name) | `FlagSet`, `FlagSetAdd`, `FlagSetRemove` |
 | `ModeZSet` | zset `name` | ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore; Delete(name) | `FlagZSet`, `FlagZSetAdd`, `FlagZSetRem` |
+| `ModeGeo` | index `name` | GeoAdd, GeoRem, GeoPos, GeoCard, GeoDist, GeoRadius; Delete(name) | `FlagGeo`, `FlagGeoAdd`, `FlagGeoRem` |
+| `ModeList` | list `name` | LPush, RPush, LPop, RPop, LLen, LIndex, LRange; Delete(name) | `FlagList` snapshot; owner-inbox `FlagListLPush` / `FlagListRPush` |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 
@@ -330,6 +334,25 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 - Package: `pkg/zset`; CLI: `sc zadd|zrem|zscore|zcard|zrange|zrangebyscore`
 - Design: [docs/design/2026-08-13-mode-zset.md](./docs/design/2026-08-13-mode-zset.md)
 
+### `ModeGeo` (geospatial points)
+
+- Named index; `GeoAdd` / `GeoRem` / `GeoPos` / `GeoCard` / `GeoDist` / `GeoRadius`
+- WGS84 lon `[-180,180]`, lat `[-90,90]`; NaN/Inf/OOB rejected
+- Distance: haversine meters (mean radius 6371.0088 km); radius nearest-first; `limit<=0` = all
+- Same ownership / item-level fan-out / snapshot handoff as ModeSet
+- Package: `pkg/geo`; CLI: `sc geoadd|georem|geopos|geocard|geodist|georadius`
+- Design: [docs/design/2026-08-19-mode-geo.md](./docs/design/2026-08-19-mode-geo.md)
+
+### `ModeList` (ordered list)
+
+- Named list; `LPush` / `RPush` / `LPop` / `RPop` / `LLen` / `LIndex` / `LRange`
+- Index 0 = head; Redis-style negatives on LIndex/LRange
+- **Not commutative:** replicas install a **full `FlagList` snapshot** after each owner mutate (existing hint coalesce is one pending op per name)
+- Non-owner pop: peer `ListPop`
+- Empty after last pop: LLen 0 until `Delete(name)`
+- Package: `pkg/listx`; CLI: `sc lpush|rpush|lpop|rpop|llen|lindex|lrange`
+- Design: [docs/design/2026-08-19-mode-list.md](./docs/design/2026-08-19-mode-list.md)
+
 ### Precedence matrix
 
 | Incoming | vs local | Result |
@@ -353,7 +376,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
                  pkg/client · cmd/sc (not in ring)
                          │
                     gRPC Cache :client
-                    (KV · Bloom · Set · ZSet)
+                    (KV · Bloom · Set · ZSet · Geo · List)
                          ▼
               ┌─────────────────────┐
               │  supercache-node    │
@@ -498,7 +521,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 | Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
 | Negative | Envelope flag |
 | Concurrent | Store mutex |
-| ModeSet / ModeZSet | Live `setCache` / `zCache` + dirty lazy encode |
+| ModeSet / ModeZSet / ModeGeo / ModeList | Live structure cache + dirty lazy encode |
 | ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
@@ -547,6 +570,23 @@ type Engine interface {
     ZRange(ctx context.Context, keyspace, name string, start, stop int) ([]ZMember, error)
     ZRangeByScore(ctx context.Context, keyspace, name string, min, max float64) ([]ZMember, error)
 
+    // ModeGeo
+    GeoAdd(ctx context.Context, keyspace, name string, member []byte, lon, lat float64) error
+    GeoRem(ctx context.Context, keyspace, name string, member []byte) error
+    GeoPos(ctx context.Context, keyspace, name string, member []byte) (lon, lat float64, ok bool, err error)
+    GeoCard(ctx context.Context, keyspace, name string) (int, error)
+    GeoDist(ctx context.Context, keyspace, name string, a, b []byte) (meters float64, ok bool, err error)
+    GeoRadius(ctx context.Context, keyspace, name string, lon, lat, radiusM float64, limit int) ([]GeoMember, error)
+
+    // ModeList
+    LPush(ctx context.Context, keyspace, name string, item []byte) error
+    RPush(ctx context.Context, keyspace, name string, item []byte) error
+    LPop(ctx context.Context, keyspace, name string) (item []byte, ok bool, err error)
+    RPop(ctx context.Context, keyspace, name string) (item []byte, ok bool, err error)
+    LLen(ctx context.Context, keyspace, name string) (int, error)
+    LIndex(ctx context.Context, keyspace, name string, idx int) (item []byte, ok bool, err error)
+    LRange(ctx context.Context, keyspace, name string, start, stop int) ([][]byte, error)
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -577,6 +617,8 @@ const (
     ModeBloom
     ModeSet
     ModeZSet
+    ModeGeo
+    ModeList
 )
 
 type KeySpaceConfig struct {
@@ -609,7 +651,7 @@ type KeySpaceConfig struct {
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
 | TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
-| ModeBloom / ModeSet / ModeZSet | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset` |
+| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
@@ -619,7 +661,7 @@ type KeySpaceConfig struct {
 | Admin diagnostics + OpenAPI docs | admin HTTP `/docs`; GitHub Pages |
 | OTel | telemetry pkg |
 | TLS + gossip auth | transport + memberlist secret |
-| CLI | `cmd/sc` get/put/del, bloom, z* |
+| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l* |
 
 ---
 
@@ -678,6 +720,21 @@ service Cache {
   rpc ZCard(ZCardRequest) returns (ZCardResponse);
   rpc ZRange(ZRangeRequest) returns (ZRangeResponse);
   rpc ZRangeByScore(ZRangeByScoreRequest) returns (ZRangeResponse);
+  // ModeGeo
+  rpc GeoAdd(GeoAddRequest) returns (GeoAddResponse);
+  rpc GeoRem(GeoRemRequest) returns (GeoRemResponse);
+  rpc GeoPos(GeoPosRequest) returns (GeoPosResponse);
+  rpc GeoCard(GeoCardRequest) returns (GeoCardResponse);
+  rpc GeoDist(GeoDistRequest) returns (GeoDistResponse);
+  rpc GeoRadius(GeoRadiusRequest) returns (GeoRadiusResponse);
+  // ModeList
+  rpc LPush(LPushRequest) returns (LPushResponse);
+  rpc RPush(RPushRequest) returns (RPushResponse);
+  rpc LPop(LPopRequest) returns (LPopResponse);
+  rpc RPop(RPopRequest) returns (RPopResponse);
+  rpc LLen(LLenRequest) returns (LLenResponse);
+  rpc LIndex(LIndexRequest) returns (LIndexResponse);
+  rpc LRange(LRangeRequest) returns (LRangeResponse);
 }
 
 // Messages carry: keyspace, key/name, value/item/member, score, start/stop,
@@ -696,6 +753,7 @@ service Peer {
   rpc GetOrLoad(GetOrLoadRequest) returns (GetOrLoadResponse);
   rpc ForwardPut(PutRequest) returns (PutResponse);
   rpc Prefetch(PrefetchRequest) returns (PrefetchResponse);
+  rpc ListPop(ListPopRequest) returns (ListPopResponse); // ModeList non-owner pop
 }
 ```
 
@@ -874,7 +932,7 @@ Do **not** use SuperCache for:
 | No versioning | §6 owner versions + LWW apply rules |
 | groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
-| Structured types | §7 ModeBloom / ModeSet / ModeZSet; §9.6; §11 Engine API; §14 Cache RPCs |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |

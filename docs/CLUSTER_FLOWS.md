@@ -321,7 +321,7 @@ flowchart TD
 
 ---
 
-## Structured types (Bloom / Set / ZSet)
+## Structured types (Bloom / Set / ZSet / Geo / List)
 
 KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 
@@ -330,6 +330,8 @@ KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 | ModeBloom | `BloomAdd` → bit OR fan-out | `BloomTest` local or owner-forward | bitset merge |
 | ModeSet | `SetAdd` / `SetRemove` item fan-out | `SetContains` / Card / Members | full set blob |
 | ModeZSet | `ZAdd` / `ZRem` item fan-out | `ZScore` / Card / Range* | full zset blob |
+| ModeGeo | `GeoAdd` / `GeoRem` item fan-out | `GeoPos` / Dist / Radius | full geo blob |
+| ModeList | owner op then **full `FlagList` snapshot** | `LLen` / `LIndex` / `LRange` | full list blob |
 
 `Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
 
@@ -342,7 +344,7 @@ See [API.md](./API.md) and design docs under `docs/design/`.
 ```mermaid
 flowchart TB
   subgraph Client
-    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z*"]
+    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L*"]
   end
 
   subgraph Node["Any of N nodes"]

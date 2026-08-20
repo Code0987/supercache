@@ -71,6 +71,11 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `geocard <name>` | Cache gRPC | `ModeGeo` count |
 | `geodist <name> <a> <b>` | Cache gRPC | meters or `(nil)` |
 | `georadius <name> <lon> <lat> <radius_m> [limit]` | Cache gRPC | nearest first |
+| `lpush` / `rpush <name> <item>` | Cache gRPC | `ModeList` prepend / append |
+| `lpop` / `rpop <name>` | Cache gRPC | `ModeList` pop (or `(nil)`) |
+| `llen <name>` | Cache gRPC | `ModeList` length |
+| `lindex <name> <idx>` | Cache gRPC | `ModeList` element (Redis negatives) |
+| `lrange <name> <start> <stop>` | Cache gRPC | `ModeList` window (one item per line) |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
