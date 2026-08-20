@@ -43,6 +43,8 @@ service Cache {
   rpc HExists(HExistsRequest) returns (HExistsResponse);
   rpc HLen(HLenRequest) returns (HLenResponse);
   rpc HGetAll(HGetAllRequest) returns (HGetAllResponse);
+  rpc Incr(IncrRequest) returns (IncrResponse);
+  rpc CounterGet(CounterGetRequest) returns (CounterGetResponse);
 }
 
 message GetRequest {
@@ -418,4 +420,22 @@ message HashField {
 
 message HGetAllResponse {
   repeated HashField fields = 1;
+}
+
+message IncrRequest {
+  string keyspace = 1;
+  string name = 2;
+  int64 delta = 3;
+}
+message IncrResponse {
+  int64 value = 1;
+}
+
+message CounterGetRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message CounterGetResponse {
+  bool present = 1;
+  int64 value = 2;
 }

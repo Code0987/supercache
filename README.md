@@ -78,6 +78,8 @@ go run ./cmd/sc -keyspace inbox rpush q event1
 go run ./cmd/sc -keyspace inbox lrange q 0 -1
 go run ./cmd/sc -keyspace profile hset user email a@b
 go run ./cmd/sc -keyspace profile hgetall user
+# ModeCounter (register a ModeCounter keyspace; not in -demo-keyspace):
+# go run ./cmd/sc -keyspace rl incr alice:1
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 go run ./cmd/sc peers              # admin HTTP
 
@@ -125,6 +127,14 @@ go run ./examples/hash   # 3-node in-process walkthrough (HSet/HGet/HDel, concur
 
 See [examples/hash/README.md](./examples/hash/README.md). `sc -keyspace profile` talks to the node demo keyspace.
 
+### ModeCounter rate limiter
+
+```bash
+go run ./examples/ratelimit   # fixed-window Allow on Incr
+```
+
+See [examples/ratelimit/README.md](./examples/ratelimit/README.md).
+
 ### TLS (production)
 
 ```bash
@@ -140,15 +150,16 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 | Package | Role |
 |---------|------|
-| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash, keyspaces, cluster routing |
+| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash/Counter, keyspaces, cluster routing |
 | `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; structure caches) |
-| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` |
+| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` / `Counter` |
 | `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
 | `pkg/set` | Exact set encode/decode for `ModeSet` |
 | `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
 | `pkg/geo` | Point index encode/haversine for `ModeGeo` |
 | `pkg/listx` | Ordered list encode for `ModeList` |
 | `pkg/hashx` | Field-map encode for `ModeHash` |
+| `pkg/counter` | int64 encode/add for `ModeCounter` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -156,10 +167,10 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
-| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash) |
+| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile) |
-| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, admin diagnostics |
+| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
 ## Consistency
@@ -171,7 +182,7 @@ SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is asy
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md).
 
 Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 

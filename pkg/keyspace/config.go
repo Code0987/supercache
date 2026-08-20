@@ -32,6 +32,8 @@ const (
 	ModeList
 	// ModeHash is a named field map (HSet / HGet / HDel / …).
 	ModeHash
+	// ModeCounter is a named int64 counter (Incr / CounterGet).
+	ModeCounter
 )
 
 func (m Mode) String() string {
@@ -52,6 +54,8 @@ func (m Mode) String() string {
 		return "List"
 	case ModeHash:
 		return "Hash"
+	case ModeCounter:
+		return "Counter"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}

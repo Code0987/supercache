@@ -392,6 +392,22 @@ func (s *Server) HGetAll(ctx context.Context, req *cachev1.HGetAllRequest) (*cac
 	return &cachev1.HGetAllResponse{Fields: hashFieldsToProto(all)}, nil
 }
 
+func (s *Server) Incr(ctx context.Context, req *cachev1.IncrRequest) (*cachev1.IncrResponse, error) {
+	n, err := s.eng.Incr(ctx, req.Keyspace, req.Name, req.Delta)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.IncrResponse{Value: n}, nil
+}
+
+func (s *Server) CounterGet(ctx context.Context, req *cachev1.CounterGetRequest) (*cachev1.CounterGetResponse, error) {
+	n, ok, err := s.eng.CounterGet(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.CounterGetResponse{Present: ok, Value: n}, nil
+}
+
 func hashFieldsToProto(in []engine.HashField) []*cachev1.HashField {
 	if len(in) == 0 {
 		return nil

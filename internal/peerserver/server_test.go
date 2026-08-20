@@ -58,7 +58,7 @@ func TestPeerApplyForwardGetOrLoad(t *testing.T) {
 	// ApplyPut
 	ap, err := cli.ApplyPut(ctx, &peerv1.ApplyPutRequest{
 		Keyspace: "c", Key: "k",
-		Entry: &peerv1.Entry{Value: []byte("v"), Version: 1},
+		Entry:          &peerv1.Entry{Value: []byte("v"), Version: 1},
 		RingGeneration: 1,
 	})
 	if err != nil || !ap.Applied {

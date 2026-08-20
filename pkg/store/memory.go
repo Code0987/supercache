@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Code0987/supercache/pkg/bloom"
+	"github.com/Code0987/supercache/pkg/counter"
 	"github.com/Code0987/supercache/pkg/geo"
 	"github.com/Code0987/supercache/pkg/hashx"
 	"github.com/Code0987/supercache/pkg/listx"
@@ -1661,6 +1662,139 @@ func (m *Memory) insertHashLocked(key string, ent Entry, cache *hashx.Hash, dirt
 	return ok
 }
 
+func (m *Memory) CIncr(key string, delta int64, version uint64, expireAt int64) (int64, bool, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if el, ok := m.items[key]; ok {
+		it := el.Value.(*lruItem)
+		if !it.entry.Expired(m.now()) {
+			if it.entry.IsTombstone() {
+				if version <= it.entry.Version {
+					m.staleSkip.Add(1)
+					return 0, false, false
+				}
+				m.removeElement(el)
+				return m.cInsertLocked(key, delta, version, expireAt)
+			}
+			if !it.entry.IsCounter() {
+				return 0, false, false
+			}
+			cur, err := counter.Decode(it.entry.Value)
+			if err != nil {
+				return 0, false, false
+			}
+			next, err := counter.Add(cur, delta)
+			if err != nil {
+				return cur, false, true
+			}
+			it.entry.Version = version
+			it.entry.Flags = FlagCounter
+			it.entry.Value = counter.Encode(next)
+			if expireAt != 0 {
+				it.entry.ExpireAt = expireAt
+			}
+			oldCost := it.cost
+			it.cost = entryCost(key, it.entry)
+			m.bytes += it.cost - oldCost
+			m.order.MoveToFront(el)
+			m.evictLocked()
+			return next, true, false
+		}
+		m.removeElement(el)
+	}
+	return m.cInsertLocked(key, delta, version, expireAt)
+}
+
+func (m *Memory) cInsertLocked(key string, val int64, version uint64, expireAt int64) (int64, bool, bool) {
+	ent := Entry{Value: counter.Encode(val), Version: version, ExpireAt: expireAt, Flags: FlagCounter}
+	if !m.insertCounterLocked(key, ent) {
+		return 0, false, false
+	}
+	return val, true, false
+}
+
+func (m *Memory) CGet(key string) (int64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	el, ok := m.items[key]
+	if !ok {
+		return 0, false
+	}
+	it := el.Value.(*lruItem)
+	if it.entry.Expired(m.now()) {
+		m.removeElement(el)
+		return 0, false
+	}
+	if it.entry.IsTombstone() || !it.entry.IsCounter() {
+		return 0, false
+	}
+	v, err := counter.Decode(it.entry.Value)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+func (m *Memory) HasCounter(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	el, ok := m.items[key]
+	if !ok {
+		return false
+	}
+	it := el.Value.(*lruItem)
+	if it.entry.Expired(m.now()) {
+		m.removeElement(el)
+		return false
+	}
+	if it.entry.IsTombstone() || !it.entry.IsCounter() {
+		return false
+	}
+	_, err := counter.Decode(it.entry.Value)
+	return err == nil
+}
+
+func (m *Memory) CInstall(key string, blob []byte, version uint64, expireAt int64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := counter.Decode(blob); err != nil {
+		return false
+	}
+	if el, ok := m.items[key]; ok {
+		it := el.Value.(*lruItem)
+		if !it.entry.Expired(m.now()) {
+			if it.entry.IsTombstone() {
+				if version <= it.entry.Version {
+					m.staleSkip.Add(1)
+					return false
+				}
+			} else if it.entry.IsCounter() {
+				if version <= it.entry.Version {
+					m.staleSkip.Add(1)
+					return false
+				}
+			} else if version <= it.entry.Version {
+				return false
+			}
+		}
+		m.removeElement(el)
+	}
+	ent := Entry{Value: append([]byte(nil), blob...), Version: version, ExpireAt: expireAt, Flags: FlagCounter}
+	return m.insertCounterLocked(key, ent)
+}
+
+func (m *Memory) insertCounterLocked(key string, ent Entry) bool {
+	cost := entryCost(key, ent)
+	it := &lruItem{key: key, entry: copyEntry(ent), cost: cost}
+	el := m.order.PushFront(it)
+	m.items[key] = el
+	m.bytes += cost
+	m.evictLocked()
+	_, ok := m.items[key]
+	return ok
+}
+
 func (m *Memory) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1689,7 +1823,7 @@ func (m *Memory) evictLocked() {
 func (m *Memory) lruVictim() *list.Element {
 	for el := m.order.Back(); el != nil; el = el.Prev() {
 		it := el.Value.(*lruItem)
-		if (it.entry.IsTombstone() || it.entry.IsBloom() || it.entry.IsSet() || it.entry.IsZSet() || it.entry.IsGeo() || it.entry.IsList() || it.entry.IsHash()) && !it.entry.Expired(m.now()) {
+		if (it.entry.IsTombstone() || it.entry.IsBloom() || it.entry.IsSet() || it.entry.IsZSet() || it.entry.IsGeo() || it.entry.IsList() || it.entry.IsHash() || it.entry.IsCounter()) && !it.entry.Expired(m.now()) {
 			continue
 		}
 		return el

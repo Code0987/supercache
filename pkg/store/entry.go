@@ -23,6 +23,7 @@ const (
 	FlagHash      uint32 = 1 << 16 // value is encoded hash
 	FlagHashSet   uint32 = 1 << 17 // fan-out: single field/value
 	FlagHashDel   uint32 = 1 << 18 // fan-out: field to remove
+	FlagCounter   uint32 = 1 << 19 // value is 8-byte LE int64 snapshot
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -120,6 +121,10 @@ func (e Entry) IsHashSet() bool {
 
 func (e Entry) IsHashDel() bool {
 	return e.Flags&FlagHashDel != 0
+}
+
+func (e Entry) IsCounter() bool {
+	return e.Flags&FlagCounter != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

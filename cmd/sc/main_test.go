@@ -14,43 +14,43 @@ func TestSplitArgs(t *testing.T) {
 		wantPos  []string
 	}{
 		{
-			name: "flags before command",
-			args: []string{"-addr", "h:9", "get", "k1"},
+			name:    "flags before command",
+			args:    []string{"-addr", "h:9", "get", "k1"},
 			wantCmd: "get", wantFlag: []string{"-addr", "h:9"}, wantPos: []string{"k1"},
 		},
 		{
-			name: "flags after command",
-			args: []string{"get", "-addr", "h:9", "k1"},
+			name:    "flags after command",
+			args:    []string{"get", "-addr", "h:9", "k1"},
 			wantCmd: "get", wantFlag: []string{"-addr", "h:9"}, wantPos: []string{"k1"},
 		},
 		{
-			name: "put with value",
-			args: []string{"put", "k", "hello", "world"},
+			name:    "put with value",
+			args:    []string{"put", "k", "hello", "world"},
 			wantCmd: "put", wantFlag: nil, wantPos: []string{"k", "hello", "world"},
 		},
 		{
-			name: "put with file flag",
-			args: []string{"put", "k", "-file", "./x.bin"},
+			name:    "put with file flag",
+			args:    []string{"put", "k", "-file", "./x.bin"},
 			wantCmd: "put", wantFlag: []string{"-file", "./x.bin"}, wantPos: []string{"k"},
 		},
 		{
-			name: "equals form",
-			args: []string{"-keyspace=demo", "del", "a", "b"},
+			name:    "equals form",
+			args:    []string{"-keyspace=demo", "del", "a", "b"},
 			wantCmd: "del", wantFlag: []string{"-keyspace=demo"}, wantPos: []string{"a", "b"},
 		},
 		{
-			name: "bool after",
-			args: []string{"peers", "-json"},
+			name:    "bool after",
+			args:    []string{"peers", "-json"},
 			wantCmd: "peers", wantFlag: []string{"-json"}, wantPos: nil,
 		},
 		{
-			name: "dash positional",
-			args: []string{"put", "k", "-"},
+			name:    "dash positional",
+			args:    []string{"put", "k", "-"},
 			wantCmd: "put", wantFlag: nil, wantPos: []string{"k", "-"},
 		},
 		{
-			name: "multi seed addr",
-			args: []string{"-addr", "a:1,b:2", "ping"},
+			name:    "multi seed addr",
+			args:    []string{"-addr", "a:1,b:2", "ping"},
 			wantCmd: "ping", wantFlag: []string{"-addr", "a:1,b:2"}, wantPos: nil,
 		},
 	}

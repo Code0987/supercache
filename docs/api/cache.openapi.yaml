@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.6.0
+  version: 0.7.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -28,6 +28,7 @@ info:
     | ModeGeo | GeoAdd, GeoRem, GeoPos, GeoCard, GeoDist, GeoRadius; Delete(name) |
     | ModeList | LPush, RPush, LPop, RPop, LLen, LIndex, LRange; Delete(name) |
     | ModeHash | HSet, HGet, HDel, HExists, HLen, HGetAll; Delete(name) |
+    | ModeCounter | Incr, CounterGet; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
@@ -68,6 +69,8 @@ tags:
     description: Ordered list (ModeList)
   - name: Hash
     description: Named field map (ModeHash)
+  - name: Counter
+    description: Named int64 (ModeCounter)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -79,7 +82,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter.
       requestBody:
         required: true
         content:
@@ -107,7 +110,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter.
       requestBody:
         required: true
         content:
@@ -871,6 +874,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/HGetAllResponse"
 
+  /supercache.cache.v1.Cache/Incr:
+    post:
+      tags: [Counter]
+      operationId: Cache_Incr
+      summary: Add delta
+      description: ModeCounter only. Creates at delta if missing. Returns the new int64. Overflow → invalid argument.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncrRequest"
+      responses:
+        "200":
+          description: New value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncrResponse"
+
+  /supercache.cache.v1.Cache/CounterGet:
+    post:
+      tags: [Counter]
+      operationId: Cache_CounterGet
+      summary: Read counter
+      description: Missing → present=false, value=0. ModeCounter only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CounterGetResponse"
+
 components:
   schemas:
     Empty:
@@ -1356,3 +1399,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HashField"
+    IncrRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        delta:
+          type: integer
+          format: int64
+    IncrResponse:
+      type: object
+      properties:
+        value:
+          type: integer
+          format: int64
+    CounterGetResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+        value:
+          type: integer
+          format: int64

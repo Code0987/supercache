@@ -56,6 +56,8 @@ const (
 	Cache_HExists_FullMethodName       = "/supercache.cache.v1.Cache/HExists"
 	Cache_HLen_FullMethodName          = "/supercache.cache.v1.Cache/HLen"
 	Cache_HGetAll_FullMethodName       = "/supercache.cache.v1.Cache/HGetAll"
+	Cache_Incr_FullMethodName          = "/supercache.cache.v1.Cache/Incr"
+	Cache_CounterGet_FullMethodName    = "/supercache.cache.v1.Cache/CounterGet"
 )
 
 // CacheClient is the client API for Cache service.
@@ -101,6 +103,8 @@ type CacheClient interface {
 	HExists(ctx context.Context, in *HExistsRequest, opts ...grpc.CallOption) (*HExistsResponse, error)
 	HLen(ctx context.Context, in *HLenRequest, opts ...grpc.CallOption) (*HLenResponse, error)
 	HGetAll(ctx context.Context, in *HGetAllRequest, opts ...grpc.CallOption) (*HGetAllResponse, error)
+	Incr(ctx context.Context, in *IncrRequest, opts ...grpc.CallOption) (*IncrResponse, error)
+	CounterGet(ctx context.Context, in *CounterGetRequest, opts ...grpc.CallOption) (*CounterGetResponse, error)
 }
 
 type cacheClient struct {
@@ -481,6 +485,26 @@ func (c *cacheClient) HGetAll(ctx context.Context, in *HGetAllRequest, opts ...g
 	return out, nil
 }
 
+func (c *cacheClient) Incr(ctx context.Context, in *IncrRequest, opts ...grpc.CallOption) (*IncrResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IncrResponse)
+	err := c.cc.Invoke(ctx, Cache_Incr_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) CounterGet(ctx context.Context, in *CounterGetRequest, opts ...grpc.CallOption) (*CounterGetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CounterGetResponse)
+	err := c.cc.Invoke(ctx, Cache_CounterGet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -524,6 +548,8 @@ type CacheServer interface {
 	HExists(context.Context, *HExistsRequest) (*HExistsResponse, error)
 	HLen(context.Context, *HLenRequest) (*HLenResponse, error)
 	HGetAll(context.Context, *HGetAllRequest) (*HGetAllResponse, error)
+	Incr(context.Context, *IncrRequest) (*IncrResponse, error)
+	CounterGet(context.Context, *CounterGetRequest) (*CounterGetResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -644,6 +670,12 @@ func (UnimplementedCacheServer) HLen(context.Context, *HLenRequest) (*HLenRespon
 }
 func (UnimplementedCacheServer) HGetAll(context.Context, *HGetAllRequest) (*HGetAllResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HGetAll not implemented")
+}
+func (UnimplementedCacheServer) Incr(context.Context, *IncrRequest) (*IncrResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Incr not implemented")
+}
+func (UnimplementedCacheServer) CounterGet(context.Context, *CounterGetRequest) (*CounterGetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CounterGet not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1332,6 +1364,42 @@ func _Cache_HGetAll_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_Incr_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IncrRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).Incr(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_Incr_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).Incr(ctx, req.(*IncrRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_CounterGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CounterGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).CounterGet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_CounterGet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).CounterGet(ctx, req.(*CounterGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1486,6 +1554,14 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HGetAll",
 			Handler:    _Cache_HGetAll_Handler,
+		},
+		{
+			MethodName: "Incr",
+			Handler:    _Cache_Incr_Handler,
+		},
+		{
+			MethodName: "CounterGet",
+			Handler:    _Cache_CounterGet_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

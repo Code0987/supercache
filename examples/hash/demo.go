@@ -155,9 +155,10 @@ func runDemo(out io.Writer) error {
 			return err
 		}
 	}
-	n, err = clis[0].HLen(ctx, ks, user)
-	if err != nil || n != 0 {
-		return fmt.Errorf("want empty hash HLen=0 got %d %v", n, err)
+	// Replica HLen is local; wait for FlagHashDel fan-out before asserting empty.
+	n, err = waitHLen(clis[0], 0, 2*time.Second)
+	if err != nil {
+		return err
 	}
 	if !anyLocal(nodes, user) {
 		return fmt.Errorf("empty hash should remain until Delete(name); locals %s", localSummary(nodes, user))
@@ -242,6 +243,24 @@ func waitField(cli *client.Client, field, want string, d time.Duration) error {
 		time.Sleep(15 * time.Millisecond)
 	}
 	return fmt.Errorf("HGet %s: last=%q present=%v want %q", field, last, ok, want)
+}
+
+func waitHLen(cli *client.Client, want int, d time.Duration) (int, error) {
+	ctx := context.Background()
+	deadline := time.Now().Add(d)
+	var n int
+	var err error
+	for time.Now().Before(deadline) {
+		n, err = cli.HLen(ctx, ks, user)
+		if err == nil && n == want {
+			return n, nil
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	if err != nil {
+		return n, err
+	}
+	return n, fmt.Errorf("want empty hash HLen=%d got %d", want, n)
 }
 
 func waitGone(cli *client.Client, field string, d time.Duration) error {

@@ -11,6 +11,7 @@ service Peer {
   rpc ForwardDelete(ForwardDeleteRequest) returns (ForwardDeleteResponse);
   rpc GetOrLoad(GetOrLoadRequest) returns (GetOrLoadResponse);
   rpc ListPop(ListPopRequest) returns (ListPopResponse);
+  rpc CounterIncr(CounterIncrRequest) returns (CounterIncrResponse);
 }
 
 message Entry {
@@ -88,4 +89,13 @@ message ListPopRequest {
 message ListPopResponse {
   bool found = 1;
   bytes item = 2;
+}
+
+message CounterIncrRequest {
+  string keyspace = 1;
+  string name = 2;
+  int64 delta = 3;
+}
+message CounterIncrResponse {
+  int64 value = 1;
 }

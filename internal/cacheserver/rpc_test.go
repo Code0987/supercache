@@ -100,7 +100,7 @@ func TestCacheRPCPutGetDeleteBloomAndMapErr(t *testing.T) {
 		Keyspace: "c",
 		Items: []*cachev1.KV{
 			{Key: "badkey123", Value: []byte("x")}, // 9 > maxKeyLen 8
-			{Key: "also-long", Value: []byte("y")},  // 9
+			{Key: "also-long", Value: []byte("y")}, // 9
 		},
 	})
 	if err != nil {
