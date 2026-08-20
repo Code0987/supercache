@@ -2,7 +2,7 @@
 
 Exercises **CacheOnly** (`demo`: sessions / KV), **ModeSet** (`tags`: feature flags), and **ModeZSet** (`board`: leaderboard via `ZAdd` / `ZScore` / `ZRange` / `ZRem`).
 
-Requires `supercache-node` with `-demo-keyspace` (default), which registers `demo`, `tags`, and `board`.
+Requires `supercache-node` with `-demo-keyspace` (default), which registers `demo`, `tags`, `board`, and `profile` (this example uses the first three).
 
 Start three nodes (separate terminals), then run this example.
 

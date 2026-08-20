@@ -35,19 +35,19 @@ var version = "dev"
 
 func main() {
 	var (
-		adminAddr   = flag.String("admin", "127.0.0.1:8080", "admin HTTP listen address")
-		peerAddr    = flag.String("peer", "127.0.0.1:9001", "peer gRPC listen address (mesh, internal)")
-		cacheAddr   = flag.String("cache", "127.0.0.1:9000", "cache gRPC listen address (apps)")
-		nodeID      = flag.String("node-id", "node-1", "node identity")
-		gossipBind  = flag.String("gossip-bind", "0.0.0.0", "gossip bind address")
-		gossipPort  = flag.Int("gossip-port", 7946, "gossip bind port")
-		gossipAdv   = flag.String("gossip-advertise", "127.0.0.1", "gossip advertise address")
-		seeds       = flag.String("seeds", "", "comma-separated gossip seeds host:port")
+		adminAddr    = flag.String("admin", "127.0.0.1:8080", "admin HTTP listen address")
+		peerAddr     = flag.String("peer", "127.0.0.1:9001", "peer gRPC listen address (mesh, internal)")
+		cacheAddr    = flag.String("cache", "127.0.0.1:9000", "cache gRPC listen address (apps)")
+		nodeID       = flag.String("node-id", "node-1", "node identity")
+		gossipBind   = flag.String("gossip-bind", "0.0.0.0", "gossip bind address")
+		gossipPort   = flag.Int("gossip-port", 7946, "gossip bind port")
+		gossipAdv    = flag.String("gossip-advertise", "127.0.0.1", "gossip advertise address")
+		seeds        = flag.String("seeds", "", "comma-separated gossip seeds host:port")
 		gossipSecret = flag.String("gossip-secret", "", "optional gossip shared secret")
-		demoKS      = flag.Bool("demo-keyspace", true, "register demo CacheOnly keyspace")
-		globalRPS   = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
-		cluster     = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
-		showVersion = flag.Bool("version", false, "print version and exit")
+		demoKS       = flag.Bool("demo-keyspace", true, "register demo CacheOnly keyspace")
+		globalRPS    = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
+		cluster      = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
+		showVersion  = flag.Bool("version", false, "print version and exit")
 
 		// TLS (optional). Empty paths keep plaintext for local/dev.
 		tlsCert     = flag.String("tls-cert", "", "PEM certificate for Cache and Peer gRPC servers")
@@ -113,7 +113,16 @@ func main() {
 		}); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet")
+		// ModeHash for per-field maps (user profiles, session attrs, …).
+		if err := eng.UpdateKeySpace(keyspace.Config{
+			Name:     "profile",
+			Mode:     keyspace.ModeHash,
+			MaxBytes: 16 << 20,
+			TTL:      30 * time.Minute,
+		}); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash")
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(
@@ -307,4 +316,3 @@ func buildTLS(
 	}
 	return cacheOpts, peerOpts, peerDial, nil
 }
-
