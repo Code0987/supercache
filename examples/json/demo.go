@@ -89,6 +89,9 @@ func runDemo(out io.Writer) error {
 	if err := clis[0].JsonDel(ctx, ks, user, "$.addr"); err != nil {
 		return fmt.Errorf("JsonDel addr: %w", err)
 	}
+	if err := waitGone(clis[0], "$.addr", 2*time.Second); err != nil {
+		return err
+	}
 	root, ok, err := clis[0].JsonGet(ctx, ks, user, "$")
 	if err != nil || !ok {
 		return fmt.Errorf("root after del: %v %v", ok, err)
@@ -100,10 +103,11 @@ func runDemo(out io.Writer) error {
 	if err := clis[0].JsonDel(ctx, ks, user, "$"); err != nil {
 		return err
 	}
-	root, ok, err = clis[0].JsonGet(ctx, ks, user, "$")
-	if err != nil || !ok || !jsonx.Equal(root, []byte(`{}`)) {
-		return fmt.Errorf("root del: %s %v %v", root, ok, err)
+	root, err = waitEqual(clis[0], "$", []byte(`{}`), 2*time.Second)
+	if err != nil {
+		return err
 	}
+	ok = true
 	if err := waitLocals(nodes, user, 2, 2*time.Second); err != nil {
 		return err
 	}
@@ -145,6 +149,36 @@ func runDemo(out io.Writer) error {
 	p("")
 	p("OK: ModeJSON document walkthrough passed")
 	return nil
+}
+
+func waitGone(cli *client.Client, path string, d time.Duration) error {
+	ctx := context.Background()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		_, present, err := cli.JsonGet(ctx, ks, user, path)
+		if err == nil && !present {
+			return nil
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	return fmt.Errorf("JsonGet %s still present", path)
+}
+
+func waitEqual(cli *client.Client, path string, want []byte, d time.Duration) ([]byte, error) {
+	ctx := context.Background()
+	deadline := time.Now().Add(d)
+	var last []byte
+	var ok bool
+	for time.Now().Before(deadline) {
+		v, present, err := cli.JsonGet(ctx, ks, user, path)
+		if err == nil && present && jsonx.Equal(v, want) {
+			return v, nil
+		}
+		ok = present
+		last = v
+		time.Sleep(15 * time.Millisecond)
+	}
+	return last, fmt.Errorf("JsonGet %s: last=%s present=%v want %s", path, last, ok, want)
 }
 
 func waitLocals(nodes []testcluster.Node, name string, want int, d time.Duration) error {
