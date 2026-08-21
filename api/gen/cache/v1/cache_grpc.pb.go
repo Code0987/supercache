@@ -58,6 +58,9 @@ const (
 	Cache_HGetAll_FullMethodName       = "/supercache.cache.v1.Cache/HGetAll"
 	Cache_Incr_FullMethodName          = "/supercache.cache.v1.Cache/Incr"
 	Cache_CounterGet_FullMethodName    = "/supercache.cache.v1.Cache/CounterGet"
+	Cache_JsonSet_FullMethodName       = "/supercache.cache.v1.Cache/JsonSet"
+	Cache_JsonGet_FullMethodName       = "/supercache.cache.v1.Cache/JsonGet"
+	Cache_JsonDel_FullMethodName       = "/supercache.cache.v1.Cache/JsonDel"
 )
 
 // CacheClient is the client API for Cache service.
@@ -105,6 +108,9 @@ type CacheClient interface {
 	HGetAll(ctx context.Context, in *HGetAllRequest, opts ...grpc.CallOption) (*HGetAllResponse, error)
 	Incr(ctx context.Context, in *IncrRequest, opts ...grpc.CallOption) (*IncrResponse, error)
 	CounterGet(ctx context.Context, in *CounterGetRequest, opts ...grpc.CallOption) (*CounterGetResponse, error)
+	JsonSet(ctx context.Context, in *JsonSetRequest, opts ...grpc.CallOption) (*JsonSetResponse, error)
+	JsonGet(ctx context.Context, in *JsonGetRequest, opts ...grpc.CallOption) (*JsonGetResponse, error)
+	JsonDel(ctx context.Context, in *JsonDelRequest, opts ...grpc.CallOption) (*JsonDelResponse, error)
 }
 
 type cacheClient struct {
@@ -505,6 +511,36 @@ func (c *cacheClient) CounterGet(ctx context.Context, in *CounterGetRequest, opt
 	return out, nil
 }
 
+func (c *cacheClient) JsonSet(ctx context.Context, in *JsonSetRequest, opts ...grpc.CallOption) (*JsonSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonSetResponse)
+	err := c.cc.Invoke(ctx, Cache_JsonSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) JsonGet(ctx context.Context, in *JsonGetRequest, opts ...grpc.CallOption) (*JsonGetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonGetResponse)
+	err := c.cc.Invoke(ctx, Cache_JsonGet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) JsonDel(ctx context.Context, in *JsonDelRequest, opts ...grpc.CallOption) (*JsonDelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonDelResponse)
+	err := c.cc.Invoke(ctx, Cache_JsonDel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -550,6 +586,9 @@ type CacheServer interface {
 	HGetAll(context.Context, *HGetAllRequest) (*HGetAllResponse, error)
 	Incr(context.Context, *IncrRequest) (*IncrResponse, error)
 	CounterGet(context.Context, *CounterGetRequest) (*CounterGetResponse, error)
+	JsonSet(context.Context, *JsonSetRequest) (*JsonSetResponse, error)
+	JsonGet(context.Context, *JsonGetRequest) (*JsonGetResponse, error)
+	JsonDel(context.Context, *JsonDelRequest) (*JsonDelResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -676,6 +715,15 @@ func (UnimplementedCacheServer) Incr(context.Context, *IncrRequest) (*IncrRespon
 }
 func (UnimplementedCacheServer) CounterGet(context.Context, *CounterGetRequest) (*CounterGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CounterGet not implemented")
+}
+func (UnimplementedCacheServer) JsonSet(context.Context, *JsonSetRequest) (*JsonSetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JsonSet not implemented")
+}
+func (UnimplementedCacheServer) JsonGet(context.Context, *JsonGetRequest) (*JsonGetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JsonGet not implemented")
+}
+func (UnimplementedCacheServer) JsonDel(context.Context, *JsonDelRequest) (*JsonDelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JsonDel not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1400,6 +1448,60 @@ func _Cache_CounterGet_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_JsonSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).JsonSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_JsonSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).JsonSet(ctx, req.(*JsonSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_JsonGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).JsonGet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_JsonGet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).JsonGet(ctx, req.(*JsonGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_JsonDel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonDelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).JsonDel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_JsonDel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).JsonDel(ctx, req.(*JsonDelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1562,6 +1664,18 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CounterGet",
 			Handler:    _Cache_CounterGet_Handler,
+		},
+		{
+			MethodName: "JsonSet",
+			Handler:    _Cache_JsonSet_Handler,
+		},
+		{
+			MethodName: "JsonGet",
+			Handler:    _Cache_JsonGet_Handler,
+		},
+		{
+			MethodName: "JsonDel",
+			Handler:    _Cache_JsonDel_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -266,6 +266,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeCounter {
 		return nil, fmt.Errorf("%w: use CounterGet", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeJSON {
+		return nil, fmt.Errorf("%w: use JsonGet", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -473,6 +476,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		if ks.cfg.Mode == keyspace.ModeCounter {
 			return fmt.Errorf("%w: use Incr", ErrInvalidArgument)
 		}
+		if ks.cfg.Mode == keyspace.ModeJSON {
+			return fmt.Errorf("%w: use JsonSet", ErrInvalidArgument)
+		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
 }
@@ -670,6 +676,25 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsCounter() {
 		return e.applyCounterInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsJSONSet() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		return e.applyJSONSet(ks, key, ent.Value, ent.ExpireAt), nil
+	}
+	if ent.IsJSONDel() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		return e.applyJSONDel(ks, key, ent.Value, ent.ExpireAt), nil
+	}
+	if ent.IsJSON() {
+		return e.applyJSONInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

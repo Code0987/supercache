@@ -459,6 +459,24 @@ func (c *Client) CounterGet(ctx context.Context, keyspace, name string) (int64, 
 	return resp.GetValue(), resp.GetPresent(), nil
 }
 
+func (c *Client) JsonSet(ctx context.Context, keyspace, name, path string, value []byte) error {
+	_, err := c.api.JsonSet(ctx, &cachev1.JsonSetRequest{Keyspace: keyspace, Name: name, Path: path, Value: value})
+	return err
+}
+
+func (c *Client) JsonGet(ctx context.Context, keyspace, name, path string) ([]byte, bool, error) {
+	resp, err := c.api.JsonGet(ctx, &cachev1.JsonGetRequest{Keyspace: keyspace, Name: name, Path: path})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.GetValue(), resp.GetPresent(), nil
+}
+
+func (c *Client) JsonDel(ctx context.Context, keyspace, name, path string) error {
+	_, err := c.api.JsonDel(ctx, &cachev1.JsonDelRequest{Keyspace: keyspace, Name: name, Path: path})
+	return err
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil

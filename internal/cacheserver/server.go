@@ -408,6 +408,28 @@ func (s *Server) CounterGet(ctx context.Context, req *cachev1.CounterGetRequest)
 	return &cachev1.CounterGetResponse{Present: ok, Value: n}, nil
 }
 
+func (s *Server) JsonSet(ctx context.Context, req *cachev1.JsonSetRequest) (*cachev1.JsonSetResponse, error) {
+	if err := s.eng.JsonSet(ctx, req.Keyspace, req.Name, req.Path, req.Value); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.JsonSetResponse{}, nil
+}
+
+func (s *Server) JsonGet(ctx context.Context, req *cachev1.JsonGetRequest) (*cachev1.JsonGetResponse, error) {
+	v, ok, err := s.eng.JsonGet(ctx, req.Keyspace, req.Name, req.Path)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.JsonGetResponse{Present: ok, Value: v}, nil
+}
+
+func (s *Server) JsonDel(ctx context.Context, req *cachev1.JsonDelRequest) (*cachev1.JsonDelResponse, error) {
+	if err := s.eng.JsonDel(ctx, req.Keyspace, req.Name, req.Path); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.JsonDelResponse{}, nil
+}
+
 func hashFieldsToProto(in []engine.HashField) []*cachev1.HashField {
 	if len(in) == 0 {
 		return nil

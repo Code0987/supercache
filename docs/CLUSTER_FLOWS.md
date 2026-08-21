@@ -321,7 +321,7 @@ flowchart TD
 
 ---
 
-## Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter)
+## Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON)
 
 KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 
@@ -334,6 +334,7 @@ KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 | ModeList | owner op then **full `FlagList` snapshot** | `LLen` / `LIndex` / `LRange` | full list blob |
 | ModeHash | `HSet` / `HDel` item fan-out | `HGet` / `HExists` / `HLen` / `HGetAll` | full hash blob |
 | ModeCounter | owner `Incr` then **`FlagCounter` snapshot** | `CounterGet` | 8-byte int64 |
+| ModeJSON | owner `JsonSet`/`JsonDel` then **`FlagJSON` snapshot** | `JsonGet` | encoded document |
 
 `Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
 
@@ -346,7 +347,7 @@ See [API.md](./API.md) and design docs under `docs/design/`.
 ```mermaid
 flowchart TB
   subgraph Client
-    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet"]
+    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet / Json*"]
   end
 
   subgraph Node["Any of N nodes"]
@@ -408,7 +409,7 @@ flowchart TD
   E --> E8["Owner down on Get"]
   E --> E9["Owner down on ForwardPut"]
   E --> E10["SetAdd / ZAdd / BloomAdd / HSet"]
-  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet"]
+  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet / JsonGet"]
 
   E1 --> A1["Owner apply + async ApplyPut × R−1"]
   E2 --> A2["Local store only"]

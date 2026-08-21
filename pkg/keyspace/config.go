@@ -34,6 +34,8 @@ const (
 	ModeHash
 	// ModeCounter is a named int64 counter (Incr / CounterGet).
 	ModeCounter
+	// ModeJSON is a named nested JSON document (JsonSet / JsonGet / JsonDel).
+	ModeJSON
 )
 
 func (m Mode) String() string {
@@ -56,6 +58,8 @@ func (m Mode) String() string {
 		return "Hash"
 	case ModeCounter:
 		return "Counter"
+	case ModeJSON:
+		return "JSON"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}

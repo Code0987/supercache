@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
 | `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
-| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash |
+| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json |
 | `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
 | `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
 | `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
@@ -84,6 +84,9 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `hgetall <name>` | Cache gRPC | `field<TAB>value` lines |
 | `incr <name> [delta]` | Cache gRPC | `ModeCounter` add (default 1); print new value. Negatives: `incr hits -- -1` |
 | `cget <name>` | Cache gRPC | Decimal or `(nil)`; exit 1 if missing |
+| `jsonset <name> <path> <json...>` | Cache gRPC | `ModeJSON` upsert (`Join` remaining args; must be JSON, e.g. `'"Ada"'`) |
+| `jsonget <name> [path]` | Cache gRPC | Raw JSON or `(nil)`; omitted path = `$`; exit 1 if missing |
+| `jsondel <name> [path]` | Cache gRPC | Remove path; omitted path = `$` (clear to `{}`) |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |

@@ -188,9 +188,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
@@ -198,13 +198,14 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | **LPush / RPush / LPop / RPop / LLen / LIndex / LRange** | `ModeList` only. Owner applies the op then fans out a **full `FlagList` snapshot** (hints coalesce per name). Non-owner pop uses peer `ListPop`. Redis-style indexes. |
 | **HSet / HGet / HDel / HExists / HLen / HGetAll** | `ModeHash` only. Owner serializes mutations; item-level `FlagHashSet` / `FlagHashDel` (field ops commute). Replica with a local hash is **local-only** on field miss (same as SetContains). Missing hash → HGet ok=false, HLen 0, empty HGetAll. Empty after last HDel until `Delete(name)`. |
 | **Incr / CounterGet** | `ModeCounter` only. Owner-serialized `Incr(delta)` returns the new `int64` (peer `CounterIncr` from non-owner). Replicas install a **`FlagCounter` snapshot** (hints coalesce). Replica `CounterGet` may lag; `Incr` is authoritative. Missing → CounterGet `0, ok=false`. Live `0` stays until `Delete(name)`. Overflow → invalid argument (no wrap). Get/Put invalid. |
+| **JsonSet / JsonGet / JsonDel** | `ModeJSON` only. Named nested JSON document; tiny path (`$` / `.ident` / `["k"]` / `[n>=0]`). Owner applies the op then fans out a **full `FlagJSON` snapshot**. Replica `JsonGet` may lag. Missing doc or path → `ok=false`. `JsonDel $` clears to live `{}` until `Delete(name)`. Get/Put invalid. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / BloomAdd | Local read verbs see the update immediately. |
+| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BloomAdd | Local read verbs see the update immediately. |
 | **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
 | **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
@@ -305,6 +306,7 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeList` | list `name` | LPush, RPush, LPop, RPop, LLen, LIndex, LRange; Delete(name) | `FlagList` snapshot; owner-inbox `FlagListLPush` / `FlagListRPush` |
 | `ModeHash` | hash `name` | HSet, HGet, HDel, HExists, HLen, HGetAll; Delete(name) | `FlagHash`, `FlagHashSet`, `FlagHashDel` |
 | `ModeCounter` | counter `name` | Incr, CounterGet; Delete(name) | `FlagCounter` snapshot only |
+| `ModeJSON` | document `name` | JsonSet, JsonGet, JsonDel; Delete(name) | `FlagJSON` snapshot; owner-inbox `FlagJSONSet` / `FlagJSONDel` |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 
@@ -377,6 +379,16 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 - Package: `pkg/counter`; CLI: `sc incr|cget`
 - Design: [docs/design/2026-08-20-mode-counter.md](./docs/design/2026-08-20-mode-counter.md)
 
+### `ModeJSON` (named JSON document)
+
+- Named document; `JsonSet` / `JsonGet` / `JsonDel`; `Delete(name)` tombstone
+- Tiny path: `$` / `.ident` / `["utf8"]` / `[n>=0]`; objects auto-created, arrays not
+- Owner applies the op then fans out a **full `FlagJSON` snapshot** (hints coalesce). Inbox flags never go to replicas
+- Numbers via `encoding/json` `UseNumber`. Live JSON `null` is present; missing name is not
+- `JsonDel $` → live `{}` until `Delete(name)`
+- Package: `pkg/jsonx`; CLI: `sc jsonset|jsonget|jsondel`
+- Design: [docs/design/2026-08-21-mode-json.md](./docs/design/2026-08-21-mode-json.md)
+
 ### Precedence matrix
 
 | Incoming | vs local | Result |
@@ -389,7 +401,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
 | ApplyDelete adequate version | present or missing | install tombstone |
 | FlagSetAdd / FlagZSetAdd / FlagHashSet / Bloom item-add | structure present | mutate under mutex; version gate |
-| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter snapshot | structure or tombstone | install if version ≥ local (tombstone blocks stale) |
+| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON snapshot | structure or tombstone | install if version ≥ local (tombstone blocks stale) |
 
 ---
 
@@ -400,7 +412,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
                  pkg/client · cmd/sc (not in ring)
                          │
                     gRPC Cache :client
-                    (KV · Bloom · Set · ZSet · Geo · List)
+                    (KV · Bloom · Set · ZSet · Geo · List · Hash · Counter · JSON)
                          ▼
               ┌─────────────────────┐
               │  supercache-node    │
@@ -413,7 +425,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
   Local store      Owner routing     Peer mesh
   (LRU + TTL/      (hash ring)       gRPC Peer :peer
    version +                         async fan-out
-   set/zset/bloom                    (value / item flags)
+   set/zset/list/hash/json           (value / item flags)
    caches)
         │                │                │
         ▼                ▼                ▼
@@ -508,9 +520,9 @@ Ownership change does **not** migrate bytes; refill via Get miss, Put, or warmup
 Local only; validate; atomic swap config; if MaxBytes shrinks, rely on store cost eviction.  
 `/peers` and metrics expose `keyspace_config_hash` for drift detection. Cluster rollout = ops re-issue.
 
-### 9.6 Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter)
+### 9.6 Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON)
 
-Normative shape shared by Set, ZSet, Geo, and Hash (Bloom differs only in mutate semantics; List and Counter fan out a full snapshot):
+Normative shape shared by Set, ZSet, Geo, and Hash (Bloom differs only in mutate semantics; List, Counter, and JSON fan out a full snapshot):
 
 ```
 Mutate (SetAdd / SetRemove / ZAdd / ZRem / GeoAdd / GeoRem / HSet / HDel / BloomAdd) on node N:
@@ -524,13 +536,18 @@ Incr (ModeCounter; List-class snapshot, not step-3 item flag):
   1. if self != owner → peer.CounterIncr (returns new n); else CIncr + fan-out FlagCounter snapshot
   2. overflow / wrong type → invalid argument; entry unchanged
 
-Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet):
+JsonSet / JsonDel (ModeJSON; List-class snapshot, not step-3 item flag):
+  1. if self != owner → ApplyPut inbox FlagJSONSet / FlagJSONDel (ACK-only)
+  2. else: JSet / JDel under store mutex (stored = local+1); fan-out FlagJSON snapshot at PeekVersion
+  3. replica ApplyPut of inbox flags is ignored
+
+Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet):
   1. if local live structure → answer from store cache (field miss stays local)
   2. else if owner self → missing → empty/false
   3. else → peer.GetOrLoad(owner) structure snapshot; optional install if holdsReplica
   4. decode / answer
 
-Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter
+Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON
          if incoming version ≥ local (tombstone still blocks stale).
 ```
 
@@ -544,13 +561,14 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 
 | Need | Approach |
 |------|----------|
-| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet protected while live |
+| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON protected while live |
 | TTL | `expire_at` on entry; lazy expire |
 | Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
 | Negative | Envelope flag |
 | Concurrent | Store mutex |
 | ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash | Live structure cache + dirty lazy encode |
 | ModeCounter | Eager 8-byte `FlagCounter` (no dirty cache) |
+| ModeJSON | `jCache` + eager encode after mutate; 0-alloc Peek/Get flush when `!jDirty` |
 | ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
@@ -628,6 +646,11 @@ type Engine interface {
     Incr(ctx context.Context, keyspace, name string, delta int64) (int64, error)
     CounterGet(ctx context.Context, keyspace, name string) (int64, bool, error)
 
+    // ModeJSON
+    JsonSet(ctx context.Context, keyspace, name, path string, value []byte) error
+    JsonGet(ctx context.Context, keyspace, name, path string) (json []byte, ok bool, err error)
+    JsonDel(ctx context.Context, keyspace, name, path string) error
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -662,6 +685,7 @@ const (
     ModeList
     ModeHash
     ModeCounter
+    ModeJSON
 )
 
 type KeySpaceConfig struct {
@@ -694,7 +718,7 @@ type KeySpaceConfig struct {
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
 | TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
-| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter` |
+| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
@@ -788,6 +812,10 @@ service Cache {
   // ModeCounter
   rpc Incr(IncrRequest) returns (IncrResponse);
   rpc CounterGet(CounterGetRequest) returns (CounterGetResponse);
+  // ModeJSON
+  rpc JsonSet(JsonSetRequest) returns (JsonSetResponse);
+  rpc JsonGet(JsonGetRequest) returns (JsonGetResponse);
+  rpc JsonDel(JsonDelRequest) returns (JsonDelResponse);
 }
 
 // Messages carry: keyspace, key/name, value/item/member, score, start/stop,
@@ -987,7 +1015,7 @@ Do **not** use SuperCache for:
 | No versioning | §6 owner versions + LWW apply rules |
 | groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
-| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter; §9.6; §11 Engine API; §14 Cache RPCs |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |
