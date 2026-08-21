@@ -107,7 +107,8 @@ func run(args []string) int {
 		"geoadd", "georem", "geopos", "geocard", "geodist", "georadius",
 		"lpush", "rpush", "lpop", "rpop", "llen", "lindex", "lrange",
 		"hset", "hget", "hdel", "hexists", "hlen", "hgetall",
-		"incr", "cget":
+		"incr", "cget",
+		"jsonset", "jsonget", "jsondel":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -334,6 +335,9 @@ Cache commands (gRPC -addr seeds):
   hgetall <name>               ModeHash field<TAB>value lines
   incr <name> [delta]          ModeCounter add (default 1); print new value
   cget <name>                  ModeCounter get (or (nil))
+  jsonset <name> <path> <json...>  ModeJSON upsert (quoted JSON: '"Ada"')
+  jsonget <name> [path]        ModeJSON get (or (nil)); omitted path = $
+  jsondel <name> [path]        ModeJSON delete path; omitted path = $ (clear to {})
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

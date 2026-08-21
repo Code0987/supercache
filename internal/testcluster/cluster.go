@@ -230,8 +230,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, _, cerr := cli.CounterGet(ctx, ks, "__testcluster_ready__")
-		_ = cli.Close()
 		if cerr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, jerr := cli.JsonGet(ctx, ks, "__testcluster_ready__", "$")
+		_ = cli.Close()
+		if jerr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

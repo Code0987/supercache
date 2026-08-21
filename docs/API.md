@@ -43,6 +43,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeList` | Named ordered list | `LPush`, `RPush`, `LPop`, `RPop`, `LLen`, `LIndex`, `LRange`; `Delete(name)` |
 | `ModeHash` | Named field map | `HSet`, `HGet`, `HDel`, `HExists`, `HLen`, `HGetAll`; `Delete(name)` |
 | `ModeCounter` | Named int64 | `Incr`, `CounterGet`; `Delete(name)` |
+| `ModeJSON` | Named nested JSON document | `JsonSet`, `JsonGet`, `JsonDel`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -139,6 +140,17 @@ Wire: `HashField { bytes field; bytes value }`. Item-level fan-out (`FlagHashSet
 | `Delete(name)` | Tombstone whole counter |
 
 Owner serializes `Incr` (non-owner uses peer `CounterIncr`). Replicas install an 8-byte **snapshot** (`FlagCounter`). Overflow is invalid argument (no wrap). Live `0` stays until `Delete(name)`. Replica `CounterGet` may lag — **`Incr` is authoritative**.
+
+### JSON (`ModeJSON`)
+
+| RPC | Notes |
+|-----|--------|
+| `JsonSet` | Upsert JSON at path; creates the document if missing |
+| `JsonGet` | JSON + present; missing doc or path ⇒ `present=false`. Path `$` or omitted = whole document |
+| `JsonDel` | Remove node at path. `$` / omitted clears to live `{}`. Missing path is a no-op |
+| `Delete(name)` | Tombstone whole document |
+
+Path subset: `$` / `.ident` / `["utf8"]` / `[n>=0]`. Object parents are created; arrays are **not**. Integers stay integers (`UseNumber`). Live JSON `null` is present; a missing name is not. Replicas install a **full document snapshot** (`FlagJSON`). Replica `JsonGet` may lag.
 
 ## Enabling GitHub Pages
 

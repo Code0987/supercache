@@ -24,6 +24,9 @@ const (
 	FlagHashSet   uint32 = 1 << 17 // fan-out: single field/value
 	FlagHashDel   uint32 = 1 << 18 // fan-out: field to remove
 	FlagCounter   uint32 = 1 << 19 // value is 8-byte LE int64 snapshot
+	FlagJSON      uint32 = 1 << 20 // value is encoded JSON document snapshot
+	FlagJSONSet   uint32 = 1 << 21 // owner-inbox: path + JSON value
+	FlagJSONDel   uint32 = 1 << 22 // owner-inbox: path
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -125,6 +128,18 @@ func (e Entry) IsHashDel() bool {
 
 func (e Entry) IsCounter() bool {
 	return e.Flags&FlagCounter != 0
+}
+
+func (e Entry) IsJSON() bool {
+	return e.Flags&FlagJSON != 0
+}
+
+func (e Entry) IsJSONSet() bool {
+	return e.Flags&FlagJSONSet != 0
+}
+
+func (e Entry) IsJSONDel() bool {
+	return e.Flags&FlagJSONDel != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

@@ -102,6 +102,12 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdIncr(ctx, sess, args)
 	case "cget":
 		return cmdCGet(ctx, sess, args)
+	case "jsonset":
+		return cmdJSONSet(ctx, sess, args)
+	case "jsonget":
+		return cmdJSONGet(ctx, sess, args)
+	case "jsondel":
+		return cmdJSONDel(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -1123,6 +1129,75 @@ func cmdCGet(ctx context.Context, sess *session, args []string) int {
 		return 1
 	}
 	fmt.Println(v)
+	return 0
+}
+
+func cmdJSONSet(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: jsonset <name> <path> <json...>")
+		return 2
+	}
+	name, path, value := args[0], args[1], strings.Join(args[2:], " ")
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.JsonSet(ctx, sess.cfg.keyspace, name, path, []byte(value))
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "jsonset: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK jsonset %s %s\n", name, path)
+	}
+	return 0
+}
+
+func cmdJSONGet(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: jsonget <name> [path]")
+		return 2
+	}
+	path := "$"
+	if len(args) >= 2 {
+		path = args[1]
+	}
+	var v []byte
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		v, ok, e = cli.JsonGet(ctx, sess.cfg.keyspace, args[0], path)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "jsonget: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(string(v))
+	return 0
+}
+
+func cmdJSONDel(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: jsondel <name> [path]")
+		return 2
+	}
+	path := "$"
+	if len(args) >= 2 {
+		path = args[1]
+	}
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.JsonDel(ctx, sess.cfg.keyspace, args[0], path)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "jsondel: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK jsondel %s %s\n", args[0], path)
+	}
 	return 0
 }
 

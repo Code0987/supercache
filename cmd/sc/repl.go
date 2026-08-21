@@ -219,6 +219,7 @@ func printREPLHelp() {
   lpush|rpush|lpop|rpop|llen|lindex|lrange   ModeList
   hset|hget|hdel|hexists|hlen|hgetall   ModeHash
   incr|cget   ModeCounter
+  jsonset|jsonget|jsondel   ModeJSON
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

@@ -358,6 +358,13 @@ func (e *Engine) GetOrLoadLocal(ctx context.Context, keyspaceName, key string) (
 		}
 		return ent, nil
 	}
+	if ks.cfg.Mode == keyspace.ModeJSON {
+		ent, ok := ks.store.Peek(key)
+		if !ok || ent.IsTombstone() || !ent.IsJSON() {
+			return store.Entry{}, ErrNotFound
+		}
+		return ent, nil
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {

@@ -153,6 +153,17 @@ type Store interface {
 	// CInstall installs a versioned counter snapshot (incoming > local).
 	CInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// JSet upserts JSON at path (creates the document if missing).
+	JSet(key, path string, raw []byte, version uint64, expireAt int64, maxValue int) (applied, tooLarge bool)
+	// JDel removes the node at path. Missing name: (true, false), no insert.
+	JDel(key, path string, version uint64, expireAt int64) (ok, mutated bool)
+	// JGet returns a copy of the JSON at path. Missing path → false.
+	JGet(key, path string) (json []byte, ok bool)
+	// HasJSON reports a live unexpired FlagJSON entry (including JSON null).
+	HasJSON(key string) bool
+	// JInstall installs a versioned full-document snapshot (incoming > local).
+	JInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }
