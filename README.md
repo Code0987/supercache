@@ -64,7 +64,7 @@ Optional: `-gossip-secret <key>`.
 ### CLI (`sc`)
 
 ```bash
-# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile):
+# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile + doc):
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
@@ -80,8 +80,8 @@ go run ./cmd/sc -keyspace profile hset user email a@b
 go run ./cmd/sc -keyspace profile hgetall user
 # ModeCounter (register a ModeCounter keyspace; not in -demo-keyspace):
 # go run ./cmd/sc -keyspace rl incr alice:1
-# ModeJSON (register a ModeJSON keyspace; not in -demo-keyspace):
-# go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
+go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
+go run ./cmd/sc -keyspace doc jsonget user $.name
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 go run ./cmd/sc peers              # admin HTTP
 
@@ -143,7 +143,7 @@ See [examples/ratelimit/README.md](./examples/ratelimit/README.md).
 go run ./examples/json   # 3-node in-process walkthrough (path set/get/del)
 ```
 
-See [examples/json/README.md](./examples/json/README.md). Register a `ModeJSON` keyspace; there is no default demo name.
+See [examples/json/README.md](./examples/json/README.md). `sc -keyspace doc` talks to the node demo keyspace.
 
 ### TLS (production)
 
@@ -180,7 +180,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile) |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc) |
 | `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 

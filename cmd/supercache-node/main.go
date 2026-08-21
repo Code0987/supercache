@@ -122,7 +122,16 @@ func main() {
 		}); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash")
+		// ModeJSON for nested documents (path set/get/del).
+		if err := eng.UpdateKeySpace(keyspace.Config{
+			Name:     "doc",
+			Mode:     keyspace.ModeJSON,
+			MaxBytes: 16 << 20,
+			TTL:      30 * time.Minute,
+		}); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON")
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(

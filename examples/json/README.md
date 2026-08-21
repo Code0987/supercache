@@ -20,8 +20,8 @@ This is the shape you want for a nested profile or session blob — not a
 | RF=2 | Two nodes keep a local snapshot |
 | No auto array | `$.a[0]` on `{}` is invalid |
 
-No default `-demo-keyspace` JSON keyspace. The `go run` path starts its
-**own** in-process mesh (ephemeral ports).
+No new default process flags beyond `-demo-keyspace` (see below). The
+`go run` path starts its **own** in-process mesh (ephemeral ports).
 
 ## Run
 
@@ -32,18 +32,38 @@ go run ./examples/json
 
 CI covers the same path: `go test ./examples/json`.
 
-## Manual `sc` (register a ModeJSON keyspace yourself)
+## Manual `sc` against a node
+
+`supercache-node -demo-keyspace` (the default) now also registers
+**`doc`** (`ModeJSON`).
 
 `sc jsonset` joins remaining args like `put` / `hset`. The server rejects
 non-JSON, so quote string values:
 
 ```bash
-sc -keyspace doc jsonset user $ '{"name":"Ada","n":1}'
-sc -keyspace doc jsonset user $.name '"Ada"'
-sc -keyspace doc jsonset user $.n 1
-sc -keyspace doc jsonget user $.n
-sc -keyspace doc jsonget user
-sc -keyspace doc jsondel user $.name
-sc -keyspace doc jsondel user          # clear to {}
-sc -keyspace doc del user              # tombstone
+# terminal 1
+go run ./cmd/supercache-node \
+  -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
+
+# terminal 2
+go run ./cmd/sc -keyspace doc jsonset user $ '{"name":"Ada","n":1}'
+go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
+go run ./cmd/sc -keyspace doc jsonset user $.n 1
+go run ./cmd/sc -keyspace doc jsonget user $.n
+go run ./cmd/sc -keyspace doc jsonget user
+go run ./cmd/sc -keyspace doc jsondel user $.name
+go run ./cmd/sc -keyspace doc jsondel user          # clear to {}
+go run ./cmd/sc -keyspace doc del user              # tombstone
 ```
+
+`jsonget` of a missing path prints `(nil)` and exits 1.
+
+Wrong mode (e.g. `jsonset` on `demo` / `get` on `doc`) → invalid argument.
+
+## Contract reminders
+
+- Owner applies the op, then fans out a full `FlagJSON` snapshot.
+- A replica that already has the document answers `JsonGet` **locally**
+  (a missing path is a miss, not an owner-forward). Replica reads may lag.
+- Hint identity is still `(keyspace, name)` — that is why fan-out is a snapshot.
+- Design: [docs/design/2026-08-21-mode-json.md](../../docs/design/2026-08-21-mode-json.md).
