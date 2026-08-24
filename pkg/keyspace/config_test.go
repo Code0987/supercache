@@ -87,6 +87,9 @@ func TestModeString(t *testing.T) {
 	if ModeJSON.String() != "JSON" {
 		t.Fatal(ModeJSON.String())
 	}
+	if ModeBitmap.String() != "Bitmap" {
+		t.Fatal(ModeBitmap.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}

@@ -430,6 +430,37 @@ func (s *Server) JsonDel(ctx context.Context, req *cachev1.JsonDelRequest) (*cac
 	return &cachev1.JsonDelResponse{}, nil
 }
 
+func (s *Server) BitSet(ctx context.Context, req *cachev1.BitSetRequest) (*cachev1.BitSetResponse, error) {
+	if err := s.eng.BitSet(ctx, req.Keyspace, req.Name, req.Offset, req.Bit); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.BitSetResponse{}, nil
+}
+
+func (s *Server) BitGet(ctx context.Context, req *cachev1.BitGetRequest) (*cachev1.BitGetResponse, error) {
+	bit, ok, err := s.eng.BitGet(ctx, req.Keyspace, req.Name, req.Offset)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.BitGetResponse{Present: ok, Bit: bit}, nil
+}
+
+func (s *Server) BitCount(ctx context.Context, req *cachev1.BitCountRequest) (*cachev1.BitCountResponse, error) {
+	n, err := s.eng.BitCount(ctx, req.Keyspace, req.Name, int(req.Start), int(req.End))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.BitCountResponse{Count: n}, nil
+}
+
+func (s *Server) BitPos(ctx context.Context, req *cachev1.BitPosRequest) (*cachev1.BitPosResponse, error) {
+	pos, found, err := s.eng.BitPos(ctx, req.Keyspace, req.Name, req.Bit, int(req.Start), int(req.End))
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.BitPosResponse{Found: found, Pos: pos}, nil
+}
+
 func hashFieldsToProto(in []engine.HashField) []*cachev1.HashField {
 	if len(in) == 0 {
 		return nil

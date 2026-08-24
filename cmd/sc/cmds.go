@@ -108,6 +108,14 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdJSONGet(ctx, sess, args)
 	case "jsondel":
 		return cmdJSONDel(ctx, sess, args)
+	case "bitset":
+		return cmdBitSet(ctx, sess, args)
+	case "bitget":
+		return cmdBitGet(ctx, sess, args)
+	case "bitcount":
+		return cmdBitCount(ctx, sess, args)
+	case "bitpos":
+		return cmdBitPos(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -1198,6 +1206,152 @@ func cmdJSONDel(ctx context.Context, sess *session, args []string) int {
 	if !sess.cfg.quiet {
 		fmt.Printf("OK jsondel %s %s\n", args[0], path)
 	}
+	return 0
+}
+
+func cmdBitSet(ctx context.Context, sess *session, args []string) int {
+	if len(args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: bitset <name> <offset> <0|1>")
+		return 2
+	}
+	off, err := strconv.ParseUint(args[1], 10, 64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitset: bad offset %q: %v\n", args[1], err)
+		return 2
+	}
+	var bit bool
+	switch args[2] {
+	case "0":
+		bit = false
+	case "1":
+		bit = true
+	default:
+		fmt.Fprintln(os.Stderr, "usage: bitset <name> <offset> <0|1>")
+		return 2
+	}
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		return cli.BitSet(ctx, sess.cfg.keyspace, args[0], off, bit)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitset: %v\n", err)
+		return 1
+	}
+	if !sess.cfg.quiet {
+		fmt.Printf("OK bitset %s %d %s\n", args[0], off, args[2])
+	}
+	return 0
+}
+
+func cmdBitGet(ctx context.Context, sess *session, args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: bitget <name> <offset>")
+		return 2
+	}
+	off, err := strconv.ParseUint(args[1], 10, 64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitget: bad offset %q: %v\n", args[1], err)
+		return 2
+	}
+	var bit, ok bool
+	err = sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		bit, ok, e = cli.BitGet(ctx, sess.cfg.keyspace, args[0], off)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitget: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	if bit {
+		fmt.Println("1")
+	} else {
+		fmt.Println("0")
+	}
+	return 0
+}
+
+func cmdBitCount(ctx context.Context, sess *session, args []string) int {
+	if len(args) != 1 && len(args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: bitcount <name> [start end]")
+		return 2
+	}
+	start, end := 0, -1
+	if len(args) == 3 {
+		var err error
+		start, err = parseInt(args[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bitcount: bad start %q: %v\n", args[1], err)
+			return 2
+		}
+		end, err = parseInt(args[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bitcount: bad end %q: %v\n", args[2], err)
+			return 2
+		}
+	}
+	var n int64
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, e = cli.BitCount(ctx, sess.cfg.keyspace, args[0], start, end)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitcount: %v\n", err)
+		return 1
+	}
+	fmt.Println(n)
+	return 0
+}
+
+func cmdBitPos(ctx context.Context, sess *session, args []string) int {
+	if len(args) != 2 && len(args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: bitpos <name> <0|1> [start end]")
+		return 2
+	}
+	var bit bool
+	switch args[1] {
+	case "0":
+		bit = false
+	case "1":
+		bit = true
+	default:
+		fmt.Fprintln(os.Stderr, "usage: bitpos <name> <0|1> [start end]")
+		return 2
+	}
+	start, end := 0, -1
+	if len(args) == 4 {
+		var err error
+		start, err = parseInt(args[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bitpos: bad start %q: %v\n", args[2], err)
+			return 2
+		}
+		end, err = parseInt(args[3])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bitpos: bad end %q: %v\n", args[3], err)
+			return 2
+		}
+	}
+	var pos int64
+	var found bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		pos, found, e = cli.BitPos(ctx, sess.cfg.keyspace, args[0], bit, start, end)
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bitpos: %v\n", err)
+		return 1
+	}
+	if !found {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(pos)
 	return 0
 }
 

@@ -477,6 +477,35 @@ func (c *Client) JsonDel(ctx context.Context, keyspace, name, path string) error
 	return err
 }
 
+func (c *Client) BitSet(ctx context.Context, keyspace, name string, offset uint64, bit bool) error {
+	_, err := c.api.BitSet(ctx, &cachev1.BitSetRequest{Keyspace: keyspace, Name: name, Offset: offset, Bit: bit})
+	return err
+}
+
+func (c *Client) BitGet(ctx context.Context, keyspace, name string, offset uint64) (bool, bool, error) {
+	resp, err := c.api.BitGet(ctx, &cachev1.BitGetRequest{Keyspace: keyspace, Name: name, Offset: offset})
+	if err != nil {
+		return false, false, err
+	}
+	return resp.GetBit(), resp.GetPresent(), nil
+}
+
+func (c *Client) BitCount(ctx context.Context, keyspace, name string, start, end int) (int64, error) {
+	resp, err := c.api.BitCount(ctx, &cachev1.BitCountRequest{Keyspace: keyspace, Name: name, Start: int32(start), End: int32(end)})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetCount(), nil
+}
+
+func (c *Client) BitPos(ctx context.Context, keyspace, name string, bit bool, start, end int) (int64, bool, error) {
+	resp, err := c.api.BitPos(ctx, &cachev1.BitPosRequest{Keyspace: keyspace, Name: name, Bit: bit, Start: int32(start), End: int32(end)})
+	if err != nil {
+		return 0, false, err
+	}
+	return resp.GetPos(), resp.GetFound(), nil
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil

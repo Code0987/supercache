@@ -82,6 +82,9 @@ go run ./cmd/sc -keyspace profile hgetall user
 # go run ./cmd/sc -keyspace rl incr alice:1
 go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
 go run ./cmd/sc -keyspace doc jsonget user $.name
+# ModeBitmap (register a ModeBitmap keyspace; not in -demo-keyspace):
+# go run ./cmd/sc -keyspace flags bitset seen 0 1
+# go run ./cmd/sc -keyspace flags bitget seen 0
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 go run ./cmd/sc peers              # admin HTTP
 
@@ -145,6 +148,14 @@ go run ./examples/json   # 3-node in-process walkthrough (path set/get/del)
 
 See [examples/json/README.md](./examples/json/README.md). `sc -keyspace doc` talks to the node demo keyspace.
 
+### ModeBitmap packed bits
+
+```bash
+go run ./examples/bitmap   # 3-node in-process walkthrough (BitSet/BitGet/BitCount/BitPos)
+```
+
+See [examples/bitmap/README.md](./examples/bitmap/README.md). ModeBitmap is **not** in `-demo-keyspace` — register a keyspace (example uses `flags`) yourself.
+
 ### TLS (production)
 
 ```bash
@@ -160,9 +171,9 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 | Package | Role |
 |---------|------|
-| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON, keyspaces, cluster routing |
+| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap, keyspaces, cluster routing |
 | `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; structure caches) |
-| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` / `Counter` / `JSON` |
+| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` / `Counter` / `JSON` / `Bitmap` |
 | `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
 | `pkg/set` | Exact set encode/decode for `ModeSet` |
 | `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
@@ -171,6 +182,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/hashx` | Field-map encode for `ModeHash` |
 | `pkg/counter` | int64 encode/add for `ModeCounter` |
 | `pkg/jsonx` | Nested JSON path encode for `ModeJSON` |
+| `pkg/bitmapx` | Packed Redis-order bit vector for `ModeBitmap` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -178,10 +190,10 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
-| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON) |
+| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc) |
-| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, admin diagnostics |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc; no Bitmap KS) |
+| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
 ## Consistency
@@ -193,7 +205,7 @@ SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is asy
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**, **ModeBitmap**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md), [Bitmap](./docs/design/2026-08-21-mode-bitmap.md).
 
 Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 

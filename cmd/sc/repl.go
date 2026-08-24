@@ -220,6 +220,7 @@ func printREPLHelp() {
   hset|hget|hdel|hexists|hlen|hgetall   ModeHash
   incr|cget   ModeCounter
   jsonset|jsonget|jsondel   ModeJSON
+  bitset|bitget|bitcount|bitpos   ModeBitmap
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

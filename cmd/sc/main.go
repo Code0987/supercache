@@ -108,7 +108,8 @@ func run(args []string) int {
 		"lpush", "rpush", "lpop", "rpop", "llen", "lindex", "lrange",
 		"hset", "hget", "hdel", "hexists", "hlen", "hgetall",
 		"incr", "cget",
-		"jsonset", "jsonget", "jsondel":
+		"jsonset", "jsonget", "jsondel",
+		"bitset", "bitget", "bitcount", "bitpos":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -338,6 +339,10 @@ Cache commands (gRPC -addr seeds):
   jsonset <name> <path> <json...>  ModeJSON upsert (quoted JSON: '"Ada"')
   jsonget <name> [path]        ModeJSON get (or (nil)); omitted path = $
   jsondel <name> [path]        ModeJSON delete path; omitted path = $ (clear to {})
+  bitset <name> <offset> <0|1> ModeBitmap SETBIT
+  bitget <name> <offset>       ModeBitmap GETBIT (0/1 or (nil))
+  bitcount <name> [start end]  ModeBitmap BITCOUNT (byte window; omitted = 0 -1)
+  bitpos <name> <0|1> [start end]  ModeBitmap BITPOS
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

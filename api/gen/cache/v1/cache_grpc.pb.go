@@ -61,6 +61,10 @@ const (
 	Cache_JsonSet_FullMethodName       = "/supercache.cache.v1.Cache/JsonSet"
 	Cache_JsonGet_FullMethodName       = "/supercache.cache.v1.Cache/JsonGet"
 	Cache_JsonDel_FullMethodName       = "/supercache.cache.v1.Cache/JsonDel"
+	Cache_BitSet_FullMethodName        = "/supercache.cache.v1.Cache/BitSet"
+	Cache_BitGet_FullMethodName        = "/supercache.cache.v1.Cache/BitGet"
+	Cache_BitCount_FullMethodName      = "/supercache.cache.v1.Cache/BitCount"
+	Cache_BitPos_FullMethodName        = "/supercache.cache.v1.Cache/BitPos"
 )
 
 // CacheClient is the client API for Cache service.
@@ -111,6 +115,10 @@ type CacheClient interface {
 	JsonSet(ctx context.Context, in *JsonSetRequest, opts ...grpc.CallOption) (*JsonSetResponse, error)
 	JsonGet(ctx context.Context, in *JsonGetRequest, opts ...grpc.CallOption) (*JsonGetResponse, error)
 	JsonDel(ctx context.Context, in *JsonDelRequest, opts ...grpc.CallOption) (*JsonDelResponse, error)
+	BitSet(ctx context.Context, in *BitSetRequest, opts ...grpc.CallOption) (*BitSetResponse, error)
+	BitGet(ctx context.Context, in *BitGetRequest, opts ...grpc.CallOption) (*BitGetResponse, error)
+	BitCount(ctx context.Context, in *BitCountRequest, opts ...grpc.CallOption) (*BitCountResponse, error)
+	BitPos(ctx context.Context, in *BitPosRequest, opts ...grpc.CallOption) (*BitPosResponse, error)
 }
 
 type cacheClient struct {
@@ -541,6 +549,46 @@ func (c *cacheClient) JsonDel(ctx context.Context, in *JsonDelRequest, opts ...g
 	return out, nil
 }
 
+func (c *cacheClient) BitSet(ctx context.Context, in *BitSetRequest, opts ...grpc.CallOption) (*BitSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BitSetResponse)
+	err := c.cc.Invoke(ctx, Cache_BitSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) BitGet(ctx context.Context, in *BitGetRequest, opts ...grpc.CallOption) (*BitGetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BitGetResponse)
+	err := c.cc.Invoke(ctx, Cache_BitGet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) BitCount(ctx context.Context, in *BitCountRequest, opts ...grpc.CallOption) (*BitCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BitCountResponse)
+	err := c.cc.Invoke(ctx, Cache_BitCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) BitPos(ctx context.Context, in *BitPosRequest, opts ...grpc.CallOption) (*BitPosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BitPosResponse)
+	err := c.cc.Invoke(ctx, Cache_BitPos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -589,6 +637,10 @@ type CacheServer interface {
 	JsonSet(context.Context, *JsonSetRequest) (*JsonSetResponse, error)
 	JsonGet(context.Context, *JsonGetRequest) (*JsonGetResponse, error)
 	JsonDel(context.Context, *JsonDelRequest) (*JsonDelResponse, error)
+	BitSet(context.Context, *BitSetRequest) (*BitSetResponse, error)
+	BitGet(context.Context, *BitGetRequest) (*BitGetResponse, error)
+	BitCount(context.Context, *BitCountRequest) (*BitCountResponse, error)
+	BitPos(context.Context, *BitPosRequest) (*BitPosResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -724,6 +776,18 @@ func (UnimplementedCacheServer) JsonGet(context.Context, *JsonGetRequest) (*Json
 }
 func (UnimplementedCacheServer) JsonDel(context.Context, *JsonDelRequest) (*JsonDelResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method JsonDel not implemented")
+}
+func (UnimplementedCacheServer) BitSet(context.Context, *BitSetRequest) (*BitSetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BitSet not implemented")
+}
+func (UnimplementedCacheServer) BitGet(context.Context, *BitGetRequest) (*BitGetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BitGet not implemented")
+}
+func (UnimplementedCacheServer) BitCount(context.Context, *BitCountRequest) (*BitCountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BitCount not implemented")
+}
+func (UnimplementedCacheServer) BitPos(context.Context, *BitPosRequest) (*BitPosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BitPos not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1502,6 +1566,78 @@ func _Cache_JsonDel_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_BitSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BitSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BitSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BitSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BitSet(ctx, req.(*BitSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_BitGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BitGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BitGet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BitGet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BitGet(ctx, req.(*BitGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_BitCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BitCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BitCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BitCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BitCount(ctx, req.(*BitCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_BitPos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BitPosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).BitPos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_BitPos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).BitPos(ctx, req.(*BitPosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1676,6 +1812,22 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "JsonDel",
 			Handler:    _Cache_JsonDel_Handler,
+		},
+		{
+			MethodName: "BitSet",
+			Handler:    _Cache_BitSet_Handler,
+		},
+		{
+			MethodName: "BitGet",
+			Handler:    _Cache_BitGet_Handler,
+		},
+		{
+			MethodName: "BitCount",
+			Handler:    _Cache_BitCount_Handler,
+		},
+		{
+			MethodName: "BitPos",
+			Handler:    _Cache_BitPos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
