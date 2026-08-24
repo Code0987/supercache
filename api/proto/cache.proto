@@ -48,6 +48,10 @@ service Cache {
   rpc JsonSet(JsonSetRequest) returns (JsonSetResponse);
   rpc JsonGet(JsonGetRequest) returns (JsonGetResponse);
   rpc JsonDel(JsonDelRequest) returns (JsonDelResponse);
+  rpc BitSet(BitSetRequest) returns (BitSetResponse);
+  rpc BitGet(BitGetRequest) returns (BitGetResponse);
+  rpc BitCount(BitCountRequest) returns (BitCountResponse);
+  rpc BitPos(BitPosRequest) returns (BitPosResponse);
 }
 
 message GetRequest {
@@ -467,3 +471,43 @@ message JsonDelRequest {
   string path = 3;
 }
 message JsonDelResponse {}
+
+message BitSetRequest {
+  string keyspace = 1;
+  string name = 2;
+  uint64 offset = 3;
+  bool bit = 4;
+}
+message BitSetResponse {}
+
+message BitGetRequest {
+  string keyspace = 1;
+  string name = 2;
+  uint64 offset = 3;
+}
+message BitGetResponse {
+  bool present = 1;
+  bool bit = 2;
+}
+
+message BitCountRequest {
+  string keyspace = 1;
+  string name = 2;
+  int32 start = 3;
+  int32 end = 4;
+}
+message BitCountResponse {
+  int64 count = 1;
+}
+
+message BitPosRequest {
+  string keyspace = 1;
+  string name = 2;
+  bool bit = 3;
+  int32 start = 4;
+  int32 end = 5;
+}
+message BitPosResponse {
+  bool found = 1;
+  int64 pos = 2;
+}

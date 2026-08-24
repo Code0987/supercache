@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -44,6 +44,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeHash` | Named field map | `HSet`, `HGet`, `HDel`, `HExists`, `HLen`, `HGetAll`; `Delete(name)` |
 | `ModeCounter` | Named int64 | `Incr`, `CounterGet`; `Delete(name)` |
 | `ModeJSON` | Named nested JSON document | `JsonSet`, `JsonGet`, `JsonDel`; `Delete(name)` |
+| `ModeBitmap` | Named packed bit vector | `BitSet`, `BitGet`, `BitCount`, `BitPos`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -151,6 +152,18 @@ Owner serializes `Incr` (non-owner uses peer `CounterIncr`). Replicas install an
 | `Delete(name)` | Tombstone whole document |
 
 Path subset: `$` / `.ident` / `["utf8"]` / `[n>=0]`. Object parents are created; arrays are **not**. Integers stay integers (`UseNumber`). Live JSON `null` is present; a missing name is not. Replicas install a **full document snapshot** (`FlagJSON`). Replica `JsonGet` may lag.
+
+### Bitmap (`ModeBitmap`)
+
+| RPC | Notes |
+|-----|--------|
+| `BitSet` | Redis `SETBIT`. Creates the bitmap if missing; grows with zero-fill. **ACK-only — does not return the old bit** |
+| `BitGet` | Redis `GETBIT` plus a present-bit. Missing **name** ⇒ `present=false`. Live bitmap, offset past stored length ⇒ `bit=false`, `present=true` |
+| `BitCount` | Redis `BITCOUNT` over an inclusive **byte** window. Missing name ⇒ `0`. Whole bitmap is `start=0`, `end=-1` |
+| `BitPos` | Redis `BITPOS` over an inclusive **byte** window (stored bytes only). Missing name or bit not in window ⇒ `found=false` |
+| `Delete(name)` | Tombstone whole bitmap |
+
+Bit 0 is the **MSB of byte 0** (Redis order, not Bloom LSB). Clearing bits (`BitSet(..., false)`) is not a delete: a live all-zero bitmap stays until `Delete(name)`, and the stored byte length never shrinks. Replicas install a **full packed snapshot** (`FlagBitmap`). Replica `BitGet` may lag. Get/Put on `ModeBitmap` are invalid.
 
 ## Enabling GitHub Pages
 

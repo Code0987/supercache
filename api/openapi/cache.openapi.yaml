@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.8.0
+  version: 0.9.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -30,13 +30,14 @@ info:
     | ModeHash | HSet, HGet, HDel, HExists, HLen, HGetAll; Delete(name) |
     | ModeCounter | Incr, CounterGet; Delete(name) |
     | ModeJSON | JsonSet, JsonGet, JsonDel; Delete(name) |
+    | ModeBitmap | BitSet, BitGet, BitCount, BitPos; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -74,6 +75,8 @@ tags:
     description: Named int64 (ModeCounter)
   - name: JSON
     description: Named nested JSON document (ModeJSON)
+  - name: Bitmap
+    description: Named packed bit vector (ModeBitmap)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -85,7 +88,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap.
       requestBody:
         required: true
         content:
@@ -113,7 +116,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap.
       requestBody:
         required: true
         content:
@@ -986,6 +989,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/Empty"
 
+  /supercache.cache.v1.Cache/BitSet:
+    post:
+      tags: [Bitmap]
+      operationId: Cache_BitSet
+      summary: Set a bit at offset
+      description: |
+        ModeBitmap only. Redis SETBIT. Creates the bitmap if missing; grows with
+        zero-fill. **ACK-only — does not return the old bit.** `bit=false` writes a
+        zero and may grow; it is not a delete. Live all-zero stays until Delete(name).
+        Encoded length over MaxValueSize → InvalidArgument.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BitSetRequest"
+            example:
+              keyspace: flags
+              name: seen
+              offset: 0
+              bit: true
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/BitGet:
+    post:
+      tags: [Bitmap]
+      operationId: Cache_BitGet
+      summary: Get a bit at offset
+      description: |
+        ModeBitmap only. Redis GETBIT plus a present-bit. Missing name → present=false.
+        Live bitmap, offset past stored length → bit=false, present=true.
+        Replica may lag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BitGetRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BitGetResponse"
+
+  /supercache.cache.v1.Cache/BitCount:
+    post:
+      tags: [Bitmap]
+      operationId: Cache_BitCount
+      summary: Count 1-bits in a byte window
+      description: |
+        ModeBitmap only. Redis BITCOUNT over an inclusive **byte** window (not bits).
+        Negatives like List/GETRANGE. Whole bitmap is start=0, end=-1. Missing name → 0.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BitCountRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BitCountResponse"
+
+  /supercache.cache.v1.Cache/BitPos:
+    post:
+      tags: [Bitmap]
+      operationId: Cache_BitPos
+      summary: First matching bit in a byte window
+      description: |
+        ModeBitmap only. Redis BITPOS over an inclusive **byte** window of **stored**
+        bytes only (no implicit past-end bit). Whole bitmap is start=0, end=-1.
+        Missing name or bit not in window → found=false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BitPosRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BitPosResponse"
+
 components:
   schemas:
     Empty:
@@ -1539,3 +1639,84 @@ components:
           type: string
         path:
           type: string
+    BitSetRequest:
+      type: object
+      required: [keyspace, name, offset, bit]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        offset:
+          type: integer
+          format: uint64
+          description: Bit index, 0-based (not a byte offset)
+        bit:
+          type: boolean
+          description: true = 1, false = 0 (writes a zero; not a delete)
+    BitGetRequest:
+      type: object
+      required: [keyspace, name, offset]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        offset:
+          type: integer
+          format: uint64
+    BitGetResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+        bit:
+          type: boolean
+    BitCountRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        start:
+          type: integer
+          format: int32
+          description: Inclusive byte offset (0 + end=-1 = whole bitmap)
+        end:
+          type: integer
+          format: int32
+    BitCountResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int64
+    BitPosRequest:
+      type: object
+      required: [keyspace, name, bit]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        bit:
+          type: boolean
+        start:
+          type: integer
+          format: int32
+          description: Inclusive byte offset (0 + end=-1 = whole bitmap)
+        end:
+          type: integer
+          format: int32
+    BitPosResponse:
+      type: object
+      properties:
+        found:
+          type: boolean
+        pos:
+          type: integer
+          format: int64
+          description: Bit index when found=true

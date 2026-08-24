@@ -164,6 +164,18 @@ type Store interface {
 	// JInstall installs a versioned full-document snapshot (incoming > local).
 	JInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// BSet writes a bit (creates the bitmap if missing).
+	BSet(key string, offset uint64, bit bool, version uint64, expireAt int64, maxValue int) (applied, tooLarge bool)
+	// BGet returns the bit. Missing name → ok=false. Past end of a live value → false, true.
+	BGet(key string, offset uint64) (bit bool, ok bool)
+	// BCount is BITCOUNT over a byte window. Missing → ok=false.
+	BCount(key string, start, end int) (n int64, ok bool)
+	// BPos is BITPOS over a byte window. Missing → ok=false.
+	BPos(key string, bit bool, start, end int) (pos int64, found, ok bool)
+	HasBitmap(key string) bool
+	// BInstall installs a versioned full-bitmap snapshot (incoming > local).
+	BInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

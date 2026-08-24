@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
 | `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
-| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json |
+| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json/bitmap |
 | `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
 | `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
 | `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
@@ -87,13 +87,17 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `jsonset <name> <path> <json...>` | Cache gRPC | `ModeJSON` upsert (`Join` remaining args; must be JSON, e.g. `'"Ada"'`) |
 | `jsonget <name> [path]` | Cache gRPC | Raw JSON or `(nil)`; omitted path = `$`; exit 1 if missing |
 | `jsondel <name> [path]` | Cache gRPC | Remove path; omitted path = `$` (clear to `{}`) |
+| `bitset <name> <offset> <0\|1>` | Cache gRPC | `ModeBitmap` SETBIT (token must be `0` or `1`; no old bit returned) |
+| `bitget <name> <offset>` | Cache gRPC | `0`/`1`, or `(nil)` + exit 1 if name missing |
+| `bitcount <name> [start end]` | Cache gRPC | Count 1-bits; omitted range = whole (`0,-1`); **byte** window |
+| `bitpos <name> <0\|1> [start end]` | Cache gRPC | First matching bit index, or `(nil)` + exit 1; omitted range = whole |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
 | `repl` (or bare `sc` on a TTY) | — | Interactive shell |
 | `version` | — | CLI version |
 
-Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, `profile` ModeHash, `doc` ModeJSON, or your own).
+Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, `profile` ModeHash, `doc` ModeJSON, or your own — ModeBitmap is not a default demo KS).
 
 ## REPL
 

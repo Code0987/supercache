@@ -70,10 +70,11 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeHash` | HSet / HGet / HDel / HExists / HLen / HGetAll / Delete(name) | Field map; item-level fan-out |
 | `ModeCounter` | Incr / CounterGet / Delete(name) | int64; snapshot fan-out; Incr returns new n |
 | `ModeJSON` | JsonSet / JsonGet / JsonDel / Delete(name) | nested JSON; snapshot fan-out; replica JsonGet may lag |
+| `ModeBitmap` | BitSet / BitGet / BitCount / BitPos / Delete(name) | packed bits; snapshot fan-out + owner-inbox; replica BitGet may lag |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash), `doc` (ModeJSON). Geo/List/Counter keyspaces are configured by the app. Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md).
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash), `doc` (ModeJSON). Geo/List/Counter/Bitmap keyspaces are configured by the app (no default Bitmap demo KS). Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md). Bitmap flags: [examples/bitmap](../examples/bitmap/README.md).
 
 ## Consistency cheatsheet
 
@@ -81,7 +82,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON entries. |
+| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap entries. |
 | BloomAdd / BloomTest | `ModeBloom` only. Add ORs bits on the owner and replicas (not LWW of the bitset). Test is local on a replica, owner-forward otherwise. There is no per-item delete. |
 | SetAdd / SetRemove / SetContains | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains is local on a replica, owner-forward otherwise. |
 | ZAdd / ZRem / ZScore / ZRange* | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; handoff ships full encoded zset (`FlagZSet`). |
@@ -90,6 +91,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 | HSet / HGet / HDel / HGetAll | `ModeHash` only. Same ownership as ModeSet; item-level `FlagHashSet` / `FlagHashDel`; handoff `FlagHash`. Replica with a local hash is local-only on field miss (`hintID` still coalesces per name). |
 | Incr / CounterGet | `ModeCounter` only. Owner `Incr` returns the new int64 (peer `CounterIncr` from a non-owner). Replicas install a `FlagCounter` snapshot. Replica `CounterGet` may lag. Overflow is invalid argument. Fixed-window rate limits put the window id in the **name**. |
 | JsonSet / JsonGet / JsonDel | `ModeJSON` only. Owner applies the op then fans out a **full `FlagJSON` snapshot** (inbox flags stay owner-only). Replica `JsonGet` may lag. `JsonDel $` leaves live `{}`. |
+| BitSet / BitGet / BitCount / BitPos | `ModeBitmap` only. Owner applies the op then fans out a **full `FlagBitmap` snapshot** (inbox `FlagBitmapSet` stays owner-only). Replica `BitGet` may lag. Missing name → `BitGet` `ok=false`. Live all-zero stays until `Delete(name)`. `BitSet` is ACK-only (no old bit). |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).

@@ -18,6 +18,7 @@ Do not implement from a draft.
 | [2026-08-20-mode-hash.md](./2026-08-20-mode-hash.md) | `ModeHash` |
 | [2026-08-20-mode-counter.md](./2026-08-20-mode-counter.md) | `ModeCounter` |
 | [2026-08-21-mode-json.md](./2026-08-21-mode-json.md) | `ModeJSON` |
+| [2026-08-21-mode-bitmap.md](./2026-08-21-mode-bitmap.md) | `ModeBitmap` |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
 Product surface docs: [API.md](../API.md), [OPERATIONS.md](../OPERATIONS.md), [OpenAPI](../../api/openapi/cache.openapi.yaml).
