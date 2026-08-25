@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -134,4 +135,43 @@ func TestListDeleteTombstone(t *testing.T) {
 	if applied {
 		t.Fatal("stale snapshot")
 	}
+}
+
+func TestListConcurrentPushVersions(t *testing.T) {
+	e := engine.New()
+	defer e.Close()
+	_ = e.UpdateKeySpace(listKS())
+	ctx := context.Background()
+	_ = e.RPush(ctx, "ls", "q", []byte("seed"))
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = e.RPush(ctx, "ls", "q", []byte("a"))
+	}()
+	go func() {
+		defer wg.Done()
+		_ = e.RPush(ctx, "ls", "q", []byte("b"))
+	}()
+	wg.Wait()
+	ent, err := e.GetOrLoadLocal(ctx, "ls", "q")
+	if err != nil || ent.Version < 3 {
+		t.Fatalf("ver=%d err=%v", ent.Version, err)
+	}
+	got := map[string]bool{}
+	for _, it := range mustListRange(t, e, "q") {
+		got[string(it)] = true
+	}
+	if !got["seed"] || !got["a"] || !got["b"] {
+		t.Fatalf("lost item: %v", got)
+	}
+}
+
+func mustListRange(t *testing.T, e *engine.Engine, name string) [][]byte {
+	t.Helper()
+	r, err := e.LRange(context.Background(), "ls", name, 0, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

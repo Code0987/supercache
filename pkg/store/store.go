@@ -120,9 +120,11 @@ type Store interface {
 	// GeoInstall installs a versioned full geo snapshot.
 	GeoInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// LPush prepends. Incoming version is a tombstone-gate floor; stored = local+1 (or 1 on create).
 	LPush(key string, item []byte, version uint64, expireAt int64) bool
 	RPush(key string, item []byte, version uint64, expireAt int64) bool
 	// LPop pops the head. popped is false if missing/empty. applied is false if version-gated.
+	// Incoming version is a tombstone-gate floor; a successful pop stores local+1.
 	LPop(key string, version uint64, expireAt int64) (item []byte, popped, applied bool)
 	RPop(key string, version uint64, expireAt int64) (item []byte, popped, applied bool)
 	LLen(key string) int
@@ -146,6 +148,7 @@ type Store interface {
 	HInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
 	// CIncr adds delta to a named counter (creates at delta if missing).
+	// Incoming version is a tombstone-gate floor; stored = local+1 (or 1 on create).
 	CIncr(key string, delta int64, version uint64, expireAt int64) (newVal int64, applied, overflow bool)
 	// CGet returns the counter value. Missing / tombstone / non-counter → 0, false.
 	CGet(key string) (int64, bool)

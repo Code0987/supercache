@@ -558,8 +558,14 @@ Mutate (SetAdd / SetRemove / ZAdd / ZRem / GeoAdd / GeoRem / HSet / HDel / Bloom
   5. return OK  // fan-out failures: metric/hint (like Put)
 
 Incr (ModeCounter; List-class snapshot, not step-3 item flag):
-  1. if self != owner → peer.CounterIncr (returns new n); else CIncr + fan-out FlagCounter snapshot
-  2. overflow / wrong type → invalid argument; entry unchanged
+  1. if self != owner → peer.CounterIncr (returns new n)
+  2. else: CIncr under store mutex (stored = local+1); fan-out FlagCounter snapshot at PeekVersion
+  3. overflow / wrong type → invalid argument; entry unchanged
+
+LPush / RPush / LPop / RPop (ModeList; snapshot, not step-3 item flag):
+  1. if self != owner → ApplyPut inbox FlagListLPush / FlagListRPush (push) or peer ListPop (pop)
+  2. else: LPush/RPush/LPop/RPop under store mutex (stored = local+1); fan-out FlagList snapshot at PeekVersion
+  3. replica ApplyPut of inbox flags is ignored
 
 JsonSet / JsonDel (ModeJSON; List-class snapshot, not step-3 item flag):
   1. if self != owner → ApplyPut inbox FlagJSONSet / FlagJSONDel (ACK-only)

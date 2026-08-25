@@ -2,6 +2,7 @@ package store
 
 import (
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,5 +104,56 @@ func TestStoreCInstallVersionGate(t *testing.T) {
 	}
 	if m.HasCounter("c") {
 		t.Fatal("has")
+	}
+}
+
+func TestStoreCIncrStoredVersion(t *testing.T) {
+	m := NewMemory(1 << 20)
+	defer m.Close()
+	if _, ok, _ := m.CIncr("c", 1, 99, 0); !ok {
+		t.Fatal("create")
+	}
+	ent, present := m.Peek("c")
+	if !present || ent.Version != 1 {
+		t.Fatalf("create ver=%d", ent.Version)
+	}
+	if _, ok, _ := m.CIncr("c", 1, 99, 0); !ok {
+		t.Fatal("second")
+	}
+	ent, _ = m.Peek("c")
+	if ent.Version != 2 {
+		t.Fatalf("second ver=%d", ent.Version)
+	}
+	if _, ok, _ := m.CIncr("c", 1, 99, 0); !ok {
+		t.Fatal("third")
+	}
+	ent, _ = m.Peek("c")
+	if ent.Version != 3 {
+		t.Fatalf("gate not written: ver=%d", ent.Version)
+	}
+}
+
+func TestStoreConcurrentCIncrVersions(t *testing.T) {
+	m := NewMemory(1 << 20)
+	defer m.Close()
+	m.CIncr("c", 1, 1, 0)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		m.CIncr("c", 1, 1, 0)
+	}()
+	go func() {
+		defer wg.Done()
+		m.CIncr("c", 1, 1, 0)
+	}()
+	wg.Wait()
+	ent, _ := m.Peek("c")
+	if ent.Version < 3 {
+		t.Fatalf("ver=%d", ent.Version)
+	}
+	v, ok := m.CGet("c")
+	if !ok || v != 3 {
+		t.Fatalf("value=%d ok=%v", v, ok)
 	}
 }
