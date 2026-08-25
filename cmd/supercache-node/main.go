@@ -131,7 +131,16 @@ func main() {
 		}); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON")
+		// ModeBitmap for packed flags (SETBIT / GETBIT / BITCOUNT / BITPOS).
+		if err := eng.UpdateKeySpace(keyspace.Config{
+			Name:     "flags",
+			Mode:     keyspace.ModeBitmap,
+			MaxBytes: 16 << 20,
+			TTL:      30 * time.Minute,
+		}); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON flags=ModeBitmap")
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(

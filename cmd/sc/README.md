@@ -97,7 +97,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `repl` (or bare `sc` on a TTY) | — | Interactive shell |
 | `version` | — | CLI version |
 
-Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, `profile` ModeHash, `doc` ModeJSON, or your own — ModeBitmap is not a default demo KS).
+Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, `profile` ModeHash, `doc` ModeJSON, `flags` ModeBitmap, or your own).
 
 ## REPL
 
