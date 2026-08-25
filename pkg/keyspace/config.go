@@ -38,6 +38,8 @@ const (
 	ModeJSON
 	// ModeBitmap is a named packed bit vector (BitSet / BitGet / BitCount / BitPos).
 	ModeBitmap
+	// ModeHLL is a named HyperLogLog sketch (HLLAdd / HLLCount).
+	ModeHLL
 )
 
 func (m Mode) String() string {
@@ -64,6 +66,8 @@ func (m Mode) String() string {
 		return "JSON"
 	case ModeBitmap:
 		return "Bitmap"
+	case ModeHLL:
+		return "HLL"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -166,6 +170,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxBytes < 0 {
 		return errors.New("keyspace: MaxBytes must be >= 0")
+	}
+	if c.Mode == ModeHLL && c.MaxValueSize > 0 && c.MaxValueSize < 12288 {
+		return fmt.Errorf("keyspace: ModeHLL MaxValueSize %d < 12288", c.MaxValueSize)
 	}
 	if c.Mode == ModeBloom {
 		bits := c.EffectiveBloomBits()

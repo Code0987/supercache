@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.9.0
+  version: 0.10.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -31,13 +31,14 @@ info:
     | ModeCounter | Incr, CounterGet; Delete(name) |
     | ModeJSON | JsonSet, JsonGet, JsonDel; Delete(name) |
     | ModeBitmap | BitSet, BitGet, BitCount, BitPos; Delete(name) |
+    | ModeHLL | HLLAdd, HLLCount; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -77,6 +78,8 @@ tags:
     description: Named nested JSON document (ModeJSON)
   - name: Bitmap
     description: Named packed bit vector (ModeBitmap)
+  - name: HLL
+    description: Named HyperLogLog sketch (ModeHLL)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -1086,6 +1089,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/BitPosResponse"
 
+  /supercache.cache.v1.Cache/HLLAdd:
+    post:
+      tags: [HLL]
+      operationId: Cache_HLLAdd
+      summary: Add an item to a HyperLogLog sketch
+      description: |
+        ModeHLL only. Redis PFADD. Creates the sketch if missing. **ACK-only —
+        does not return whether any register changed.** Empty item → InvalidArgument.
+        Dense sketch is 12288 bytes; MaxValueSize below that → InvalidArgument.
+        Estimates use FNV-1a 64, p=14 — they will not match Redis PFCOUNT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HLLAddRequest"
+            example:
+              keyspace: uniq
+              name: visitors
+              item: YWxpY2U=
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/HLLCount:
+    post:
+      tags: [HLL]
+      operationId: Cache_HLLCount
+      summary: Approximate distinct count
+      description: |
+        ModeHLL only. Redis PFCOUNT plus a present-bit. Missing name → present=false.
+        Live sketch (including estimate 0) → present=true. Replica may lag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HLLCountRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HLLCountResponse"
+
 components:
   schemas:
     Empty:
@@ -1720,3 +1773,33 @@ components:
           type: integer
           format: int64
           description: Bit index when found=true
+    HLLAddRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+          description: Item bytes to hash (not stored)
+    HLLCountRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+    HLLCountResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+        count:
+          type: integer
+          format: uint64
+          description: Approximate distinct count when present=true

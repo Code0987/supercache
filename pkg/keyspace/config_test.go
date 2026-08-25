@@ -90,6 +90,9 @@ func TestModeString(t *testing.T) {
 	if ModeBitmap.String() != "Bitmap" {
 		t.Fatal(ModeBitmap.String())
 	}
+	if ModeHLL.String() != "HLL" {
+		t.Fatal(ModeHLL.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}
@@ -116,6 +119,12 @@ func TestValidate(t *testing.T) {
 		Name: "bf", Mode: ModeBloom, BloomBits: 1024, BloomHashes: 3, MaxBytes: 10,
 	}).Validate(); err == nil {
 		t.Fatal("bitset exceeds MaxBytes")
+	}
+	if err := (Config{Name: "h", Mode: ModeHLL, MaxValueSize: 100}).Validate(); err == nil {
+		t.Fatal("ModeHLL MaxValueSize < 12288")
+	}
+	if err := (Config{Name: "h", Mode: ModeHLL, MaxValueSize: 12288}).Validate(); err != nil {
+		t.Fatal(err)
 	}
 	// Happy paths
 	if err := (Config{Name: "c", Mode: ModeCacheOnly, MaxBytes: 1 << 20}).Validate(); err != nil {

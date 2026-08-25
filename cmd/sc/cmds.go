@@ -116,6 +116,10 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdBitCount(ctx, sess, args)
 	case "bitpos":
 		return cmdBitPos(ctx, sess, args)
+	case "hlladd":
+		return cmdHLLAdd(ctx, sess, args)
+	case "hllcount":
+		return cmdHLLCount(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2
@@ -1352,6 +1356,51 @@ func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 		return 1
 	}
 	fmt.Println(pos)
+	return 0
+}
+
+func cmdHLLAdd(ctx context.Context, sess *session, args []string) int {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: hlladd <name> <item...>")
+		return 2
+	}
+	name := args[0]
+	for _, item := range args[1:] {
+		err := sess.withClient(func(cli *client.Client, _ string) error {
+			return cli.HLLAdd(ctx, sess.cfg.keyspace, name, []byte(item))
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "hlladd: %v\n", err)
+			return 1
+		}
+		if !sess.cfg.quiet {
+			fmt.Printf("OK hlladd %s %s\n", name, item)
+		}
+	}
+	return 0
+}
+
+func cmdHLLCount(ctx context.Context, sess *session, args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: hllcount <name>")
+		return 2
+	}
+	var n uint64
+	var ok bool
+	err := sess.withClient(func(cli *client.Client, _ string) error {
+		var e error
+		n, ok, e = cli.HLLCount(ctx, sess.cfg.keyspace, args[0])
+		return e
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hllcount: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Println("(nil)")
+		return 1
+	}
+	fmt.Println(n)
 	return 0
 }
 

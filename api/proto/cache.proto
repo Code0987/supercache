@@ -52,6 +52,8 @@ service Cache {
   rpc BitGet(BitGetRequest) returns (BitGetResponse);
   rpc BitCount(BitCountRequest) returns (BitCountResponse);
   rpc BitPos(BitPosRequest) returns (BitPosResponse);
+  rpc HLLAdd(HLLAddRequest) returns (HLLAddResponse);
+  rpc HLLCount(HLLCountRequest) returns (HLLCountResponse);
 }
 
 message GetRequest {
@@ -510,4 +512,20 @@ message BitPosRequest {
 message BitPosResponse {
   bool found = 1;
   int64 pos = 2;
+}
+
+message HLLAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+message HLLAddResponse {}
+
+message HLLCountRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message HLLCountResponse {
+  bool present = 1;
+  uint64 count = 2;
 }

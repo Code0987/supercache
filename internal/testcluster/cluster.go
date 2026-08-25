@@ -240,8 +240,13 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, _, biterr := cli.BitGet(ctx, ks, "__testcluster_ready__", 0)
-		_ = cli.Close()
 		if biterr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, herr2 := cli.HLLCount(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if herr2 == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

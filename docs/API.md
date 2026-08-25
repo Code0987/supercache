@@ -45,6 +45,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeCounter` | Named int64 | `Incr`, `CounterGet`; `Delete(name)` |
 | `ModeJSON` | Named nested JSON document | `JsonSet`, `JsonGet`, `JsonDel`; `Delete(name)` |
 | `ModeBitmap` | Named packed bit vector | `BitSet`, `BitGet`, `BitCount`, `BitPos`; `Delete(name)` |
+| `ModeHLL` | Named HyperLogLog sketch | `HLLAdd`, `HLLCount`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
 
@@ -164,6 +165,16 @@ Path subset: `$` / `.ident` / `["utf8"]` / `[n>=0]`. Object parents are created;
 | `Delete(name)` | Tombstone whole bitmap |
 
 Bit 0 is the **MSB of byte 0** (Redis order, not Bloom LSB). Clearing bits (`BitSet(..., false)`) is not a delete: a live all-zero bitmap stays until `Delete(name)`, and the stored byte length never shrinks. Replicas install a **full packed snapshot** (`FlagBitmap`). Replica `BitGet` may lag. Get/Put on `ModeBitmap` are invalid.
+
+### HyperLogLog (`ModeHLL`)
+
+| RPC | Notes |
+|-----|--------|
+| `HLLAdd` | Redis `PFADD`. Creates the sketch if missing. **ACK-only — does not return whether any register changed** |
+| `HLLCount` | Approximate distinct count plus a present-bit. Missing **name** ⇒ `present=false`. Live sketch (including estimate 0) ⇒ `present=true` |
+| `Delete(name)` | Tombstone whole sketch |
+
+One named sketch, FNV-1a 64, `p=14`, dense 12 KiB. Items are hashed, not stored. Empty item is invalid. Estimates **will not** match Redis `PFCOUNT` (different hash, no sparse/bias tables). Replicas install a **full register snapshot** (`FlagHLL`). Replica `HLLCount` may lag. Get/Put on `ModeHLL` are invalid. `PFMERGE` is not v1.
 
 ## Enabling GitHub Pages
 

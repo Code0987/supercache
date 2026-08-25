@@ -506,6 +506,19 @@ func (c *Client) BitPos(ctx context.Context, keyspace, name string, bit bool, st
 	return resp.GetPos(), resp.GetFound(), nil
 }
 
+func (c *Client) HLLAdd(ctx context.Context, keyspace, name string, item []byte) error {
+	_, err := c.api.HLLAdd(ctx, &cachev1.HLLAddRequest{Keyspace: keyspace, Name: name, Item: item})
+	return err
+}
+
+func (c *Client) HLLCount(ctx context.Context, keyspace, name string) (uint64, bool, error) {
+	resp, err := c.api.HLLCount(ctx, &cachev1.HLLCountRequest{Keyspace: keyspace, Name: name})
+	if err != nil {
+		return 0, false, err
+	}
+	return resp.GetCount(), resp.GetPresent(), nil
+}
+
 func geoMembersFromProto(in []*cachev1.GeoMember) []GeoMember {
 	if len(in) == 0 {
 		return nil
