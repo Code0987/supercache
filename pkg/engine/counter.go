@@ -88,15 +88,12 @@ func (e *Engine) cIncrLocal(ks *ksRuntime, name string, delta int64, fanout bool
 	ver, _ := ks.store.PeekVersion(name)
 	ks.observeVersion(name, ver)
 	if fanout {
-		ent, ok := ks.store.Peek(name)
-		if ok && ent.IsCounter() {
-			e.replicate(ks.cfg.Name, name, store.Entry{
-				Value:    ent.Value,
-				Version:  ver,
-				ExpireAt: expire,
-				Flags:    store.FlagCounter,
-			}, false)
-		}
+		e.replicate(ks.cfg.Name, name, store.Entry{
+			Value:    counter.Encode(n),
+			Version:  ver,
+			ExpireAt: expire,
+			Flags:    store.FlagCounter,
+		}, false)
 	}
 	return n, nil
 }

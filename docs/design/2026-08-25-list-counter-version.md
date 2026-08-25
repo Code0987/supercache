@@ -28,7 +28,7 @@ if live entry or replacing tombstone:     stored = local.Version + 1
 incoming `version` argument:              tombstone-gate floor only
 ```
 
-Engine fans **`PeekVersion` after the store write** (and `observeVersion` that value). Never fan the pre-lock candidate. Counter fans the post-write snapshot (Peek), not `Encode(n)` paired with a pre-lock version.
+Engine fans **`PeekVersion` after the store write** (and `observeVersion` that value). Never fan the pre-lock candidate. Counter fans `Encode(n)` with that post-write version (n is the store result; do not Peek-clone the 8-byte blob).
 
 Applies to: store `LPush` / `RPush` / `LPop` / `RPop` / `CIncr`; engine `lPushLocal` / `lPopLocal` / `applyListLPush` / `applyListRPush` / `cIncrLocal`.
 
