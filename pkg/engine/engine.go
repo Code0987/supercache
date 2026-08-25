@@ -272,6 +272,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeBitmap {
 		return nil, fmt.Errorf("%w: use BitGet", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeHLL {
+		return nil, fmt.Errorf("%w: use HLLCount", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -484,6 +487,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		}
 		if ks.cfg.Mode == keyspace.ModeBitmap {
 			return fmt.Errorf("%w: use BitSet", ErrInvalidArgument)
+		}
+		if ks.cfg.Mode == keyspace.ModeHLL {
+			return fmt.Errorf("%w: use HLLAdd", ErrInvalidArgument)
 		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
@@ -712,6 +718,17 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsBitmap() {
 		return e.applyBitmapInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsHLLAdd() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		return e.applyHLLAdd(ks, key, ent.Value, ent.ExpireAt), nil
+	}
+	if ent.IsHLL() {
+		return e.applyHLLInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

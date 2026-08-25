@@ -461,6 +461,21 @@ func (s *Server) BitPos(ctx context.Context, req *cachev1.BitPosRequest) (*cache
 	return &cachev1.BitPosResponse{Found: found, Pos: pos}, nil
 }
 
+func (s *Server) HLLAdd(ctx context.Context, req *cachev1.HLLAddRequest) (*cachev1.HLLAddResponse, error) {
+	if err := s.eng.HLLAdd(ctx, req.Keyspace, req.Name, req.Item); err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HLLAddResponse{}, nil
+}
+
+func (s *Server) HLLCount(ctx context.Context, req *cachev1.HLLCountRequest) (*cachev1.HLLCountResponse, error) {
+	n, ok, err := s.eng.HLLCount(ctx, req.Keyspace, req.Name)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &cachev1.HLLCountResponse{Present: ok, Count: n}, nil
+}
+
 func hashFieldsToProto(in []engine.HashField) []*cachev1.HashField {
 	if len(in) == 0 {
 		return nil

@@ -29,6 +29,8 @@ const (
 	FlagJSONDel   uint32 = 1 << 22 // owner-inbox: path
 	FlagBitmap    uint32 = 1 << 23 // value is packed Redis-order bit string snapshot
 	FlagBitmapSet uint32 = 1 << 24 // owner-inbox: uvarint(offset) + 0/1
+	FlagHLL       uint32 = 1 << 25 // value is dense 12 KiB register snapshot
+	FlagHLLAdd    uint32 = 1 << 26 // owner-inbox: raw item bytes
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -150,6 +152,14 @@ func (e Entry) IsBitmap() bool {
 
 func (e Entry) IsBitmapSet() bool {
 	return e.Flags&FlagBitmapSet != 0
+}
+
+func (e Entry) IsHLL() bool {
+	return e.Flags&FlagHLL != 0
+}
+
+func (e Entry) IsHLLAdd() bool {
+	return e.Flags&FlagHLLAdd != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

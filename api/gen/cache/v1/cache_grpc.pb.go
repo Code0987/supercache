@@ -65,6 +65,8 @@ const (
 	Cache_BitGet_FullMethodName        = "/supercache.cache.v1.Cache/BitGet"
 	Cache_BitCount_FullMethodName      = "/supercache.cache.v1.Cache/BitCount"
 	Cache_BitPos_FullMethodName        = "/supercache.cache.v1.Cache/BitPos"
+	Cache_HLLAdd_FullMethodName        = "/supercache.cache.v1.Cache/HLLAdd"
+	Cache_HLLCount_FullMethodName      = "/supercache.cache.v1.Cache/HLLCount"
 )
 
 // CacheClient is the client API for Cache service.
@@ -119,6 +121,8 @@ type CacheClient interface {
 	BitGet(ctx context.Context, in *BitGetRequest, opts ...grpc.CallOption) (*BitGetResponse, error)
 	BitCount(ctx context.Context, in *BitCountRequest, opts ...grpc.CallOption) (*BitCountResponse, error)
 	BitPos(ctx context.Context, in *BitPosRequest, opts ...grpc.CallOption) (*BitPosResponse, error)
+	HLLAdd(ctx context.Context, in *HLLAddRequest, opts ...grpc.CallOption) (*HLLAddResponse, error)
+	HLLCount(ctx context.Context, in *HLLCountRequest, opts ...grpc.CallOption) (*HLLCountResponse, error)
 }
 
 type cacheClient struct {
@@ -589,6 +593,26 @@ func (c *cacheClient) BitPos(ctx context.Context, in *BitPosRequest, opts ...grp
 	return out, nil
 }
 
+func (c *cacheClient) HLLAdd(ctx context.Context, in *HLLAddRequest, opts ...grpc.CallOption) (*HLLAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HLLAddResponse)
+	err := c.cc.Invoke(ctx, Cache_HLLAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) HLLCount(ctx context.Context, in *HLLCountRequest, opts ...grpc.CallOption) (*HLLCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HLLCountResponse)
+	err := c.cc.Invoke(ctx, Cache_HLLCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -641,6 +665,8 @@ type CacheServer interface {
 	BitGet(context.Context, *BitGetRequest) (*BitGetResponse, error)
 	BitCount(context.Context, *BitCountRequest) (*BitCountResponse, error)
 	BitPos(context.Context, *BitPosRequest) (*BitPosResponse, error)
+	HLLAdd(context.Context, *HLLAddRequest) (*HLLAddResponse, error)
+	HLLCount(context.Context, *HLLCountRequest) (*HLLCountResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -788,6 +814,12 @@ func (UnimplementedCacheServer) BitCount(context.Context, *BitCountRequest) (*Bi
 }
 func (UnimplementedCacheServer) BitPos(context.Context, *BitPosRequest) (*BitPosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BitPos not implemented")
+}
+func (UnimplementedCacheServer) HLLAdd(context.Context, *HLLAddRequest) (*HLLAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HLLAdd not implemented")
+}
+func (UnimplementedCacheServer) HLLCount(context.Context, *HLLCountRequest) (*HLLCountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HLLCount not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1638,6 +1670,42 @@ func _Cache_BitPos_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_HLLAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HLLAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HLLAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HLLAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HLLAdd(ctx, req.(*HLLAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_HLLCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HLLCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).HLLCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_HLLCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).HLLCount(ctx, req.(*HLLCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1828,6 +1896,14 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BitPos",
 			Handler:    _Cache_BitPos_Handler,
+		},
+		{
+			MethodName: "HLLAdd",
+			Handler:    _Cache_HLLAdd_Handler,
+		},
+		{
+			MethodName: "HLLCount",
+			Handler:    _Cache_HLLCount_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

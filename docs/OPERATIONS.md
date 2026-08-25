@@ -71,10 +71,11 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeCounter` | Incr / CounterGet / Delete(name) | int64; snapshot fan-out; Incr returns new n |
 | `ModeJSON` | JsonSet / JsonGet / JsonDel / Delete(name) | nested JSON; snapshot fan-out; replica JsonGet may lag |
 | `ModeBitmap` | BitSet / BitGet / BitCount / BitPos / Delete(name) | packed bits; snapshot fan-out + owner-inbox; replica BitGet may lag |
+| `ModeHLL` | HLLAdd / HLLCount / Delete(name) | dense 12 KiB sketch; snapshot fan-out + owner-inbox; replica HLLCount may lag |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash), `doc` (ModeJSON), `flags` (ModeBitmap). Geo/List/Counter keyspaces are configured by the app. Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md). Bitmap flags: [examples/bitmap](../examples/bitmap/README.md).
+Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash), `doc` (ModeJSON), `flags` (ModeBitmap). Geo/List/Counter keyspaces are configured by the app. Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md). Bitmap flags: [examples/bitmap](../examples/bitmap/README.md). HLL sketch: [examples/hll](../examples/hll/README.md).
 
 ## Consistency cheatsheet
 
@@ -92,6 +93,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 | Incr / CounterGet | `ModeCounter` only. Owner `Incr` returns the new int64 (peer `CounterIncr` from a non-owner). Replicas install a `FlagCounter` snapshot. Replica `CounterGet` may lag. Overflow is invalid argument. Fixed-window rate limits put the window id in the **name**. |
 | JsonSet / JsonGet / JsonDel | `ModeJSON` only. Owner applies the op then fans out a **full `FlagJSON` snapshot** (inbox flags stay owner-only). Replica `JsonGet` may lag. `JsonDel $` leaves live `{}`. |
 | BitSet / BitGet / BitCount / BitPos | `ModeBitmap` only. Owner applies the op then fans out a **full `FlagBitmap` snapshot** (inbox `FlagBitmapSet` stays owner-only). Replica `BitGet` may lag. Missing name → `BitGet` `ok=false`. Live all-zero stays until `Delete(name)`. `BitSet` is ACK-only (no old bit). |
+| HLLAdd / HLLCount | `ModeHLL` only. Owner applies the op then fans out a **full `FlagHLL` snapshot** (inbox `FlagHLLAdd` stays owner-only). Replica `HLLCount` may lag. Missing name → `ok=false`. `HLLAdd` is ACK-only (no changed-bool). |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).

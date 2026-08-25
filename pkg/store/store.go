@@ -176,6 +176,14 @@ type Store interface {
 	// BInstall installs a versioned full-bitmap snapshot (incoming > local).
 	BInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// HLLAdd hashes item into a named sketch (creates if missing).
+	HLLAdd(key string, item []byte, version uint64, expireAt int64, maxValue int) (applied, tooLarge bool)
+	// HLLCount is the sketch estimate. Missing → ok=false.
+	HLLCount(key string) (n uint64, ok bool)
+	HasHLL(key string) bool
+	// HLLInstall installs a versioned full-sketch snapshot (incoming > local).
+	HLLInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }
