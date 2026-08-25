@@ -1330,8 +1330,12 @@ func (m *Memory) lMutateLocked(key string, version uint64, expireAt int64, mut f
 					m.staleSkip.Add(1)
 					return false
 				}
+				stored := it.entry.Version + 1
 				m.removeElement(el)
 				l = listx.New()
+				mut(l)
+				ent := Entry{Value: l.Encode(), Version: stored, ExpireAt: expireAt, Flags: FlagList}
+				return m.insertListLocked(key, ent, l, false)
 			} else if it.entry.IsList() {
 				l = it.lCache
 				if l == nil {
@@ -1343,7 +1347,7 @@ func (m *Memory) lMutateLocked(key string, version uint64, expireAt int64, mut f
 				}
 				mut(l)
 				oldCost := it.cost
-				it.entry.Version = version
+				it.entry.Version = it.entry.Version + 1
 				if expireAt != 0 {
 					it.entry.ExpireAt = expireAt
 				}
@@ -1359,15 +1363,12 @@ func (m *Memory) lMutateLocked(key string, version uint64, expireAt int64, mut f
 			} else {
 				return false
 			}
-		} else {
-			m.removeElement(el)
-			l = listx.New()
 		}
-	} else {
-		l = listx.New()
+		m.removeElement(el)
 	}
+	l = listx.New()
 	mut(l)
-	ent := Entry{Value: l.Encode(), Version: version, ExpireAt: expireAt, Flags: FlagList}
+	ent := Entry{Value: l.Encode(), Version: 1, ExpireAt: expireAt, Flags: FlagList}
 	return m.insertListLocked(key, ent, l, false)
 }
 
@@ -1408,7 +1409,7 @@ func (m *Memory) lPopLocked(key string, version uint64, expireAt int64, left boo
 		return nil, false, true
 	}
 	oldCost := it.cost
-	it.entry.Version = version
+	it.entry.Version = it.entry.Version + 1
 	if expireAt != 0 {
 		it.entry.ExpireAt = expireAt
 	}
@@ -1687,8 +1688,9 @@ func (m *Memory) CIncr(key string, delta int64, version uint64, expireAt int64) 
 					m.staleSkip.Add(1)
 					return 0, false, false
 				}
+				stored := it.entry.Version + 1
 				m.removeElement(el)
-				return m.cInsertLocked(key, delta, version, expireAt)
+				return m.cInsertLocked(key, delta, stored, expireAt)
 			}
 			if !it.entry.IsCounter() {
 				return 0, false, false
@@ -1701,7 +1703,7 @@ func (m *Memory) CIncr(key string, delta int64, version uint64, expireAt int64) 
 			if err != nil {
 				return cur, false, true
 			}
-			it.entry.Version = version
+			it.entry.Version = it.entry.Version + 1
 			it.entry.Flags = FlagCounter
 			it.entry.Value = counter.Encode(next)
 			if expireAt != 0 {
@@ -1716,7 +1718,7 @@ func (m *Memory) CIncr(key string, delta int64, version uint64, expireAt int64) 
 		}
 		m.removeElement(el)
 	}
-	return m.cInsertLocked(key, delta, version, expireAt)
+	return m.cInsertLocked(key, delta, 1, expireAt)
 }
 
 func (m *Memory) cInsertLocked(key string, val int64, version uint64, expireAt int64) (int64, bool, bool) {

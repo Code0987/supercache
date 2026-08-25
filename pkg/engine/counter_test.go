@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,5 +164,34 @@ func TestCounterTombstoneBlocksSnapshot(t *testing.T) {
 	})
 	if err != nil || applied {
 		t.Fatalf("stale %v %v", applied, err)
+	}
+}
+
+func TestCounterConcurrentIncrVersions(t *testing.T) {
+	e := engine.New()
+	defer e.Close()
+	_ = e.UpdateKeySpace(counterKS())
+	ctx := context.Background()
+	if _, err := e.Incr(ctx, "ctr", "c", 1); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = e.Incr(ctx, "ctr", "c", 1)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = e.Incr(ctx, "ctr", "c", 1)
+	}()
+	wg.Wait()
+	ent, err := e.GetOrLoadLocal(ctx, "ctr", "c")
+	if err != nil || ent.Version < 3 {
+		t.Fatalf("ver=%d err=%v", ent.Version, err)
+	}
+	n, ok, err := e.CounterGet(ctx, "ctr", "c")
+	if err != nil || !ok || n != 3 {
+		t.Fatalf("n=%d ok=%v err=%v", n, ok, err)
 	}
 }

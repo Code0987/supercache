@@ -20,6 +20,7 @@ Do not implement from a draft.
 | [2026-08-21-mode-json.md](./2026-08-21-mode-json.md) | `ModeJSON` |
 | [2026-08-21-mode-bitmap.md](./2026-08-21-mode-bitmap.md) | `ModeBitmap` |
 | [2026-08-25-mode-hll.md](./2026-08-25-mode-hll.md) | `ModeHLL` |
+| [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
 Product surface docs: [API.md](../API.md), [OPERATIONS.md](../OPERATIONS.md), [OpenAPI](../../api/openapi/cache.openapi.yaml).

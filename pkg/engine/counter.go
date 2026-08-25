@@ -75,15 +75,18 @@ func (e *Engine) CounterGet(ctx context.Context, keyspaceName, name string) (int
 }
 
 func (e *Engine) cIncrLocal(ks *ksRuntime, name string, delta int64, fanout bool) (int64, error) {
-	ver := e.cNextVersion(ks, name)
 	expire := e.expireAt(ks.cfg.TTL)
-	n, applied, overflow := ks.store.CIncr(name, delta, ver, expire)
+	cur, _ := ks.store.PeekVersion(name)
+	gate := cur + 1
+	n, applied, overflow := ks.store.CIncr(name, delta, gate, expire)
 	if overflow {
 		return 0, fmt.Errorf("%w: counter overflow", ErrInvalidArgument)
 	}
 	if !applied {
 		return 0, fmt.Errorf("%w: incr rejected", ErrInvalidArgument)
 	}
+	ver, _ := ks.store.PeekVersion(name)
+	ks.observeVersion(name, ver)
 	if fanout {
 		e.replicate(ks.cfg.Name, name, store.Entry{
 			Value:    counter.Encode(n),
@@ -93,13 +96,6 @@ func (e *Engine) cIncrLocal(ks *ksRuntime, name string, delta int64, fanout bool
 		}, false)
 	}
 	return n, nil
-}
-
-func (e *Engine) cNextVersion(ks *ksRuntime, name string) uint64 {
-	if ver, ok := ks.store.PeekVersion(name); ok {
-		return ks.nextVersion(name, ver)
-	}
-	return ks.nextVersion(name, 0)
 }
 
 func (e *Engine) hasCounterLocal(ks *ksRuntime, name string) bool {

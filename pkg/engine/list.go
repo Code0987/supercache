@@ -202,17 +202,20 @@ func (e *Engine) LRange(ctx context.Context, keyspaceName, name string, start, s
 }
 
 func (e *Engine) lPushLocal(ks *ksRuntime, name string, item []byte, left, fanout bool) error {
-	ver := e.lNextVersion(ks, name)
 	expire := e.expireAt(ks.cfg.TTL)
+	cur, _ := ks.store.PeekVersion(name)
+	gate := cur + 1
 	ok := false
 	if left {
-		ok = ks.store.LPush(name, item, ver, expire)
+		ok = ks.store.LPush(name, item, gate, expire)
 	} else {
-		ok = ks.store.RPush(name, item, ver, expire)
+		ok = ks.store.RPush(name, item, gate, expire)
 	}
 	if !ok {
 		return fmt.Errorf("%w: list push rejected", ErrInvalidArgument)
 	}
+	ver, _ := ks.store.PeekVersion(name)
+	ks.observeVersion(name, ver)
 	if fanout {
 		e.lReplicateSnapshot(ks, name, ver, expire)
 	}
@@ -220,14 +223,15 @@ func (e *Engine) lPushLocal(ks *ksRuntime, name string, item []byte, left, fanou
 }
 
 func (e *Engine) lPopLocal(ks *ksRuntime, name string, left, fanout bool) ([]byte, bool, error) {
-	ver := e.lNextVersion(ks, name)
 	expire := e.expireAt(ks.cfg.TTL)
+	cur, _ := ks.store.PeekVersion(name)
+	gate := cur + 1
 	var item []byte
 	var popped, applied bool
 	if left {
-		item, popped, applied = ks.store.LPop(name, ver, expire)
+		item, popped, applied = ks.store.LPop(name, gate, expire)
 	} else {
-		item, popped, applied = ks.store.RPop(name, ver, expire)
+		item, popped, applied = ks.store.RPop(name, gate, expire)
 	}
 	if !applied {
 		if !e.hasListLocal(ks, name) {
@@ -236,6 +240,8 @@ func (e *Engine) lPopLocal(ks *ksRuntime, name string, left, fanout bool) ([]byt
 		return nil, false, fmt.Errorf("%w: list pop rejected", ErrInvalidArgument)
 	}
 	if popped && fanout {
+		ver, _ := ks.store.PeekVersion(name)
+		ks.observeVersion(name, ver)
 		e.lReplicateSnapshot(ks, name, ver, expire)
 	}
 	return item, popped, nil
@@ -252,13 +258,6 @@ func (e *Engine) lReplicateSnapshot(ks *ksRuntime, name string, ver uint64, expi
 		ExpireAt: expire,
 		Flags:    store.FlagList,
 	}, false)
-}
-
-func (e *Engine) lNextVersion(ks *ksRuntime, name string) uint64 {
-	if ver, ok := ks.store.PeekVersion(name); ok {
-		return ks.nextVersion(name, ver)
-	}
-	return ks.nextVersion(name, 0)
 }
 
 func (e *Engine) hasListLocal(ks *ksRuntime, name string) bool {
@@ -287,27 +286,33 @@ func (e *Engine) lFetchOwner(ctx context.Context, ks *ksRuntime, name string) (s
 }
 
 func (e *Engine) applyListLPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
-	ver := e.lNextVersion(ks, name)
 	if expireAt == 0 {
 		expireAt = e.expireAt(ks.cfg.TTL)
 	}
-	ok := ks.store.LPush(name, item, ver, expireAt)
-	if ok {
-		e.lReplicateSnapshot(ks, name, ver, expireAt)
+	cur, _ := ks.store.PeekVersion(name)
+	gate := cur + 1
+	if !ks.store.LPush(name, item, gate, expireAt) {
+		return false
 	}
-	return ok
+	ver, _ := ks.store.PeekVersion(name)
+	ks.observeVersion(name, ver)
+	e.lReplicateSnapshot(ks, name, ver, expireAt)
+	return true
 }
 
 func (e *Engine) applyListRPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
-	ver := e.lNextVersion(ks, name)
 	if expireAt == 0 {
 		expireAt = e.expireAt(ks.cfg.TTL)
 	}
-	ok := ks.store.RPush(name, item, ver, expireAt)
-	if ok {
-		e.lReplicateSnapshot(ks, name, ver, expireAt)
+	cur, _ := ks.store.PeekVersion(name)
+	gate := cur + 1
+	if !ks.store.RPush(name, item, gate, expireAt) {
+		return false
 	}
-	return ok
+	ver, _ := ks.store.PeekVersion(name)
+	ks.observeVersion(name, ver)
+	e.lReplicateSnapshot(ks, name, ver, expireAt)
+	return true
 }
 
 func (e *Engine) applyListInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
