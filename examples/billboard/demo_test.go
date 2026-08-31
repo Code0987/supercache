@@ -5,12 +5,32 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
+// lockedBuf is safe for startNode's per-node loggers, which each wrap
+// logger.Writer() and would otherwise race on bytes.Buffer.
+type lockedBuf struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *lockedBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *lockedBuf) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
+}
+
 func TestExampleBillboardModeTopK(t *testing.T) {
-	var buf bytes.Buffer
+	var buf lockedBuf
 	logger := log.New(&buf, "", 0)
 	src := NewChartSource(logger, 20*time.Millisecond)
 	specs := []nodeSpec{
