@@ -187,8 +187,25 @@ type Store interface {
 	// HLLInstall installs a versioned full-sketch snapshot (incoming > local).
 	HLLInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// TopKAdd observes item once (creates the table if missing).
+	// Incoming version is a tombstone-gate floor; stored = local+1 (or 1 on create).
+	// k is the current keyspace TopKSize. Decode with a smaller k is a no-mutate reject.
+	TopKAdd(key string, item []byte, version uint64, expireAt int64, k int, maxValue int) (applied, tooLarge bool)
+	// TopKList is the current chart. Missing / decode fail → ok=false.
+	// k is the current TopKSize (needed so shrink-K decode-fails instead of truncating).
+	TopKList(key string, k int) (entries []TopKEntry, ok bool)
+	HasTopK(key string) bool
+	// TopKInstall installs a versioned full-table snapshot (incoming > local).
+	TopKInstall(key string, blob []byte, version uint64, expireAt int64, k int) bool
+
 	// Close releases resources.
 	Close()
+}
+
+// TopKEntry is one chart row returned by TopKList.
+type TopKEntry struct {
+	Item  []byte
+	Count uint64
 }
 
 // HashField is one field/value pair returned by HGetAll.

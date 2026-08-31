@@ -110,7 +110,8 @@ func run(args []string) int {
 		"incr", "cget",
 		"jsonset", "jsonget", "jsondel",
 		"bitset", "bitget", "bitcount", "bitpos",
-		"hlladd", "hllcount":
+		"hlladd", "hllcount",
+		"topkadd", "topklist":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -346,6 +347,8 @@ Cache commands (gRPC -addr seeds):
   bitpos <name> <0|1> [start end]  ModeBitmap BITPOS
   hlladd <name> <item...>      ModeHLL add (hashed, not stored)
   hllcount <name>              ModeHLL estimate (or (nil))
+  topkadd <name> <item...>     ModeTopK observe (+1 per item)
+  topklist <name>              ModeTopK chart (item count lines, or (nil))
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

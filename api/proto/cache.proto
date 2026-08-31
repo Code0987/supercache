@@ -54,6 +54,8 @@ service Cache {
   rpc BitPos(BitPosRequest) returns (BitPosResponse);
   rpc HLLAdd(HLLAddRequest) returns (HLLAddResponse);
   rpc HLLCount(HLLCountRequest) returns (HLLCountResponse);
+  rpc TopKAdd(TopKAddRequest) returns (TopKAddResponse);
+  rpc TopKList(TopKListRequest) returns (TopKListResponse);
 }
 
 message GetRequest {
@@ -528,4 +530,26 @@ message HLLCountRequest {
 message HLLCountResponse {
   bool present = 1;
   uint64 count = 2;
+}
+
+message TopKAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+message TopKAddResponse {}
+
+message TopKListRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+
+message TopKEntry {
+  bytes item = 1;
+  uint64 count = 2;
+}
+
+message TopKListResponse {
+  bool present = 1;
+  repeated TopKEntry entries = 2;
 }

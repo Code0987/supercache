@@ -2,7 +2,7 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / ZSet / Geo / List), and a bounded per-node LRU.
+In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK), and a bounded per-node LRU.
 
 ```text
 github.com/Code0987/supercache
@@ -85,6 +85,9 @@ go run ./cmd/sc -keyspace doc jsonget user $.name
 go run ./cmd/sc -keyspace flags bitset seen 0 1
 go run ./cmd/sc -keyspace flags bitget seen 0
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
+# ModeTopK (register a ModeTopK keyspace, or use examples/billboard plays/hot):
+# go run ./cmd/sc -keyspace plays topkadd hot t001
+# go run ./cmd/sc -keyspace plays topklist hot
 go run ./cmd/sc peers              # admin HTTP
 
 # Multi-seed (failover entry points; owner routing is still server-side)
@@ -121,7 +124,7 @@ go run ./examples/billboard -hold=false   # 3-node cluster + scripted walkthroug
 # UI: http://127.0.0.1:18080/   (use -hold=true to keep serving)
 ```
 
-See [examples/billboard/README.md](./examples/billboard/README.md).
+See [examples/billboard/README.md](./examples/billboard/README.md). Official charts stay LoadThrough SoT JSON; **live plays** are `ModeTopK` (`/v1/plays/hot`, `+100` play buttons).
 
 ### ModeHash user profile
 
@@ -178,9 +181,9 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 
 | Package | Role |
 |---------|------|
-| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap/HLL, keyspaces, cluster routing |
+| `pkg/engine` | Core Get/Put/Delete, Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap/HLL/TopK, keyspaces, cluster routing |
 | `pkg/store` | Versioned LRU memory store (immediate Set / RYOW; structure caches) |
-| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` / `Counter` / `JSON` / `Bitmap` / `HLL` |
+| `pkg/keyspace` | Config: `LoadThrough` / `CacheOnly` / `Bloom` / `Set` / `ZSet` / `Geo` / `List` / `Hash` / `Counter` / `JSON` / `Bitmap` / `HLL` / `TopK` |
 | `pkg/bloom` | Bitset Bloom filter used by `ModeBloom` |
 | `pkg/set` | Exact set encode/decode for `ModeSet` |
 | `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
@@ -191,6 +194,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/jsonx` | Nested JSON path encode for `ModeJSON` |
 | `pkg/bitmapx` | Packed Redis-order bit vector for `ModeBitmap` |
 | `pkg/hllx` | Dense HyperLogLog sketch for `ModeHLL` |
+| `pkg/topkx` | Space-Saving top-K table for `ModeTopK` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -198,10 +202,10 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/telemetry` | Counters + OpenTelemetry |
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
-| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap + HLL) |
+| `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap + HLL + TopK) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc / flags) |
-| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bit*, hlladd/hllcount, admin diagnostics |
+| `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bit*, hlladd/hllcount, topkadd/topklist, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 
 ## Consistency
@@ -213,7 +217,7 @@ SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is asy
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**, **ModeBitmap**, **ModeHLL**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md), [Bitmap](./docs/design/2026-08-21-mode-bitmap.md), [HLL](./docs/design/2026-08-25-mode-hll.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**, **ModeBitmap**, **ModeHLL**, **ModeTopK**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md), [Bitmap](./docs/design/2026-08-21-mode-bitmap.md), [HLL](./docs/design/2026-08-25-mode-hll.md), [TopK](./docs/design/2026-08-31-mode-topk.md).
 
 Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 

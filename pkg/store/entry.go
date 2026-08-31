@@ -31,6 +31,8 @@ const (
 	FlagBitmapSet uint32 = 1 << 24 // owner-inbox: uvarint(offset) + 0/1
 	FlagHLL       uint32 = 1 << 25 // value is dense 12 KiB register snapshot
 	FlagHLLAdd    uint32 = 1 << 26 // owner-inbox: raw item bytes
+	FlagTopK      uint32 = 1 << 27 // value is encoded Space-Saving snapshot
+	FlagTopKAdd   uint32 = 1 << 28 // owner-inbox only: raw item to Add (replicas ignore)
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -160,6 +162,14 @@ func (e Entry) IsHLL() bool {
 
 func (e Entry) IsHLLAdd() bool {
 	return e.Flags&FlagHLLAdd != 0
+}
+
+func (e Entry) IsTopK() bool {
+	return e.Flags&FlagTopK != 0
+}
+
+func (e Entry) IsTopKAdd() bool {
+	return e.Flags&FlagTopKAdd != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

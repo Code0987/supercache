@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.10.0
+  version: 0.11.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` / `topkadd` … |
     | Proto | `api/proto/cache.proto` |
 
     ### Keyspace modes
@@ -32,13 +32,14 @@ info:
     | ModeJSON | JsonSet, JsonGet, JsonDel; Delete(name) |
     | ModeBitmap | BitSet, BitGet, BitCount, BitPos; Delete(name) |
     | ModeHLL | HLLAdd, HLLCount; Delete(name) |
+    | ModeTopK | TopKAdd, TopKList; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount / TopKList** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd / TopKAdd** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -80,6 +81,8 @@ tags:
     description: Named packed bit vector (ModeBitmap)
   - name: HLL
     description: Named HyperLogLog sketch (ModeHLL)
+  - name: TopK
+    description: Named Space-Saving heavy-hitters (ModeTopK)
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -91,7 +94,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK.
       requestBody:
         required: true
         content:
@@ -119,7 +122,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK.
       requestBody:
         required: true
         content:
@@ -1139,6 +1142,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/HLLCountResponse"
 
+  /supercache.cache.v1.Cache/TopKAdd:
+    post:
+      tags: [TopK]
+      operationId: Cache_TopKAdd
+      summary: Observe an item in a Top-K table
+      description: |
+        ModeTopK only. Creates the table if missing. **ACK-only — +1 per RPC.**
+        Empty item → InvalidArgument. Not Redis TOPK (Space-Saving; no Query/Count/Incr).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopKAddRequest"
+            example:
+              keyspace: plays
+              name: hot
+              item: dDAwMQ==
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/TopKList:
+    post:
+      tags: [TopK]
+      operationId: Cache_TopKList
+      summary: Current heavy-hitter chart
+      description: |
+        ModeTopK only. Missing name → present=false. Live table → present=true
+        (rows sorted count desc, then item bytes). Replica may lag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopKListRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopKListResponse"
+
 components:
   schemas:
     Empty:
@@ -1803,3 +1854,42 @@ components:
           type: integer
           format: uint64
           description: Approximate distinct count when present=true
+    TopKAddRequest:
+      type: object
+      required: [keyspace, name, item]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        item:
+          type: string
+          format: byte
+          description: Observed item (stored in the table)
+    TopKListRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+    TopKEntry:
+      type: object
+      properties:
+        item:
+          type: string
+          format: byte
+        count:
+          type: integer
+          format: uint64
+    TopKListResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopKEntry"

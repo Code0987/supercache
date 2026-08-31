@@ -188,9 +188,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
@@ -201,13 +201,14 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | **JsonSet / JsonGet / JsonDel** | `ModeJSON` only. Named nested JSON document; tiny path (`$` / `.ident` / `["k"]` / `[n>=0]`). Owner applies the op then fans out a **full `FlagJSON` snapshot**. Replica `JsonGet` may lag. Missing doc or path → `ok=false`. `JsonDel $` clears to live `{}` until `Delete(name)`. Get/Put invalid. |
 | **BitSet / BitGet / BitCount / BitPos** | `ModeBitmap` only. Named packed bit vector; Redis MSB-first bit order; `BITCOUNT`/`BITPOS` **byte** windows (whole = `0,-1`). Owner applies the op then fans out a **full `FlagBitmap` snapshot**. Replica `BitGet` may lag. Missing name → `BitGet` `ok=false`; live past-end → `ok=true`, bit `false`. Empty-until-delete (clear last `1` leaves live all-zero). Get/Put **invalid**. `BitSet` is ACK-only (no old bit). |
 | **HLLAdd / HLLCount** | `ModeHLL` only. Approximate distinct count of hashed items; FNV-1a 64, `p=14` dense 12 KiB. Owner applies the op then fans out a **full `FlagHLL` snapshot**. Replica `HLLCount` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `HLLAdd` is ACK-only (no Redis changed-bool). Estimates do **not** match Redis `PFCOUNT`. |
+| **TopKAdd / TopKList** | `ModeTopK` only. Approximate heavy-hitters; Space-Saving, +1 observations. Owner applies the op then fans out a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `TopKAdd` is ACK-only. Estimates do **not** match Redis `TOPK`. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / BloomAdd | Local read verbs see the update immediately. |
+| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / TopKAdd / BloomAdd | Local read verbs see the update immediately. |
 | **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
 | **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
@@ -311,6 +312,7 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeJSON` | document `name` | JsonSet, JsonGet, JsonDel; Delete(name) | `FlagJSON` snapshot; owner-inbox `FlagJSONSet` / `FlagJSONDel` |
 | `ModeBitmap` | bitmap `name` | BitSet, BitGet, BitCount, BitPos; Delete(name) | `FlagBitmap` snapshot; owner-inbox `FlagBitmapSet` |
 | `ModeHLL` | sketch `name` | HLLAdd, HLLCount; Delete(name) | `FlagHLL` snapshot; owner-inbox `FlagHLLAdd` |
+| `ModeTopK` | table `name` | TopKAdd, TopKList; Delete(name) | `FlagTopK` snapshot; owner-inbox `FlagTopKAdd` |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 
@@ -414,6 +416,16 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 - Package: `pkg/hllx`; CLI: `sc hlladd|hllcount`
 - Design: [docs/design/2026-08-25-mode-hll.md](./docs/design/2026-08-25-mode-hll.md)
 
+### `ModeTopK` (approximate heavy-hitters)
+
+- Named Space-Saving table; `TopKAdd` / `TopKList`; `Delete(name)` tombstone
+- `pkg/topkx`: +1 observations, K = keyspace `TopKSize` (0 → 100); no Redis TOPK numeric parity
+- Owner applies the op then fans out a **full `FlagTopK` snapshot** (hints coalesce). Inbox `FlagTopKAdd` never goes to replicas
+- Missing name → `TopKList` `ok=false`; live table (including occupied &lt; K) → `ok=true`. First add creates; `Delete(name)` only drop
+- `TopKAdd` is ACK-only (no count / evicted / changed-bool). Not Redis `TOPK.*`
+- Package: `pkg/topkx`; CLI: `sc topkadd|topklist`; live billboard: [`examples/billboard`](./examples/billboard/)
+- Design: [docs/design/2026-08-31-mode-topk.md](./docs/design/2026-08-31-mode-topk.md)
+
 ### Precedence matrix
 
 | Incoming | vs local | Result |
@@ -426,7 +438,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
 | ApplyDelete adequate version | present or missing | install tombstone |
 | FlagSetAdd / FlagZSetAdd / FlagHashSet / Bloom item-add | structure present | mutate under mutex; version gate |
-| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL snapshot | structure or tombstone | install if version ≥ local (tombstone blocks stale) |
+| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL / FlagTopK snapshot | structure or tombstone | install if version **>** local (equal ignore; tombstone blocks stale) |
 
 ---
 
@@ -437,7 +449,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
                  pkg/client · cmd/sc (not in ring)
                          │
                     gRPC Cache :client
-                    (KV · Bloom · Set · ZSet · Geo · List · Hash · Counter · JSON · Bitmap · HLL)
+                    (KV · Bloom · Set · ZSet · Geo · List · Hash · Counter · JSON · Bitmap · HLL · TopK)
                          ▼
               ┌─────────────────────┐
               │  supercache-node    │
@@ -582,16 +594,22 @@ HLLAdd (ModeHLL; List-class snapshot, not step-3 item flag):
   2. else: HLLAdd under store mutex (stored = local+1); fan-out FlagHLL snapshot at PeekVersion
   3. replica ApplyPut of inbox flags is ignored
 
-Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount):
+TopKAdd (ModeTopK; List-class snapshot, not step-3 item flag):
+  1. if self != owner → ApplyPut inbox FlagTopKAdd (ACK-only)
+  2. else: TopKAdd under store mutex (stored = local+1); fan-out FlagTopK snapshot at PeekVersion
+  3. replica ApplyPut of inbox flags is ignored
+
+Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount / TopKList):
   1. if local live structure → answer from store cache (field miss stays local)
      BitGet / BitCount / BitPos: local extract if HasBitmap (replica may lag)
      HLLCount: local extract if HasHLL (replica may lag)
+     TopKList: local extract if HasTopK (replica may lag)
   2. else if owner self → missing → empty/false
   3. else → peer.GetOrLoad(owner) structure snapshot; optional install if holdsReplica
   4. decode / answer
 
-Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL
-         if incoming version ≥ local (tombstone still blocks stale).
+Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL|FlagTopK
+         if incoming version > local (tombstone still blocks stale).
 ```
 
 Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops apply under version gates; concurrent ZAdd same member → last owner write wins for that score.
@@ -604,7 +622,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 
 | Need | Approach |
 |------|----------|
-| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL protected while live |
+| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK protected while live |
 | TTL | `expire_at` on entry; lazy expire |
 | Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
 | Negative | Envelope flag |
@@ -614,6 +632,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 | ModeJSON | `jCache` + eager encode after mutate; 0-alloc Peek/Get flush when `!jDirty` |
 | ModeBitmap | packed `Value` (no dirty cache); protect `FlagBitmap` |
 | ModeHLL | dense register `Value` (no dirty cache); protect `FlagHLL` |
+| ModeTopK | encoded table `Value` (no dirty cache); protect `FlagTopK` |
 | ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
@@ -706,6 +725,10 @@ type Engine interface {
     HLLAdd(ctx context.Context, keyspace, name string, item []byte) error
     HLLCount(ctx context.Context, keyspace, name string) (n uint64, ok bool, err error)
 
+    // ModeTopK
+    TopKAdd(ctx context.Context, keyspace, name string, item []byte) error
+    TopKList(ctx context.Context, keyspace, name string) (entries []TopKEntry, ok bool, err error)
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -743,6 +766,7 @@ const (
     ModeJSON
     ModeBitmap
     ModeHLL
+    ModeTopK
 )
 
 type KeySpaceConfig struct {
@@ -762,6 +786,7 @@ type KeySpaceConfig struct {
     ReplicationFactor int         // 0 = default 3; negative = all peers
     BloomBits      int            // ModeBloom; 0 = default
     BloomHashes    int            // ModeBloom; 0 = default
+    TopKSize       int            // ModeTopK; 0 = default 100
 }
 ```
 
@@ -775,7 +800,7 @@ type KeySpaceConfig struct {
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
 | TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
-| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx` |
+| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx`, `pkg/topkx` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
@@ -785,7 +810,7 @@ type KeySpaceConfig struct {
 | Admin diagnostics + OpenAPI docs | admin HTTP `/docs`; GitHub Pages |
 | OTel | telemetry pkg |
 | TLS + gossip auth | transport + memberlist secret |
-| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos |
+| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, hlladd/hllcount, topkadd/topklist |
 
 ---
 
@@ -881,6 +906,9 @@ service Cache {
   // ModeHLL
   rpc HLLAdd(HLLAddRequest) returns (HLLAddResponse);
   rpc HLLCount(HLLCountRequest) returns (HLLCountResponse);
+  // ModeTopK
+  rpc TopKAdd(TopKAddRequest) returns (TopKAddResponse);
+  rpc TopKList(TopKListRequest) returns (TopKListResponse);
 }
 
 // Messages carry: keyspace, key/name, value/item/member, score, start/stop,
@@ -1080,7 +1108,7 @@ Do **not** use SuperCache for:
 | No versioning | §6 owner versions + LWW apply rules |
 | groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
-| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL; §9.6; §11 Engine API; §14 Cache RPCs |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |
