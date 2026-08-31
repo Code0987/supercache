@@ -46,8 +46,9 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeJSON` | Named nested JSON document | `JsonSet`, `JsonGet`, `JsonDel`; `Delete(name)` |
 | `ModeBitmap` | Named packed bit vector | `BitSet`, `BitGet`, `BitCount`, `BitPos`; `Delete(name)` |
 | `ModeHLL` | Named HyperLogLog sketch | `HLLAdd`, `HLLCount`; `Delete(name)` |
+| `ModeTopK` | Named Space-Saving heavy-hitters | `TopKAdd`, `TopKList`; `Delete(name)` |
 
-Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`.
+Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100).
 
 ## Cache gRPC RPCs
 
@@ -175,6 +176,16 @@ Bit 0 is the **MSB of byte 0** (Redis order, not Bloom LSB). Clearing bits (`Bit
 | `Delete(name)` | Tombstone whole sketch |
 
 One named sketch, FNV-1a 64, `p=14`, dense 12 KiB. Items are hashed, not stored. Empty item is invalid. Estimates **will not** match Redis `PFCOUNT` (different hash, no sparse/bias tables). Replicas install a **full register snapshot** (`FlagHLL`). Replica `HLLCount` may lag. Get/Put on `ModeHLL` are invalid. `PFMERGE` is not v1.
+
+### Top-K (`ModeTopK`)
+
+| RPC | Notes |
+|-----|--------|
+| `TopKAdd` | Observe `item` once (+1). Creates the table if missing. **ACK-only** |
+| `TopKList` | Current chart (count desc, then item bytes). Missing **name** ⇒ `present=false`. Live table ⇒ `present=true` |
+| `Delete(name)` | Tombstone whole table |
+
+Named Space-Saving table. Writes are observations, not scores (`ZAdd` is the exact scored set). Memory is **O(K)** (`TopKSize`, default 100). Empty item is invalid. Replicas install a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Get/Put on `ModeTopK` are invalid. Not Redis `TOPK` (different algorithm; no Query/Count/Incr in v1). Live billboard: [`examples/billboard`](../examples/billboard/).
 
 ## Enabling GitHub Pages
 

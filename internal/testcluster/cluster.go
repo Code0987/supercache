@@ -245,8 +245,14 @@ func (c *Cluster) ready() error {
 			continue
 		}
 		_, _, herr2 := cli.HLLCount(ctx, ks, "__testcluster_ready__")
-		_ = cli.Close()
 		if herr2 == nil {
+			_ = cli.Close()
+			continue
+		}
+		// ModeTopK rejects Get; a missing name is ok=false, nil error.
+		_, _, terr := cli.TopKList(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if terr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

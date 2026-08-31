@@ -67,6 +67,8 @@ const (
 	Cache_BitPos_FullMethodName        = "/supercache.cache.v1.Cache/BitPos"
 	Cache_HLLAdd_FullMethodName        = "/supercache.cache.v1.Cache/HLLAdd"
 	Cache_HLLCount_FullMethodName      = "/supercache.cache.v1.Cache/HLLCount"
+	Cache_TopKAdd_FullMethodName       = "/supercache.cache.v1.Cache/TopKAdd"
+	Cache_TopKList_FullMethodName      = "/supercache.cache.v1.Cache/TopKList"
 )
 
 // CacheClient is the client API for Cache service.
@@ -123,6 +125,8 @@ type CacheClient interface {
 	BitPos(ctx context.Context, in *BitPosRequest, opts ...grpc.CallOption) (*BitPosResponse, error)
 	HLLAdd(ctx context.Context, in *HLLAddRequest, opts ...grpc.CallOption) (*HLLAddResponse, error)
 	HLLCount(ctx context.Context, in *HLLCountRequest, opts ...grpc.CallOption) (*HLLCountResponse, error)
+	TopKAdd(ctx context.Context, in *TopKAddRequest, opts ...grpc.CallOption) (*TopKAddResponse, error)
+	TopKList(ctx context.Context, in *TopKListRequest, opts ...grpc.CallOption) (*TopKListResponse, error)
 }
 
 type cacheClient struct {
@@ -613,6 +617,26 @@ func (c *cacheClient) HLLCount(ctx context.Context, in *HLLCountRequest, opts ..
 	return out, nil
 }
 
+func (c *cacheClient) TopKAdd(ctx context.Context, in *TopKAddRequest, opts ...grpc.CallOption) (*TopKAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TopKAddResponse)
+	err := c.cc.Invoke(ctx, Cache_TopKAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) TopKList(ctx context.Context, in *TopKListRequest, opts ...grpc.CallOption) (*TopKListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TopKListResponse)
+	err := c.cc.Invoke(ctx, Cache_TopKList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -667,6 +691,8 @@ type CacheServer interface {
 	BitPos(context.Context, *BitPosRequest) (*BitPosResponse, error)
 	HLLAdd(context.Context, *HLLAddRequest) (*HLLAddResponse, error)
 	HLLCount(context.Context, *HLLCountRequest) (*HLLCountResponse, error)
+	TopKAdd(context.Context, *TopKAddRequest) (*TopKAddResponse, error)
+	TopKList(context.Context, *TopKListRequest) (*TopKListResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -820,6 +846,12 @@ func (UnimplementedCacheServer) HLLAdd(context.Context, *HLLAddRequest) (*HLLAdd
 }
 func (UnimplementedCacheServer) HLLCount(context.Context, *HLLCountRequest) (*HLLCountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HLLCount not implemented")
+}
+func (UnimplementedCacheServer) TopKAdd(context.Context, *TopKAddRequest) (*TopKAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TopKAdd not implemented")
+}
+func (UnimplementedCacheServer) TopKList(context.Context, *TopKListRequest) (*TopKListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TopKList not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1706,6 +1738,42 @@ func _Cache_HLLCount_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_TopKAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TopKAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).TopKAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_TopKAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).TopKAdd(ctx, req.(*TopKAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_TopKList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TopKListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).TopKList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_TopKList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).TopKList(ctx, req.(*TopKListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1904,6 +1972,14 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HLLCount",
 			Handler:    _Cache_HLLCount_Handler,
+		},
+		{
+			MethodName: "TopKAdd",
+			Handler:    _Cache_TopKAdd_Handler,
+		},
+		{
+			MethodName: "TopKList",
+			Handler:    _Cache_TopKList_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -74,7 +74,7 @@ func main() {
 	time.Sleep(150 * time.Millisecond)
 
 	if *runDemoFlg {
-		if err := runDemo("http://"+*appAddr, logger, src); err != nil {
+		if err := runDemo("http://"+*appAddr, logger, src, app); err != nil {
 			logger.Printf("[main] demo error: %v", err)
 		}
 	} else {

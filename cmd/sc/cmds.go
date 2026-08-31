@@ -120,6 +120,10 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdHLLAdd(ctx, sess, args)
 	case "hllcount":
 		return cmdHLLCount(ctx, sess, args)
+	case "topkadd":
+		return cmdTopKAdd(ctx, sess, args)
+	case "topklist":
+		return cmdTopKList(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2

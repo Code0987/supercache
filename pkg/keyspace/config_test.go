@@ -93,6 +93,9 @@ func TestModeString(t *testing.T) {
 	if ModeHLL.String() != "HLL" {
 		t.Fatal(ModeHLL.String())
 	}
+	if ModeTopK.String() != "TopK" {
+		t.Fatal(ModeTopK.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}
@@ -126,6 +129,18 @@ func TestValidate(t *testing.T) {
 	if err := (Config{Name: "h", Mode: ModeHLL, MaxValueSize: 12288}).Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if err := (Config{Name: "p", Mode: ModeTopK, TopKSize: -1}).Validate(); err == nil {
+		t.Fatal("TopKSize < 0")
+	}
+	if err := (Config{Name: "p", Mode: ModeTopK, MaxValueSize: 100}).Validate(); err == nil {
+		t.Fatal("ModeTopK tiny MaxValueSize")
+	}
+	if err := (Config{Name: "p", Mode: ModeTopK, TopKSize: 10, MaxBytes: 1 << 20}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if (Config{TopKSize: 0}).EffectiveTopKSize() != DefaultTopKSize {
+		t.Fatal("default K")
+	}
 	// Happy paths
 	if err := (Config{Name: "c", Mode: ModeCacheOnly, MaxBytes: 1 << 20}).Validate(); err != nil {
 		t.Fatal(err)
@@ -153,6 +168,15 @@ func TestEffectiveBloomDefaults(t *testing.T) {
 	c.BloomHashes = 4
 	if c.EffectiveBloomBits() != 256 || c.EffectiveBloomHashes() != 4 {
 		t.Fatal("explicit bloom params")
+	}
+}
+
+func TestConfigHashIncludesTopKSize(t *testing.T) {
+	a := Config{Name: "k", Mode: ModeTopK, MaxBytes: 1 << 20, TopKSize: 10}
+	b := a
+	b.TopKSize = 50
+	if a.ConfigHash() == b.ConfigHash() {
+		t.Fatal("TopKSize must change hash")
 	}
 }
 

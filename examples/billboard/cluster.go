@@ -21,12 +21,12 @@ import (
 
 // nodeSpec is one SuperCache node in the billboard cluster.
 type nodeSpec struct {
-	ID        string
-	CacheAddr string
-	PeerAddr  string
-	AdminAddr string
+	ID         string
+	CacheAddr  string
+	PeerAddr   string
+	AdminAddr  string
 	GossipPort int
-	Seeds     []string
+	Seeds      []string
 }
 
 // runningNode is a live node with handles for shutdown.
@@ -117,17 +117,18 @@ func startNode(spec nodeSpec, shared *ChartSource, logger *log.Logger) (*running
 	}
 	nlog.Printf("keyspace tags mode=ModeSet ttl=30m")
 
-	// board: ModeZSet scored rankings (listener votes, fan-out)
+	// plays: ModeTopK live play stream (observations, no score)
 	if err := eng.UpdateKeySpace(keyspace.Config{
-		Name:     "board",
-		Mode:     keyspace.ModeZSet,
+		Name:     playsKS,
+		Mode:     keyspace.ModeTopK,
 		MaxBytes: 8 << 20,
 		TTL:      30 * time.Minute,
+		TopKSize: playK,
 	}); err != nil {
 		eng.Close()
-		return nil, fmt.Errorf("keyspace board: %w", err)
+		return nil, fmt.Errorf("keyspace plays: %w", err)
 	}
-	nlog.Printf("keyspace board mode=ModeZSet ttl=30m")
+	nlog.Printf("keyspace plays mode=ModeTopK k=%d ttl=30m", playK)
 
 	wm := warmup.NewManager(eng, warmup.Config{Workers: 4, TopN: 32})
 	eng.AttachWarmup(wm, wm)

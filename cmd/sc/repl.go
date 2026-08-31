@@ -222,6 +222,7 @@ func printREPLHelp() {
   jsonset|jsonget|jsondel   ModeJSON
   bitset|bitget|bitcount|bitpos   ModeBitmap
   hlladd|hllcount   ModeHLL
+  topkadd|topklist  ModeTopK
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

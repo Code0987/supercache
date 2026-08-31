@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 )
 
 // runDemo walks through SuperCache features against the live cluster + app HTTP.
-func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
+func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServer) error {
 	logger.Println()
 	logger.Println("╔══════════════════════════════════════════════════════════════════╗")
 	logger.Println("║         BILLBOARD DEMO — SuperCache feature walkthrough          ║")
@@ -29,6 +30,19 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
 	}
 	post := func(path string) (int, []byte, error) {
 		resp, err := client.Post(baseURL+path, "application/json", nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b, nil
+	}
+	del := func(path string) (int, []byte, error) {
+		req, err := http.NewRequest(http.MethodDelete, baseURL+path, nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -190,23 +204,71 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
 	}
 	logger.Printf("    SetMembers HTTP %d via=%s %s", code, hdr.Get("X-SuperCache-Node"), truncate(string(body), 160))
 
-	// ── ModeZSet board (scored rankings, fan-out)
-	banner("ModeZSet board (ZAdd + ZRange fan-out)")
-	for _, row := range []struct {
-		member string
-		score  string
-	}{{"alice", "100"}, {"bob", "250"}, {"carol", "180"}} {
-		code, body, err = post("/v1/board/top_tracks?member=" + row.member + "&score=" + row.score)
+	// ── ModeTopK live plays (observations, no score)
+	banner("ModeTopK live plays (TopKAdd + TopKList)")
+	logger.Printf("    ZSet of 500 distinct play ids is one LRU blob (~6.5 KiB and growing); a station-day (~100k) overflows DefaultMaxValueSize.")
+	logger.Printf("    ModeTopK K=%d keeps ≤%d slots (~600 B typical). Writes are plays, not scores. ZSet stays the type for editorial ranks.", playK, playK)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := app.ingestHonestPlays(ctx, playsName); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	logger.Printf("    ingested %d plays across %d ids on name=%s", len(honestPlayStream()), playIDs, playsName)
+
+	var chart struct {
+		Present bool `json:"present"`
+		Entries []struct {
+			Item  string `json:"item"`
+			Count uint64 `json:"count"`
+		} `json:"entries"`
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		code, body, hdr, err = get("/v1/plays/" + playsName)
 		if err != nil {
 			return err
 		}
-		logger.Printf("    ZAdd %s=%s → HTTP %d %s", row.member, row.score, code, truncate(string(body), 100))
+		_ = json.Unmarshal(body, &chart)
+		if code == 200 && chart.Present && len(chart.Entries) == playK {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("plays chart not ready: http %d present=%v n=%d", code, chart.Present, len(chart.Entries))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	code, body, hdr, err = get("/v1/board/top_tracks")
+	logger.Printf("    TopKList HTTP %d via=%s len=%d", code, hdr.Get("X-SuperCache-Node"), len(chart.Entries))
+	for i, w := range lockedHonestChart {
+		if i >= len(chart.Entries) || chart.Entries[i].Item != w.id || chart.Entries[i].Count != w.count {
+			return fmt.Errorf("honest chart rank %d: got %v want %s=%d", i+1, chart.Entries, w.id, w.count)
+		}
+		logger.Printf("    #%d %s %d", i+1, chart.Entries[i].Item, chart.Entries[i].Count)
+	}
+	seen := map[string]bool{}
+	for _, e := range chart.Entries {
+		seen[e.Item] = true
+	}
+	for _, evicted := range []string{"t003", "t004", "t005"} {
+		if seen[evicted] {
+			return fmt.Errorf("%s still on the chart", evicted)
+		}
+	}
+	logger.Printf("    evicted t003–t005 (Space-Saving replace-min, not the tail)")
+
+	code, body, err = del("/v1/plays/" + playsName)
 	if err != nil {
 		return err
 	}
-	logger.Printf("    ZRange HTTP %d via=%s %s", code, hdr.Get("X-SuperCache-Node"), truncate(string(body), 200))
+	logger.Printf("    Delete HTTP %d %s", code, truncate(string(body), 120))
+	code, body, _, err = get("/v1/plays/" + playsName)
+	if err != nil {
+		return err
+	}
+	if code != 404 {
+		return fmt.Errorf("after delete want 404 got %d %s", code, body)
+	}
+	logger.Printf("    GET after Delete → HTTP %d (miss)", code)
 
 	// ── summary
 	loads, fails, gen := src.Stats()
@@ -216,21 +278,23 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource) error {
 	logger.Println("  ✓ LoadThrough keyspace (charts) + DataSource SoT")
 	logger.Println("  ✓ CacheOnly keyspace (meta editorial pins)")
 	logger.Println("  ✓ ModeSet keyspace (tags exact membership)")
-	logger.Println("  ✓ ModeZSet keyspace (board scored rankings)")
+	logger.Println("  ✓ ModeTopK keyspace (plays live heavy-hitters)")
 	logger.Println("  ✓ TTL / NegativeTTL configured on charts")
 	logger.Println("  ✓ singleflight stampede coalescing")
 	logger.Println("  ✓ protect: rate limit + circuit breaker wired")
 	logger.Println("  ✓ Delete cluster invalidate + SoT reload")
 	logger.Println("  ✓ Put + async fan-out (pin read-back)")
 	logger.Println("  ✓ SetAdd + SetContains fan-out (tags)")
-	logger.Println("  ✓ ZAdd + ZRange fan-out (board)")
+	logger.Println("  ✓ TopKAdd + TopKList fan-out (plays)")
 	logger.Println("  ✓ WarmKeys / topology prefetch / refresh-ahead")
 	logger.Println("  ✓ Admin /healthz /peers /keyspaces /metrics")
 	logger.Println("  ✓ pkg/client round-robin across cache ports")
 	logger.Printf("  · SoT totals: loads=%d fails=%d generation=%d", loads, fails, gen)
 	logger.Println()
+	logger.Println("OK: ModeTopK")
 	logger.Printf("UI:        %s/", baseURL)
 	logger.Printf("API chart: %s/v1/charts/global", baseURL)
+	logger.Printf("Live plays:%s/v1/plays/hot", baseURL)
 	logger.Printf("Stampede:  %s/v1/demo/stampede", baseURL)
 	logger.Println("Admin n1:  http://127.0.0.1:8081/peers")
 	logger.Println()

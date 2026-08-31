@@ -10,6 +10,7 @@ import (
 
 	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/protect"
+	"github.com/Code0987/supercache/pkg/topkx"
 )
 
 // Mode selects miss behavior for a keyspace.
@@ -40,6 +41,8 @@ const (
 	ModeBitmap
 	// ModeHLL is a named HyperLogLog sketch (HLLAdd / HLLCount).
 	ModeHLL
+	// ModeTopK is a named Space-Saving heavy-hitter table (TopKAdd / TopKList).
+	ModeTopK
 )
 
 func (m Mode) String() string {
@@ -68,6 +71,8 @@ func (m Mode) String() string {
 		return "Bitmap"
 	case ModeHLL:
 		return "HLL"
+	case ModeTopK:
+		return "TopK"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -91,6 +96,8 @@ const (
 	DefaultBloomBits = 1 << 20
 	// DefaultBloomHashes is k when Config.BloomHashes is 0.
 	DefaultBloomHashes = 7
+	// DefaultTopKSize is K when Config.TopKSize is 0 (billboard-sized).
+	DefaultTopKSize = 100
 )
 
 // EffectiveReplication returns how many peers should store each key given
@@ -158,6 +165,9 @@ type Config struct {
 	// BloomBits / BloomHashes size a ModeBloom filter (0 → defaults).
 	BloomBits   int
 	BloomHashes int
+
+	// TopKSize is K for ModeTopK (0 → DefaultTopKSize). Per-name RESERVE is not v1.
+	TopKSize int
 }
 
 // Validate checks config invariants.
@@ -173,6 +183,23 @@ func (c Config) Validate() error {
 	}
 	if c.Mode == ModeHLL && c.MaxValueSize > 0 && c.MaxValueSize < 12288 {
 		return fmt.Errorf("keyspace: ModeHLL MaxValueSize %d < 12288", c.MaxValueSize)
+	}
+	if c.Mode == ModeTopK {
+		if c.TopKSize < 0 {
+			return errors.New("keyspace: TopKSize must be >= 0")
+		}
+		maxItem := DefaultMaxKeyLen
+		if c.MaxKeyLen > 0 {
+			maxItem = c.MaxKeyLen
+		}
+		maxVal := DefaultMaxValueSize
+		if c.MaxValueSize > 0 {
+			maxVal = c.MaxValueSize
+		}
+		need := topkx.WorstEncodedSize(c.EffectiveTopKSize(), maxItem)
+		if maxVal > 0 && need > maxVal {
+			return fmt.Errorf("keyspace: ModeTopK WorstEncodedSize %d > MaxValueSize %d", need, maxVal)
+		}
 	}
 	if c.Mode == ModeBloom {
 		bits := c.EffectiveBloomBits()
@@ -203,6 +230,14 @@ func (c Config) EffectiveBloomHashes() int {
 	return c.BloomHashes
 }
 
+// EffectiveTopKSize is K for ModeTopK (0 → DefaultTopKSize).
+func (c Config) EffectiveTopKSize() int {
+	if c.TopKSize <= 0 {
+		return DefaultTopKSize
+	}
+	return c.TopKSize
+}
+
 // ConfigHash is a stable hash of non-function config fields for drift detection.
 func (c Config) ConfigHash() string {
 	type wire struct {
@@ -226,6 +261,7 @@ func (c Config) ConfigHash() string {
 		TombstoneTTL      time.Duration
 		BloomBits         int
 		BloomHashes       int
+		TopKSize          int
 	}
 	b, _ := json.Marshal(wire{
 		Name:              c.Name,
@@ -248,6 +284,7 @@ func (c Config) ConfigHash() string {
 		TombstoneTTL:      c.TombstoneTTL,
 		BloomBits:         c.BloomBits,
 		BloomHashes:       c.BloomHashes,
+		TopKSize:          c.TopKSize,
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])

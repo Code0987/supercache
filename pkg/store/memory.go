@@ -8,10 +8,10 @@ import (
 
 	"github.com/Code0987/supercache/pkg/bitmapx"
 	"github.com/Code0987/supercache/pkg/bloom"
-	"github.com/Code0987/supercache/pkg/hllx"
 	"github.com/Code0987/supercache/pkg/counter"
 	"github.com/Code0987/supercache/pkg/geo"
 	"github.com/Code0987/supercache/pkg/hashx"
+	"github.com/Code0987/supercache/pkg/hllx"
 	"github.com/Code0987/supercache/pkg/jsonx"
 	"github.com/Code0987/supercache/pkg/listx"
 	"github.com/Code0987/supercache/pkg/set"
@@ -2411,7 +2411,7 @@ func (m *Memory) evictLocked() {
 func (m *Memory) lruVictim() *list.Element {
 	for el := m.order.Back(); el != nil; el = el.Prev() {
 		it := el.Value.(*lruItem)
-		if (it.entry.IsTombstone() || it.entry.IsBloom() || it.entry.IsSet() || it.entry.IsZSet() || it.entry.IsGeo() || it.entry.IsList() || it.entry.IsHash() || it.entry.IsCounter() || it.entry.IsJSON() || it.entry.IsBitmap() || it.entry.IsHLL()) && !it.entry.Expired(m.now()) {
+		if (it.entry.IsTombstone() || it.entry.IsBloom() || it.entry.IsSet() || it.entry.IsZSet() || it.entry.IsGeo() || it.entry.IsList() || it.entry.IsHash() || it.entry.IsCounter() || it.entry.IsJSON() || it.entry.IsBitmap() || it.entry.IsHLL() || it.entry.IsTopK()) && !it.entry.Expired(m.now()) {
 			continue
 		}
 		return el

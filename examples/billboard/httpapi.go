@@ -57,7 +57,7 @@ func (a *appServer) Handler() http.Handler {
 	mux.HandleFunc("/v1/admin/invalidate/", a.handleInvalidate)
 	mux.HandleFunc("/v1/admin/pin/", a.handlePin)
 	mux.HandleFunc("/v1/tags/", a.handleTags)
-	mux.HandleFunc("/v1/board/", a.handleBoard)
+	mux.HandleFunc("/v1/plays/", a.handlePlays)
 	mux.HandleFunc("/v1/demo/stampede", a.handleStampede)
 	mux.HandleFunc("/v1/demo/load", a.handleLoad)
 	mux.HandleFunc("/v1/status", a.handleStatus)
@@ -191,11 +191,11 @@ func (a *appServer) handlePin(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	msg := map[string]any{
-		"board":   board,
-		"pinned":  true,
-		"note":    "editorial pin stored in CacheOnly keyspace meta",
-		"at":      time.Now().UTC().Format(time.RFC3339),
-		"via":     node.ID,
+		"board":  board,
+		"pinned": true,
+		"note":   "editorial pin stored in CacheOnly keyspace meta",
+		"at":     time.Now().UTC().Format(time.RFC3339),
+		"via":    node.ID,
 	}
 	raw, _ := json.Marshal(msg)
 	a.log.Printf("[app] PUT meta pin key=%q via=%s", key, node.ID)
@@ -208,7 +208,7 @@ func (a *appServer) handlePin(w http.ResponseWriter, r *http.Request) {
 	other := a.clients[(int(a.rr.Load()))%len(a.clients)]
 	v, err := other.Get(ctx, "meta", key)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"put_via": node.ID,
+		"put_via":   node.ID,
 		"read_back": string(v),
 		"read_err":  fmt.Sprintf("%v", err),
 		"payload":   msg,
@@ -216,9 +216,10 @@ func (a *appServer) handlePin(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTags exercises ModeSet: /v1/tags/{setName}
-//   GET  → SetMembers + SetCard
-//   POST → body is one tag to SetAdd (text/plain or JSON {"tag":"..."})
-//   DELETE ?tag=x → SetRemove
+//
+//	GET  → SetMembers + SetCard
+//	POST → body is one tag to SetAdd (text/plain or JSON {"tag":"..."})
+//	DELETE ?tag=x → SetRemove
 func (a *appServer) handleTags(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/v1/tags/")
 	name = strings.TrimSpace(name)
@@ -287,90 +288,6 @@ func (a *appServer) handleTags(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"set": name, "removed": tag, "via": node.ID})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleBoard exercises ModeZSet: /v1/board/{name}
-//   GET  → ZRange 0 -1 + ZCard
-//   POST → ?member=&score=  ZAdd
-//   DELETE ?member= → ZRem
-func (a *appServer) handleBoard(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimPrefix(r.URL.Path, "/v1/board/")
-	name = strings.TrimSpace(name)
-	if name == "" || strings.Contains(name, "/") {
-		http.Error(w, "board name required: /v1/board/{name}", http.StatusBadRequest)
-		return
-	}
-	cli, node := a.pick()
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-
-	switch r.Method {
-	case http.MethodGet:
-		rank, err := cli.ZRange(ctx, "board", name, 0, -1)
-		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-			return
-		}
-		card, _ := cli.ZCard(ctx, "board", name)
-		items := make([]map[string]any, 0, len(rank))
-		for _, m := range rank {
-			items = append(items, map[string]any{"member": string(m.Member), "score": m.Score})
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"board": name, "card": card, "members": items, "via": node.ID,
-		})
-	case http.MethodPost:
-		member := strings.TrimSpace(r.URL.Query().Get("member"))
-		scoreStr := strings.TrimSpace(r.URL.Query().Get("score"))
-		if member == "" || scoreStr == "" {
-			b, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
-			var body struct {
-				Member string  `json:"member"`
-				Score  float64 `json:"score"`
-			}
-			if json.Unmarshal(b, &body) == nil {
-				if member == "" {
-					member = body.Member
-				}
-				if scoreStr == "" {
-					scoreStr = fmt.Sprintf("%g", body.Score)
-				}
-			}
-		}
-		if member == "" || scoreStr == "" {
-			http.Error(w, "member and score required (?member=&score= or JSON)", http.StatusBadRequest)
-			return
-		}
-		var score float64
-		if _, err := fmt.Sscanf(scoreStr, "%g", &score); err != nil {
-			http.Error(w, "bad score", http.StatusBadRequest)
-			return
-		}
-		if err := cli.ZAdd(ctx, "board", name, []byte(member), score); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-			return
-		}
-		time.Sleep(80 * time.Millisecond)
-		other := a.clients[(int(a.rr.Load()))%len(a.clients)]
-		sc, ok, err := other.ZScore(ctx, "board", name, []byte(member))
-		writeJSON(w, http.StatusOK, map[string]any{
-			"board": name, "member": member, "score": score, "via": node.ID,
-			"score_readback": sc, "present": ok, "read_err": fmt.Sprintf("%v", err),
-		})
-	case http.MethodDelete:
-		member := strings.TrimSpace(r.URL.Query().Get("member"))
-		if member == "" {
-			http.Error(w, "member query required", http.StatusBadRequest)
-			return
-		}
-		if err := cli.ZRem(ctx, "board", name, []byte(member)); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"board": name, "removed": member, "via": node.ID})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -481,10 +398,10 @@ func (a *appServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		admins = append(admins, "http://"+n.AdminAddr)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"nodes":        a.nodes,
-		"admin_urls":   admins,
-		"sot_loads":    loads,
-		"sot_fails":    fails,
+		"nodes":          a.nodes,
+		"admin_urls":     admins,
+		"sot_loads":      loads,
+		"sot_fails":      fails,
 		"sot_generation": gen,
 	})
 }
@@ -518,9 +435,17 @@ const homeHTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>🎵 Trending Billboard</h1>
-  <p class="muted">Demo app on a <strong>3-node SuperCache</strong> cluster — LoadThrough charts, fan-out, invalidate, stampede coalescing.</p>
+  <p class="muted">Demo app on a <strong>3-node SuperCache</strong> cluster — official charts are LoadThrough SoT JSON; <strong>live plays</strong> are ModeTopK observations (no score).</p>
   <div class="card">
-    <button onclick="loadChart('global')">Global Top</button>
+    <button onclick="loadPlays()">Live plays</button>
+    <button onclick="playSong('t001',100)">t001 +100</button>
+    <button onclick="playSong('t002',100)">t002 +100</button>
+    <button onclick="playSong('t003',100)">t003 +100</button>
+    <button onclick="playSong('t500',100)">t500 +100</button>
+    <input id="playTrack" value="t010" size="6" title="track id"/>
+    <input id="playN" value="100" size="4" title="play count"/>
+    <button onclick="playSong(document.getElementById('playTrack').value, parseInt(document.getElementById('playN').value,10)||1)">Play</button>
+    <button onclick="loadChart('global')">Official global</button>
     <button onclick="loadChart('pop')">Pop</button>
     <button onclick="loadChart('hiphop')">Hip-Hop</button>
     <button onclick="loadChart('electronic')">Electronic</button>
@@ -535,6 +460,37 @@ const homeHTML = `<!DOCTYPE html>
     <a href="http://127.0.0.1:8081/keyspaces">/keyspaces</a> ·
     <a href="http://127.0.0.1:8081/metrics">/metrics</a></p>
 <script>
+async function loadPlays() {
+  const t0 = performance.now();
+  const r = await fetch('/v1/plays/hot');
+  const ms = (performance.now()-t0).toFixed(1);
+  const node = r.headers.get('X-SuperCache-Node') || '?';
+  const body = await r.json();
+  document.getElementById('meta').textContent = 'live plays via ' + node + ' in ' + ms + 'ms · http ' + r.status;
+  if (!r.ok) { document.getElementById('out').innerHTML = '<pre>'+JSON.stringify(body,null,2)+'</pre>'; return; }
+  let html = '<h2>Live plays (ModeTopK)</h2><p class="muted">each Play is n× TopKAdd(+1). Engine has no Incr-by-N. K≤10 · not official SoT ranks</p><table><tr><th>#</th><th>Track</th><th>Artist</th><th>Count</th><th></th></tr>';
+  for (const e of (body.entries||[])) {
+    html += '<tr><td>'+e.rank+'</td><td>'+(e.title||e.item)+'</td><td>'+(e.artist||'')+
+      '</td><td>'+e.count+'</td><td><button onclick="playSong(\''+e.item+'\',100)">+100</button></td></tr>';
+  }
+  html += '</table>';
+  document.getElementById('out').innerHTML = html;
+}
+async function playSong(track, n) {
+  track = (track||'').trim();
+  if (!track) { document.getElementById('meta').textContent = 'need a track id'; return; }
+  if (!n || n < 1) n = 1;
+  document.getElementById('meta').textContent = 'playing '+track+' ×'+n+'…';
+  const r = await fetch('/v1/plays/hot?track='+encodeURIComponent(track)+'&n='+n, {method:'POST'});
+  const body = await r.json();
+  if (!r.ok) {
+    document.getElementById('meta').textContent = 'play failed';
+    document.getElementById('out').innerHTML = '<pre>'+JSON.stringify(body,null,2)+'</pre>';
+    return;
+  }
+  await loadPlays();
+  document.getElementById('meta').textContent = 'played '+body.track+' ×'+body.n+' via '+(body.via||'?');
+}
 async function loadChart(board) {
   const t0 = performance.now();
   const r = await fetch('/v1/charts/' + board);

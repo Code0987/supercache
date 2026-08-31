@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount**, **topkadd** / **topklist** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -93,6 +93,8 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `bitpos <name> <0\|1> [start end]` | Cache gRPC | First matching bit index, or `(nil)` + exit 1; omitted range = whole |
 | `hlladd <name> <item...>` | Cache gRPC | `ModeHLL` add (one RPC per item; hashed, not stored) |
 | `hllcount <name>` | Cache gRPC | Approximate distinct count, or `(nil)` + exit 1 if name missing |
+| `topkadd <name> <item...>` | Cache gRPC | `ModeTopK` observe (one RPC per item; +1) |
+| `topklist <name>` | Cache gRPC | `item count` lines, or `(nil)` + exit 1 if name missing |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
