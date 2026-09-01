@@ -223,27 +223,37 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 			Count uint64 `json:"count"`
 		} `json:"entries"`
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	// Dual-write fans a 64 KiB CMS snapshot per play; a replica GET can
+	// still see a mid-stream TopK table (len==K but t492 instead of t500).
+	// Wait for the locked chart, not just occupancy.
+	deadline := time.Now().Add(5 * time.Second)
+	match := false
 	for {
 		code, body, hdr, err = get("/v1/plays/" + playsName)
 		if err != nil {
 			return err
 		}
 		_ = json.Unmarshal(body, &chart)
-		if code == 200 && chart.Present && len(chart.Entries) == playK {
-			break
+		if code == 200 && chart.Present && len(chart.Entries) == len(lockedHonestChart) {
+			match = true
+			for i, w := range lockedHonestChart {
+				if chart.Entries[i].Item != w.id || chart.Entries[i].Count != w.count {
+					match = false
+					break
+				}
+			}
+			if match {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("plays chart not ready: http %d present=%v n=%d", code, chart.Present, len(chart.Entries))
+			return fmt.Errorf("honest chart not ready: http %d present=%v got %v", code, chart.Present, chart.Entries)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	logger.Printf("    TopKList HTTP %d via=%s len=%d", code, hdr.Get("X-SuperCache-Node"), len(chart.Entries))
 	for i, w := range lockedHonestChart {
-		if i >= len(chart.Entries) || chart.Entries[i].Item != w.id || chart.Entries[i].Count != w.count {
-			return fmt.Errorf("honest chart rank %d: got %v want %s=%d", i+1, chart.Entries, w.id, w.count)
-		}
-		logger.Printf("    #%d %s %d", i+1, chart.Entries[i].Item, chart.Entries[i].Count)
+		logger.Printf("    #%d %s %d", i+1, w.id, w.count)
 	}
 	seen := map[string]bool{}
 	for _, e := range chart.Entries {
@@ -262,13 +272,20 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 		Present bool   `json:"present"`
 		Count   uint64 `json:"count"`
 	}
-	code, body, _, err = get("/v1/counts/" + playsName + "?track=t003")
-	if err != nil {
-		return err
-	}
-	_ = json.Unmarshal(body, &cmsBody)
-	if code != 200 || !cmsBody.Present || cmsBody.Count < 100 || cmsBody.Count > 116 {
-		return fmt.Errorf("cms t003: http %d present=%v count=%d body=%s", code, cmsBody.Present, cmsBody.Count, body)
+	cmsDeadline := time.Now().Add(3 * time.Second)
+	for {
+		code, body, _, err = get("/v1/counts/" + playsName + "?track=t003")
+		if err != nil {
+			return err
+		}
+		_ = json.Unmarshal(body, &cmsBody)
+		if code == 200 && cmsBody.Present && cmsBody.Count >= 100 && cmsBody.Count <= 116 {
+			break
+		}
+		if time.Now().After(cmsDeadline) {
+			return fmt.Errorf("cms t003: http %d present=%v count=%d body=%s", code, cmsBody.Present, cmsBody.Count, body)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	logger.Printf("    cms t003 %d", cmsBody.Count)
 
