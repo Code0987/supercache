@@ -2,7 +2,7 @@
 
 A full use-case example: a **read-heavy music trending billboard** backed by a **3-node SuperCache cluster** in one process.
 
-Official global/genre boards stay `LoadThrough` `charts` (precomputed SoT JSON). The **live plays** tile is `ModeTopK` — each play is an observation (`TopKAdd`), not a score. A ModeZSet of every distinct play id would be one growing LRU blob; Top-K keeps **K=10** slots. Hourly windows go in the name (`hot:2026-08-31-15`), same trick as ModeCounter rate limits.
+Official global/genre boards stay `LoadThrough` `charts` (precomputed SoT JSON). The **live plays** tile is `ModeTopK` — each play is an observation (`TopKAdd`), not a score. Point frequency of any track (including ones Top-K evicted) is `ModeCMS` `plays-count` (`CMSIncr` / `CMSQuery`). A ModeZSet of every distinct play id would be one growing LRU blob; Top-K keeps **K=10** slots. Hourly windows go in the name (`hot:2026-08-31-15`), same trick as ModeCounter rate limits.
 
 ## What it shows
 
@@ -13,6 +13,7 @@ Official global/genre boards stay `LoadThrough` `charts` (precomputed SoT JSON).
 | `CacheOnly` keyspace `meta` | Editorial pins |
 | `ModeSet` keyspace `tags` | Exact membership (editorial tag sets via `SetAdd` / `SetContains`) |
 | `ModeTopK` keyspace `plays` | Live plays / trending-now (`TopKAdd` / `TopKList` on name `hot`, K=10) |
+| `ModeCMS` keyspace `plays-count` | Approx plays of any named track (`CMSIncr` / `CMSQuery` on name `hot`) |
 | DataSource + latency | Expensive SoT with detailed `[SoT]` logs |
 | singleflight | `/v1/demo/stampede` — concurrent miss coalescing |
 | protect | Per-keyspace + global rate limit / circuit breaker |
@@ -60,6 +61,7 @@ curl -s http://127.0.0.1:18080/v1/tags/billboard | jq .
 curl -s -X POST 'http://127.0.0.1:18080/v1/plays/hot?track=t001' | jq .
 curl -s -X POST 'http://127.0.0.1:18080/v1/plays/hot?track=t003&n=100' | jq .
 curl -s http://127.0.0.1:18080/v1/plays/hot | jq .
+curl -s 'http://127.0.0.1:18080/v1/counts/hot?track=t003' | jq .
 curl -s 'http://127.0.0.1:18080/v1/demo/stampede?board=global' | jq .
 curl -s http://127.0.0.1:8081/peers | jq .
 curl -s http://127.0.0.1:8081/keyspaces | jq .

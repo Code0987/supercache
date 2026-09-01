@@ -251,8 +251,14 @@ func (c *Cluster) ready() error {
 		}
 		// ModeTopK rejects Get; a missing name is ok=false, nil error.
 		_, _, terr := cli.TopKList(ctx, ks, "__testcluster_ready__")
-		_ = cli.Close()
 		if terr == nil {
+			_ = cli.Close()
+			continue
+		}
+		// ModeCMS rejects Get; missing name is ok=false, nil error.
+		_, _, cerr2 := cli.CMSQuery(ctx, ks, "__testcluster_ready__", []byte("x"))
+		_ = cli.Close()
+		if cerr2 == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

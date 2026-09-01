@@ -88,6 +88,9 @@ go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 # ModeTopK (register a ModeTopK keyspace, or use examples/billboard plays/hot):
 # go run ./cmd/sc -keyspace plays topkadd hot t001
 # go run ./cmd/sc -keyspace plays topklist hot
+# ModeCMS (register a ModeCMS keyspace, or use examples/billboard plays-count/hot):
+# go run ./cmd/sc -keyspace plays-count cmsincr hot t003
+# go run ./cmd/sc -keyspace plays-count cmsquery hot t003
 go run ./cmd/sc peers              # admin HTTP
 
 # Multi-seed (failover entry points; owner routing is still server-side)
@@ -124,7 +127,7 @@ go run ./examples/billboard -hold=false   # 3-node cluster + scripted walkthroug
 # UI: http://127.0.0.1:18080/   (use -hold=true to keep serving)
 ```
 
-See [examples/billboard/README.md](./examples/billboard/README.md). Official charts stay LoadThrough SoT JSON; **live plays** are `ModeTopK` (`/v1/plays/hot`, `+100` play buttons).
+See [examples/billboard/README.md](./examples/billboard/README.md). Official charts stay LoadThrough SoT JSON; **live plays** are `ModeTopK` (`/v1/plays/hot`); **point frequency** is `ModeCMS` (`/v1/counts/hot?track=t003`).
 
 ### ModeHash user profile
 
@@ -195,6 +198,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/bitmapx` | Packed Redis-order bit vector for `ModeBitmap` |
 | `pkg/hllx` | Dense HyperLogLog sketch for `ModeHLL` |
 | `pkg/topkx` | Space-Saving top-K table for `ModeTopK` |
+| `pkg/cmsx` | Count-Min Sketch for `ModeCMS` |
 | `pkg/datasource` | Backend loader interface |
 | `pkg/protect` | Rate limit + circuit breaker |
 | `pkg/admin` | `/healthz` `/readyz` `/peers` `/keyspaces` `/metrics` + `/docs` (Swagger) |
@@ -217,7 +221,7 @@ SuperCache is **eventually consistent**. Writes ACK on the owner; fan-out is asy
 - `UpdateKeySpace` is **local** — re-issue on every node; compare `keyspace_hashes` on `/peers`.
 - Topology change: existing nodes async-push inventory to peers (hot keys first, then rest). See [docs/CLUSTER_FLOWS.md](./docs/CLUSTER_FLOWS.md).
 - Delete installs a versioned tombstone for `TombstoneTTL` (default 5m) so a delayed ApplyPut cannot resurrect the key.
-- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**, **ModeBitmap**, **ModeHLL**, **ModeTopK**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md), [Bitmap](./docs/design/2026-08-21-mode-bitmap.md), [HLL](./docs/design/2026-08-25-mode-hll.md), [TopK](./docs/design/2026-08-31-mode-topk.md).
+- Keyspace modes: **CacheOnly** / **LoadThrough** (KV), **ModeBloom**, **ModeSet**, **ModeZSet**, **ModeGeo**, **ModeList**, **ModeHash**, **ModeCounter**, **ModeJSON**, **ModeBitmap**, **ModeHLL**, **ModeTopK**, **ModeCMS**. Wrong verb → invalid argument. API summary: [docs/API.md](./docs/API.md). Designs: [Bloom](./docs/design/2026-08-11-bloom-filter.md), [Set](./docs/design/2026-08-13-mode-set.md), [ZSet](./docs/design/2026-08-13-mode-zset.md), [Geo](./docs/design/2026-08-19-mode-geo.md), [List](./docs/design/2026-08-19-mode-list.md), [Hash](./docs/design/2026-08-20-mode-hash.md), [Counter](./docs/design/2026-08-20-mode-counter.md), [JSON](./docs/design/2026-08-21-mode-json.md), [Bitmap](./docs/design/2026-08-21-mode-bitmap.md), [HLL](./docs/design/2026-08-25-mode-hll.md), [TopK](./docs/design/2026-08-31-mode-topk.md), [CMS](./docs/design/2026-09-01-mode-cms.md).
 
 Details: [PLAN.md](./PLAN.md) §3 / §7 and [docs/OPERATIONS.md](./docs/OPERATIONS.md).
 

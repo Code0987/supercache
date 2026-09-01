@@ -96,6 +96,9 @@ func TestModeString(t *testing.T) {
 	if ModeTopK.String() != "TopK" {
 		t.Fatal(ModeTopK.String())
 	}
+	if ModeCMS.String() != "CMS" {
+		t.Fatal(ModeCMS.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}
@@ -136,6 +139,15 @@ func TestValidate(t *testing.T) {
 		t.Fatal("ModeTopK tiny MaxValueSize")
 	}
 	if err := (Config{Name: "p", Mode: ModeTopK, TopKSize: 10, MaxBytes: 1 << 20}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Config{Name: "c", Mode: ModeCMS, MaxValueSize: 100}).Validate(); err == nil {
+		t.Fatal("ModeCMS MaxValueSize < 65536")
+	}
+	if err := (Config{Name: "c", Mode: ModeCMS, MaxValueSize: 65536}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Config{Name: "c", Mode: ModeCMS, MaxBytes: 1}).Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if (Config{TopKSize: 0}).EffectiveTopKSize() != DefaultTopKSize {

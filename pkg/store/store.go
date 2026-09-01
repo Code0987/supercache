@@ -198,6 +198,15 @@ type Store interface {
 	// TopKInstall installs a versioned full-table snapshot (incoming > local).
 	TopKInstall(key string, blob []byte, version uint64, expireAt int64, k int) bool
 
+	// CMSIncr adds n to a named Count-Min sketch (creates if missing). n==0 means 1.
+	// Incoming version is a tombstone-gate floor; stored = local+1 (or 1 on create).
+	CMSIncr(key string, item []byte, n uint64, version uint64, expireAt int64, maxValue int) (applied, tooLarge bool)
+	// CMSQuery is min-of-d for item. Missing → ok=false.
+	CMSQuery(key string, item []byte) (n uint64, ok bool)
+	HasCMS(key string) bool
+	// CMSInstall installs a versioned full-sketch snapshot (incoming > local).
+	CMSInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

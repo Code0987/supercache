@@ -223,6 +223,7 @@ func printREPLHelp() {
   bitset|bitget|bitcount|bitpos   ModeBitmap
   hlladd|hllcount   ModeHLL
   topkadd|topklist  ModeTopK
+  cmsincr|cmsquery  ModeCMS
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

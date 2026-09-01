@@ -34,9 +34,9 @@ func TestExampleBillboardModeTopK(t *testing.T) {
 	logger := log.New(&buf, "", 0)
 	src := NewChartSource(logger, 20*time.Millisecond)
 	specs := []nodeSpec{
-		{ID: "billboard-1", CacheAddr: "127.0.0.1:19101", PeerAddr: "127.0.0.1:19201", AdminAddr: "127.0.0.1:18081", GossipPort: 17941},
-		{ID: "billboard-2", CacheAddr: "127.0.0.1:19102", PeerAddr: "127.0.0.1:19202", AdminAddr: "127.0.0.1:18082", GossipPort: 17942, Seeds: []string{"127.0.0.1:17941"}},
-		{ID: "billboard-3", CacheAddr: "127.0.0.1:19103", PeerAddr: "127.0.0.1:19203", AdminAddr: "127.0.0.1:18083", GossipPort: 17943, Seeds: []string{"127.0.0.1:17941"}},
+		{ID: "billboard-1", CacheAddr: "127.0.0.1:19401", PeerAddr: "127.0.0.1:19411", AdminAddr: "127.0.0.1:18091", GossipPort: 17951},
+		{ID: "billboard-2", CacheAddr: "127.0.0.1:19402", PeerAddr: "127.0.0.1:19412", AdminAddr: "127.0.0.1:18092", GossipPort: 17952, Seeds: []string{"127.0.0.1:17951"}},
+		{ID: "billboard-3", CacheAddr: "127.0.0.1:19403", PeerAddr: "127.0.0.1:19413", AdminAddr: "127.0.0.1:18093", GossipPort: 17953, Seeds: []string{"127.0.0.1:17951"}},
 	}
 	var nodes []*runningNode
 	for i, spec := range specs {
@@ -74,6 +74,12 @@ func TestExampleBillboardModeTopK(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "OK: ModeTopK") {
 		t.Fatalf("missing OK line:\n%s", out)
+	}
+	if !strings.Contains(out, "OK: ModeCMS") {
+		t.Fatalf("missing ModeCMS OK:\n%s", out)
+	}
+	if !strings.Contains(out, "cms t003") || !strings.Contains(out, "cms t001") || !strings.Contains(out, "cmsincr t003") {
+		t.Fatalf("missing cms count lines:\n%s", out)
 	}
 	if !strings.Contains(out, "t001 200") || !strings.Contains(out, "t002 150") {
 		t.Fatalf("missing locked head:\n%s", out)

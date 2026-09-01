@@ -69,6 +69,8 @@ const (
 	Cache_HLLCount_FullMethodName      = "/supercache.cache.v1.Cache/HLLCount"
 	Cache_TopKAdd_FullMethodName       = "/supercache.cache.v1.Cache/TopKAdd"
 	Cache_TopKList_FullMethodName      = "/supercache.cache.v1.Cache/TopKList"
+	Cache_CMSIncr_FullMethodName       = "/supercache.cache.v1.Cache/CMSIncr"
+	Cache_CMSQuery_FullMethodName      = "/supercache.cache.v1.Cache/CMSQuery"
 )
 
 // CacheClient is the client API for Cache service.
@@ -127,6 +129,8 @@ type CacheClient interface {
 	HLLCount(ctx context.Context, in *HLLCountRequest, opts ...grpc.CallOption) (*HLLCountResponse, error)
 	TopKAdd(ctx context.Context, in *TopKAddRequest, opts ...grpc.CallOption) (*TopKAddResponse, error)
 	TopKList(ctx context.Context, in *TopKListRequest, opts ...grpc.CallOption) (*TopKListResponse, error)
+	CMSIncr(ctx context.Context, in *CMSIncrRequest, opts ...grpc.CallOption) (*CMSIncrResponse, error)
+	CMSQuery(ctx context.Context, in *CMSQueryRequest, opts ...grpc.CallOption) (*CMSQueryResponse, error)
 }
 
 type cacheClient struct {
@@ -637,6 +641,26 @@ func (c *cacheClient) TopKList(ctx context.Context, in *TopKListRequest, opts ..
 	return out, nil
 }
 
+func (c *cacheClient) CMSIncr(ctx context.Context, in *CMSIncrRequest, opts ...grpc.CallOption) (*CMSIncrResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CMSIncrResponse)
+	err := c.cc.Invoke(ctx, Cache_CMSIncr_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) CMSQuery(ctx context.Context, in *CMSQueryRequest, opts ...grpc.CallOption) (*CMSQueryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CMSQueryResponse)
+	err := c.cc.Invoke(ctx, Cache_CMSQuery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -693,6 +717,8 @@ type CacheServer interface {
 	HLLCount(context.Context, *HLLCountRequest) (*HLLCountResponse, error)
 	TopKAdd(context.Context, *TopKAddRequest) (*TopKAddResponse, error)
 	TopKList(context.Context, *TopKListRequest) (*TopKListResponse, error)
+	CMSIncr(context.Context, *CMSIncrRequest) (*CMSIncrResponse, error)
+	CMSQuery(context.Context, *CMSQueryRequest) (*CMSQueryResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -852,6 +878,12 @@ func (UnimplementedCacheServer) TopKAdd(context.Context, *TopKAddRequest) (*TopK
 }
 func (UnimplementedCacheServer) TopKList(context.Context, *TopKListRequest) (*TopKListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TopKList not implemented")
+}
+func (UnimplementedCacheServer) CMSIncr(context.Context, *CMSIncrRequest) (*CMSIncrResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CMSIncr not implemented")
+}
+func (UnimplementedCacheServer) CMSQuery(context.Context, *CMSQueryRequest) (*CMSQueryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CMSQuery not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1774,6 +1806,42 @@ func _Cache_TopKList_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_CMSIncr_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CMSIncrRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).CMSIncr(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_CMSIncr_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).CMSIncr(ctx, req.(*CMSIncrRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_CMSQuery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CMSQueryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).CMSQuery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_CMSQuery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).CMSQuery(ctx, req.(*CMSQueryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1980,6 +2048,14 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TopKList",
 			Handler:    _Cache_TopKList_Handler,
+		},
+		{
+			MethodName: "CMSIncr",
+			Handler:    _Cache_CMSIncr_Handler,
+		},
+		{
+			MethodName: "CMSQuery",
+			Handler:    _Cache_CMSQuery_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

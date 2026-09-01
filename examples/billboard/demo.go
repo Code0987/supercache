@@ -208,7 +208,7 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 	banner("ModeTopK live plays (TopKAdd + TopKList)")
 	logger.Printf("    ZSet of 500 distinct play ids is one LRU blob (~6.5 KiB and growing); a station-day (~100k) overflows DefaultMaxValueSize.")
 	logger.Printf("    ModeTopK K=%d keeps ≤%d slots (~600 B typical). Writes are plays, not scores. ZSet stays the type for editorial ranks.", playK, playK)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	if err := app.ingestHonestPlays(ctx, playsName); err != nil {
 		cancel()
 		return err
@@ -223,27 +223,37 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 			Count uint64 `json:"count"`
 		} `json:"entries"`
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	// Dual-write fans a 64 KiB CMS snapshot per play; a replica GET can
+	// still see a mid-stream TopK table (len==K but t492 instead of t500).
+	// Wait for the locked chart, not just occupancy.
+	deadline := time.Now().Add(5 * time.Second)
+	match := false
 	for {
 		code, body, hdr, err = get("/v1/plays/" + playsName)
 		if err != nil {
 			return err
 		}
 		_ = json.Unmarshal(body, &chart)
-		if code == 200 && chart.Present && len(chart.Entries) == playK {
-			break
+		if code == 200 && chart.Present && len(chart.Entries) == len(lockedHonestChart) {
+			match = true
+			for i, w := range lockedHonestChart {
+				if chart.Entries[i].Item != w.id || chart.Entries[i].Count != w.count {
+					match = false
+					break
+				}
+			}
+			if match {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("plays chart not ready: http %d present=%v n=%d", code, chart.Present, len(chart.Entries))
+			return fmt.Errorf("honest chart not ready: http %d present=%v got %v", code, chart.Present, chart.Entries)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	logger.Printf("    TopKList HTTP %d via=%s len=%d", code, hdr.Get("X-SuperCache-Node"), len(chart.Entries))
 	for i, w := range lockedHonestChart {
-		if i >= len(chart.Entries) || chart.Entries[i].Item != w.id || chart.Entries[i].Count != w.count {
-			return fmt.Errorf("honest chart rank %d: got %v want %s=%d", i+1, chart.Entries, w.id, w.count)
-		}
-		logger.Printf("    #%d %s %d", i+1, chart.Entries[i].Item, chart.Entries[i].Count)
+		logger.Printf("    #%d %s %d", i+1, w.id, w.count)
 	}
 	seen := map[string]bool{}
 	for _, e := range chart.Entries {
@@ -255,6 +265,65 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 		}
 	}
 	logger.Printf("    evicted t003–t005 (Space-Saving replace-min, not the tail)")
+
+	banner("ModeCMS point frequency (CMSIncr + CMSQuery)")
+	logger.Printf("    TopK cannot answer evicted t003 (not in table ≠ 0). CMS still can (64 KiB, hashed, overestimate only).")
+	var cmsBody struct {
+		Present bool   `json:"present"`
+		Count   uint64 `json:"count"`
+	}
+	cmsDeadline := time.Now().Add(3 * time.Second)
+	for {
+		code, body, _, err = get("/v1/counts/" + playsName + "?track=t003")
+		if err != nil {
+			return err
+		}
+		_ = json.Unmarshal(body, &cmsBody)
+		if code == 200 && cmsBody.Present && cmsBody.Count >= 100 && cmsBody.Count <= 116 {
+			break
+		}
+		if time.Now().After(cmsDeadline) {
+			return fmt.Errorf("cms t003: http %d present=%v count=%d body=%s", code, cmsBody.Present, cmsBody.Count, body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	logger.Printf("    cms t003 %d", cmsBody.Count)
+
+	code, body, _, err = get("/v1/counts/" + playsName + "?track=t001")
+	if err != nil {
+		return err
+	}
+	_ = json.Unmarshal(body, &cmsBody)
+	if code != 200 || !cmsBody.Present || cmsBody.Count < 200 || cmsBody.Count > 216 {
+		return fmt.Errorf("cms t001: http %d present=%v count=%d body=%s", code, cmsBody.Present, cmsBody.Count, body)
+	}
+	logger.Printf("    cms t001 %d", cmsBody.Count)
+
+	code, body, _, err = get("/v1/counts/missing?track=t001")
+	if err != nil {
+		return err
+	}
+	_ = json.Unmarshal(body, &cmsBody)
+	if code != 404 || cmsBody.Present {
+		return fmt.Errorf("cms missing: http %d present=%v", code, cmsBody.Present)
+	}
+
+	code, body, err = post("/v1/plays/" + playsName + "?track=t003&n=100")
+	if err != nil {
+		return err
+	}
+	if code != 200 {
+		return fmt.Errorf("cmsincr post: http %d %s", code, body)
+	}
+	code, body, _, err = get("/v1/counts/" + playsName + "?track=t003")
+	if err != nil {
+		return err
+	}
+	_ = json.Unmarshal(body, &cmsBody)
+	if code != 200 || !cmsBody.Present || cmsBody.Count < 200 || cmsBody.Count > 216 {
+		return fmt.Errorf("cmsincr t003: http %d present=%v count=%d", code, cmsBody.Present, cmsBody.Count)
+	}
+	logger.Printf("    cmsincr t003 %d", cmsBody.Count)
 
 	code, body, err = del("/v1/plays/" + playsName)
 	if err != nil {
@@ -268,7 +337,15 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 	if code != 404 {
 		return fmt.Errorf("after delete want 404 got %d %s", code, body)
 	}
-	logger.Printf("    GET after Delete → HTTP %d (miss)", code)
+	code, body, _, err = get("/v1/counts/" + playsName + "?track=t003")
+	if err != nil {
+		return err
+	}
+	_ = json.Unmarshal(body, &cmsBody)
+	if code != 404 || cmsBody.Present {
+		return fmt.Errorf("after delete counts want 404 got %d present=%v", code, cmsBody.Present)
+	}
+	logger.Printf("    GET after Delete → HTTP 404 (plays + counts miss)")
 
 	// ── summary
 	loads, fails, gen := src.Stats()
@@ -279,6 +356,7 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 	logger.Println("  ✓ CacheOnly keyspace (meta editorial pins)")
 	logger.Println("  ✓ ModeSet keyspace (tags exact membership)")
 	logger.Println("  ✓ ModeTopK keyspace (plays live heavy-hitters)")
+	logger.Println("  ✓ ModeCMS keyspace (plays-count point frequency)")
 	logger.Println("  ✓ TTL / NegativeTTL configured on charts")
 	logger.Println("  ✓ singleflight stampede coalescing")
 	logger.Println("  ✓ protect: rate limit + circuit breaker wired")
@@ -286,15 +364,18 @@ func runDemo(baseURL string, logger *log.Logger, src *ChartSource, app *appServe
 	logger.Println("  ✓ Put + async fan-out (pin read-back)")
 	logger.Println("  ✓ SetAdd + SetContains fan-out (tags)")
 	logger.Println("  ✓ TopKAdd + TopKList fan-out (plays)")
+	logger.Println("  ✓ CMSIncr + CMSQuery fan-out (plays-count)")
 	logger.Println("  ✓ WarmKeys / topology prefetch / refresh-ahead")
 	logger.Println("  ✓ Admin /healthz /peers /keyspaces /metrics")
 	logger.Println("  ✓ pkg/client round-robin across cache ports")
 	logger.Printf("  · SoT totals: loads=%d fails=%d generation=%d", loads, fails, gen)
 	logger.Println()
 	logger.Println("OK: ModeTopK")
+	logger.Println("OK: ModeCMS")
 	logger.Printf("UI:        %s/", baseURL)
 	logger.Printf("API chart: %s/v1/charts/global", baseURL)
 	logger.Printf("Live plays:%s/v1/plays/hot", baseURL)
+	logger.Printf("Counts:    %s/v1/counts/hot?track=t003", baseURL)
 	logger.Printf("Stampede:  %s/v1/demo/stampede", baseURL)
 	logger.Println("Admin n1:  http://127.0.0.1:8081/peers")
 	logger.Println()

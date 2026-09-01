@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount**, **topkadd** / **topklist** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount**, **topkadd** / **topklist**, **cmsincr** / **cmsquery** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -95,6 +95,8 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `hllcount <name>` | Cache gRPC | Approximate distinct count, or `(nil)` + exit 1 if name missing |
 | `topkadd <name> <item...>` | Cache gRPC | `ModeTopK` observe (one RPC per item; +1) |
 | `topklist <name>` | Cache gRPC | `item count` lines, or `(nil)` + exit 1 if name missing |
+| `cmsincr <name> <item> [n]` | Cache gRPC | `ModeCMS` increment (`n` optional, default 1; 0 means 1) |
+| `cmsquery <name> <item>` | Cache gRPC | decimal estimate, or `(nil)` + exit 1 if name missing |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |

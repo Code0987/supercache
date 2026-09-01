@@ -47,6 +47,7 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeBitmap` | Named packed bit vector | `BitSet`, `BitGet`, `BitCount`, `BitPos`; `Delete(name)` |
 | `ModeHLL` | Named HyperLogLog sketch | `HLLAdd`, `HLLCount`; `Delete(name)` |
 | `ModeTopK` | Named Space-Saving heavy-hitters | `TopKAdd`, `TopKList`; `Delete(name)` |
+| `ModeCMS` | Named Count-Min frequency sketch | `CMSIncr`, `CMSQuery`; `Delete(name)` |
 
 Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100).
 
@@ -186,6 +187,16 @@ One named sketch, FNV-1a 64, `p=14`, dense 12 KiB. Items are hashed, not stored.
 | `Delete(name)` | Tombstone whole table |
 
 Named Space-Saving table. Writes are observations, not scores (`ZAdd` is the exact scored set). Memory is **O(K)** (`TopKSize`, default 100). Empty item is invalid. Replicas install a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Get/Put on `ModeTopK` are invalid. Not Redis `TOPK` (different algorithm; no Query/Count/Incr in v1). Live billboard: [`examples/billboard`](../examples/billboard/).
+
+### Count-Min (`ModeCMS`)
+
+| RPC | Notes |
+|-----|--------|
+| `CMSIncr` | Observe `item` **n** times (`n==0` means 1). Creates the sketch if missing. **ACK-only** (does not return the new estimate) |
+| `CMSQuery` | Min of *d* cells. Missing **name** ⇒ `present=false`. Live sketch ⇒ `present=true` |
+| `Delete(name)` | Tombstone whole sketch |
+
+Named Count-Min Sketch. Items are hashed, not stored. Fixed **64 KiB** (`d=4`, `w=2048`). Empty item is invalid. Replicas install a **full `FlagCMS` snapshot**. Replica `CMSQuery` may lag. Get/Put on `ModeCMS` are invalid. Not Redis `CMS.*` (different hash; no merge). Billboard complement: [`examples/billboard`](../examples/billboard/) `plays-count`.
 
 ## Enabling GitHub Pages
 

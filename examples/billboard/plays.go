@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	playsKS   = "plays"
-	playsName = "hot"
-	playK     = 10
-	playIDs   = 500
+	playsKS      = "plays"
+	playsCountKS = "plays-count"
+	playsName    = "hot"
+	playK        = 10
+	playIDs      = 500
 )
 
 // playTrackID is t001..t500 (distinct from SoT seedTracks t01..t20).
@@ -80,11 +81,14 @@ var lockedHonestChart = []struct {
 	{"t494", 108},
 }
 
-// ingestHonestPlays is the scripted demo write path: client TopKAdd, no HTTP sleep.
+// ingestHonestPlays is the scripted demo write path: one CMSIncr(1) per TopKAdd.
 func (a *appServer) ingestHonestPlays(ctx context.Context, name string) error {
 	cli := a.clients[0]
 	for _, item := range honestPlayStream() {
 		if err := cli.TopKAdd(ctx, playsKS, name, item); err != nil {
+			return err
+		}
+		if err := cli.CMSIncr(ctx, playsCountKS, name, item, 1); err != nil {
 			return err
 		}
 	}
@@ -149,6 +153,10 @@ func (a *appServer) handlePlays(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item := []byte(track)
+		if err := cli.CMSIncr(ctx, playsCountKS, name, item, uint64(nPlays)); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "added": 0})
+			return
+		}
 		for i := 0; i < nPlays; i++ {
 			if err := cli.TopKAdd(ctx, playsKS, name, item); err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "added": i})
@@ -159,14 +167,56 @@ func (a *appServer) handlePlays(w http.ResponseWriter, r *http.Request) {
 			"ok": true, "name": name, "track": track, "n": nPlays, "via": node.ID,
 		})
 	case http.MethodDelete:
-		if err := cli.Delete(ctx, playsKS, name); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "peer_note": err.Error()})
+		errP := cli.Delete(ctx, playsKS, name)
+		errC := cli.Delete(ctx, playsCountKS, name)
+		if errP != nil || errC != nil {
+			err := errP
+			if err == nil {
+				err = errC
+			}
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": name, "via": node.ID})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleCounts is GET /v1/counts/{name}?track=t003 → CMSQuery.
+func (a *appServer) handleCounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/v1/counts/")
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		http.Error(w, "counts name required: /v1/counts/{name}", http.StatusBadRequest)
+		return
+	}
+	track := strings.TrimSpace(r.URL.Query().Get("track"))
+	if track == "" {
+		http.Error(w, "track required (?track=)", http.StatusBadRequest)
+		return
+	}
+	cli, node := a.pick()
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	n, ok, err := cli.CMSQuery(ctx, playsCountKS, name, []byte(track))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"present": false, "name": name, "via": node.ID,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"present": true, "name": name, "track": track, "count": n, "via": node.ID,
+	})
 }
 
 func parsePlayN(r *http.Request) int {
