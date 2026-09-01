@@ -3,6 +3,7 @@ package client_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Code0987/supercache/internal/cacheserver"
 	"github.com/Code0987/supercache/pkg/client"
