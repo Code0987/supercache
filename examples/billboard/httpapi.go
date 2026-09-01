@@ -58,6 +58,7 @@ func (a *appServer) Handler() http.Handler {
 	mux.HandleFunc("/v1/admin/pin/", a.handlePin)
 	mux.HandleFunc("/v1/tags/", a.handleTags)
 	mux.HandleFunc("/v1/plays/", a.handlePlays)
+	mux.HandleFunc("/v1/counts/", a.handleCounts)
 	mux.HandleFunc("/v1/demo/stampede", a.handleStampede)
 	mux.HandleFunc("/v1/demo/load", a.handleLoad)
 	mux.HandleFunc("/v1/status", a.handleStatus)
@@ -435,9 +436,11 @@ const homeHTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>🎵 Trending Billboard</h1>
-  <p class="muted">Demo app on a <strong>3-node SuperCache</strong> cluster — official charts are LoadThrough SoT JSON; <strong>live plays</strong> are ModeTopK observations (no score).</p>
+  <p class="muted">Demo app on a <strong>3-node SuperCache</strong> cluster — official charts are LoadThrough SoT JSON; <strong>live plays</strong> are ModeTopK; <strong>point frequency</strong> is ModeCMS.</p>
   <div class="card">
     <button onclick="loadPlays()">Live plays</button>
+    <input id="countTrack" value="t003" size="6" title="CMS query track"/>
+    <button onclick="loadCount(document.getElementById('countTrack').value)">Approx plays</button>
     <button onclick="playSong('t001',100)">t001 +100</button>
     <button onclick="playSong('t002',100)">t002 +100</button>
     <button onclick="playSong('t003',100)">t003 +100</button>
@@ -468,7 +471,7 @@ async function loadPlays() {
   const body = await r.json();
   document.getElementById('meta').textContent = 'live plays via ' + node + ' in ' + ms + 'ms · http ' + r.status;
   if (!r.ok) { document.getElementById('out').innerHTML = '<pre>'+JSON.stringify(body,null,2)+'</pre>'; return; }
-  let html = '<h2>Live plays (ModeTopK)</h2><p class="muted">each Play is n× TopKAdd(+1). Engine has no Incr-by-N. K≤10 · not official SoT ranks</p><table><tr><th>#</th><th>Track</th><th>Artist</th><th>Count</th><th></th></tr>';
+  let html = '<h2>Live plays (ModeTopK)</h2><p class="muted">POST ?n= is one CMSIncr(n) + n TopKAdds. Chart is TopK; count tile is CMS. K≤10</p><table><tr><th>#</th><th>Track</th><th>Artist</th><th>Count</th><th></th></tr>';
   for (const e of (body.entries||[])) {
     html += '<tr><td>'+e.rank+'</td><td>'+(e.title||e.item)+'</td><td>'+(e.artist||'')+
       '</td><td>'+e.count+'</td><td><button onclick="playSong(\''+e.item+'\',100)">+100</button></td></tr>';
@@ -490,6 +493,17 @@ async function playSong(track, n) {
   }
   await loadPlays();
   document.getElementById('meta').textContent = 'played '+body.track+' ×'+body.n+' via '+(body.via||'?');
+}
+async function loadCount(track) {
+  track = (track||'').trim();
+  if (!track) { document.getElementById('meta').textContent = 'need a track id'; return; }
+  const t0 = performance.now();
+  const r = await fetch('/v1/counts/hot?track='+encodeURIComponent(track));
+  const ms = (performance.now()-t0).toFixed(1);
+  const node = r.headers.get('X-SuperCache-Node') || '?';
+  const body = await r.json();
+  document.getElementById('meta').textContent = 'cms '+track+' via ' + node + ' in ' + ms + 'ms · http ' + r.status;
+  document.getElementById('out').innerHTML = '<h2>Approx plays (ModeCMS)</h2><pre>'+JSON.stringify(body,null,2)+'</pre>';
 }
 async function loadChart(board) {
   const t0 = performance.now();

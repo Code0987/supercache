@@ -111,7 +111,8 @@ func run(args []string) int {
 		"jsonset", "jsonget", "jsondel",
 		"bitset", "bitget", "bitcount", "bitpos",
 		"hlladd", "hllcount",
-		"topkadd", "topklist":
+		"topkadd", "topklist",
+		"cmsincr", "cmsquery":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -349,6 +350,8 @@ Cache commands (gRPC -addr seeds):
   hllcount <name>              ModeHLL estimate (or (nil))
   topkadd <name> <item...>     ModeTopK observe (+1 per item)
   topklist <name>              ModeTopK chart (item count lines, or (nil))
+  cmsincr <name> <item> [n]    ModeCMS increment (n optional, default 1)
+  cmsquery <name> <item>       ModeCMS estimate (or (nil))
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

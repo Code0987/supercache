@@ -124,6 +124,10 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdTopKAdd(ctx, sess, args)
 	case "topklist":
 		return cmdTopKList(ctx, sess, args)
+	case "cmsincr":
+		return cmdCMSIncr(ctx, sess, args)
+	case "cmsquery":
+		return cmdCMSQuery(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2

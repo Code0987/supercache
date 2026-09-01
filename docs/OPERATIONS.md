@@ -73,6 +73,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeBitmap` | BitSet / BitGet / BitCount / BitPos / Delete(name) | packed bits; snapshot fan-out + owner-inbox; replica BitGet may lag |
 | `ModeHLL` | HLLAdd / HLLCount / Delete(name) | dense 12 KiB sketch; snapshot fan-out + owner-inbox; replica HLLCount may lag |
 | `ModeTopK` | TopKAdd / TopKList / Delete(name) | Space-Saving table; snapshot fan-out + owner-inbox; replica TopKList may lag |
+| `ModeCMS` | CMSIncr / CMSQuery / Delete(name) | Count-Min 64 KiB; snapshot fan-out + owner-inbox; replica CMSQuery may lag |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
@@ -96,6 +97,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 | BitSet / BitGet / BitCount / BitPos | `ModeBitmap` only. Owner applies the op then fans out a **full `FlagBitmap` snapshot** (inbox `FlagBitmapSet` stays owner-only). Replica `BitGet` may lag. Missing name → `BitGet` `ok=false`. Live all-zero stays until `Delete(name)`. `BitSet` is ACK-only (no old bit). |
 | HLLAdd / HLLCount | `ModeHLL` only. Owner applies the op then fans out a **full `FlagHLL` snapshot** (inbox `FlagHLLAdd` stays owner-only). Replica `HLLCount` may lag. Missing name → `ok=false`. `HLLAdd` is ACK-only (no changed-bool). |
 | TopKAdd / TopKList | `ModeTopK` only. Owner applies the op then fans out a **full `FlagTopK` snapshot** (inbox `FlagTopKAdd` stays owner-only). Replica `TopKList` may lag. Missing name → `ok=false`. `TopKAdd` is ACK-only (+1). |
+| CMSIncr / CMSQuery | `ModeCMS` only. Owner applies the op then fans out a **full `FlagCMS` snapshot** (inbox `FlagCMSIncr` stays owner-only). Replica `CMSQuery` may lag. Missing name → `ok=false`. `CMSIncr` is ACK-only (`n==0` means 1). See [`examples/billboard`](../examples/billboard/) for the ModeCMS complement. |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).

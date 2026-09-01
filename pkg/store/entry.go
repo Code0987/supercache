@@ -33,6 +33,8 @@ const (
 	FlagHLLAdd    uint32 = 1 << 26 // owner-inbox: raw item bytes
 	FlagTopK      uint32 = 1 << 27 // value is encoded Space-Saving snapshot
 	FlagTopKAdd   uint32 = 1 << 28 // owner-inbox only: raw item to Add (replicas ignore)
+	FlagCMS       uint32 = 1 << 29 // value is dense 64 KiB Count-Min snapshot
+	FlagCMSIncr   uint32 = 1 << 30 // owner-inbox only: uvarint(n) || item (replicas ignore)
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -170,6 +172,14 @@ func (e Entry) IsTopK() bool {
 
 func (e Entry) IsTopKAdd() bool {
 	return e.Flags&FlagTopKAdd != 0
+}
+
+func (e Entry) IsCMS() bool {
+	return e.Flags&FlagCMS != 0
+}
+
+func (e Entry) IsCMSIncr() bool {
+	return e.Flags&FlagCMSIncr != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

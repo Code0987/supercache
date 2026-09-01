@@ -56,6 +56,8 @@ service Cache {
   rpc HLLCount(HLLCountRequest) returns (HLLCountResponse);
   rpc TopKAdd(TopKAddRequest) returns (TopKAddResponse);
   rpc TopKList(TopKListRequest) returns (TopKListResponse);
+  rpc CMSIncr(CMSIncrRequest) returns (CMSIncrResponse);
+  rpc CMSQuery(CMSQueryRequest) returns (CMSQueryResponse);
 }
 
 message GetRequest {
@@ -552,4 +554,22 @@ message TopKEntry {
 message TopKListResponse {
   bool present = 1;
   repeated TopKEntry entries = 2;
+}
+
+message CMSIncrRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+  uint64 n = 4; // 0 means 1
+}
+message CMSIncrResponse {}
+
+message CMSQueryRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes item = 3;
+}
+message CMSQueryResponse {
+  bool present = 1;
+  uint64 count = 2;
 }

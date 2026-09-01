@@ -338,6 +338,7 @@ KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 | ModeBitmap | owner `BitSet` then **`FlagBitmap` snapshot** | `BitGet` / `BitCount` / `BitPos` | packed bit string |
 | ModeHLL | owner `HLLAdd` then **`FlagHLL` snapshot** | `HLLCount` | dense 12 KiB registers |
 | ModeTopK | owner `TopKAdd` then **`FlagTopK` snapshot** | `TopKList` | Space-Saving table (≤ K slots) |
+| ModeCMS | owner `CMSIncr` then **`FlagCMS` snapshot** | `CMSQuery` | dense 64 KiB Count-Min |
 
 `Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
 
@@ -350,7 +351,7 @@ See [API.md](./API.md) and design docs under `docs/design/`.
 ```mermaid
 flowchart TB
   subgraph Client
-    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet / Json* / BitSet / BitGet / BitCount / BitPos / HLLAdd / HLLCount / TopKAdd / TopKList"]
+    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet / Json* / BitSet / BitGet / BitCount / BitPos / HLLAdd / HLLCount / TopKAdd / TopKList / CMSIncr / CMSQuery"]
   end
 
   subgraph Node["Any of N nodes"]
@@ -412,7 +413,7 @@ flowchart TD
   E --> E8["Owner down on Get"]
   E --> E9["Owner down on ForwardPut"]
   E --> E10["SetAdd / ZAdd / BloomAdd / HSet"]
-  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet / JsonGet / BitGet / HLLCount / TopKList"]
+  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet / JsonGet / BitGet / HLLCount / TopKList / CMSQuery"]
 
   E1 --> A1["Owner apply + async ApplyPut × R−1"]
   E2 --> A2["Local store only"]

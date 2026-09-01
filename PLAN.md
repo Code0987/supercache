@@ -188,9 +188,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK / CMS entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
@@ -202,13 +202,14 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | **BitSet / BitGet / BitCount / BitPos** | `ModeBitmap` only. Named packed bit vector; Redis MSB-first bit order; `BITCOUNT`/`BITPOS` **byte** windows (whole = `0,-1`). Owner applies the op then fans out a **full `FlagBitmap` snapshot**. Replica `BitGet` may lag. Missing name → `BitGet` `ok=false`; live past-end → `ok=true`, bit `false`. Empty-until-delete (clear last `1` leaves live all-zero). Get/Put **invalid**. `BitSet` is ACK-only (no old bit). |
 | **HLLAdd / HLLCount** | `ModeHLL` only. Approximate distinct count of hashed items; FNV-1a 64, `p=14` dense 12 KiB. Owner applies the op then fans out a **full `FlagHLL` snapshot**. Replica `HLLCount` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `HLLAdd` is ACK-only (no Redis changed-bool). Estimates do **not** match Redis `PFCOUNT`. |
 | **TopKAdd / TopKList** | `ModeTopK` only. Approximate heavy-hitters; Space-Saving, +1 observations. Owner applies the op then fans out a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `TopKAdd` is ACK-only. Estimates do **not** match Redis `TOPK`. |
+| **CMSIncr / CMSQuery** | `ModeCMS` only. Approximate frequency of a named item; Count-Min, d=4 w=2048 dense 64 KiB. Owner applies the op then fans out a **full `FlagCMS` snapshot**. Replica `CMSQuery` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `CMSIncr` is ACK-only (`n==0` means 1; no returned estimate). Estimates do **not** match Redis `CMS.QUERY`. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / TopKAdd / BloomAdd | Local read verbs see the update immediately. |
+| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / TopKAdd / CMSIncr / BloomAdd | Local read verbs see the update immediately. |
 | **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
 | **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
@@ -313,6 +314,7 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeBitmap` | bitmap `name` | BitSet, BitGet, BitCount, BitPos; Delete(name) | `FlagBitmap` snapshot; owner-inbox `FlagBitmapSet` |
 | `ModeHLL` | sketch `name` | HLLAdd, HLLCount; Delete(name) | `FlagHLL` snapshot; owner-inbox `FlagHLLAdd` |
 | `ModeTopK` | table `name` | TopKAdd, TopKList; Delete(name) | `FlagTopK` snapshot; owner-inbox `FlagTopKAdd` |
+| `ModeCMS` | sketch `name` | CMSIncr, CMSQuery; Delete(name) | `FlagCMS` snapshot; owner-inbox `FlagCMSIncr` |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 
@@ -426,6 +428,16 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 - Package: `pkg/topkx`; CLI: `sc topkadd|topklist`; live billboard: [`examples/billboard`](./examples/billboard/)
 - Design: [docs/design/2026-08-31-mode-topk.md](./docs/design/2026-08-31-mode-topk.md)
 
+### `ModeCMS` (approximate item frequency)
+
+- Named Count-Min Sketch; `CMSIncr` / `CMSQuery`; `Delete(name)` tombstone
+- `pkg/cmsx`: FNV-1a 64 + mix64, d=4 w=2048 dense 64 KiB; `n==0` means 1; no Redis CMS numeric parity
+- Owner applies the op then fans out a **full `FlagCMS` snapshot** (hints coalesce). Inbox `FlagCMSIncr` never goes to replicas
+- Missing name → `CMSQuery` `ok=false`; live sketch (even estimate 0) → `ok=true`. First incr creates; `Delete(name)` only drop
+- `CMSIncr` is ACK-only (no returned estimate). Not Redis `CMS.*`
+- Package: `pkg/cmsx`; CLI: `sc cmsincr|cmsquery`; billboard complement: [`examples/billboard`](./examples/billboard/)
+- Design: [docs/design/2026-09-01-mode-cms.md](./docs/design/2026-09-01-mode-cms.md)
+
 ### Precedence matrix
 
 | Incoming | vs local | Result |
@@ -438,7 +450,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
 | ApplyDelete adequate version | present or missing | install tombstone |
 | FlagSetAdd / FlagZSetAdd / FlagHashSet / Bloom item-add | structure present | mutate under mutex; version gate |
-| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL / FlagTopK snapshot | structure or tombstone | install if version **>** local (equal ignore; tombstone blocks stale) |
+| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL / FlagTopK / FlagCMS snapshot | structure or tombstone | install if version **>** local (equal ignore; tombstone blocks stale) |
 
 ---
 
@@ -599,16 +611,22 @@ TopKAdd (ModeTopK; List-class snapshot, not step-3 item flag):
   2. else: TopKAdd under store mutex (stored = local+1); fan-out FlagTopK snapshot at PeekVersion
   3. replica ApplyPut of inbox flags is ignored
 
-Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount / TopKList):
+CMSIncr (ModeCMS; List-class snapshot, not step-3 item flag):
+  1. if self != owner → ApplyPut inbox FlagCMSIncr (ACK-only)
+  2. else: CMSIncr under store mutex (stored = local+1); fan-out FlagCMS snapshot at PeekVersion
+  3. replica ApplyPut of inbox flags is ignored
+
+Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount / TopKList / CMSQuery):
   1. if local live structure → answer from store cache (field miss stays local)
      BitGet / BitCount / BitPos: local extract if HasBitmap (replica may lag)
      HLLCount: local extract if HasHLL (replica may lag)
      TopKList: local extract if HasTopK (replica may lag)
+     CMSQuery: local extract if HasCMS (replica may lag)
   2. else if owner self → missing → empty/false
   3. else → peer.GetOrLoad(owner) structure snapshot; optional install if holdsReplica
   4. decode / answer
 
-Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL|FlagTopK
+Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL|FlagTopK|FlagCMS
          if incoming version > local (tombstone still blocks stale).
 ```
 
@@ -622,7 +640,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 
 | Need | Approach |
 |------|----------|
-| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK protected while live |
+| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK / CMS protected while live |
 | TTL | `expire_at` on entry; lazy expire |
 | Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
 | Negative | Envelope flag |
@@ -633,6 +651,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 | ModeBitmap | packed `Value` (no dirty cache); protect `FlagBitmap` |
 | ModeHLL | dense register `Value` (no dirty cache); protect `FlagHLL` |
 | ModeTopK | encoded table `Value` (no dirty cache); protect `FlagTopK` |
+| ModeCMS | dense counter `Value` (no dirty cache); protect `FlagCMS` |
 | ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
@@ -729,6 +748,10 @@ type Engine interface {
     TopKAdd(ctx context.Context, keyspace, name string, item []byte) error
     TopKList(ctx context.Context, keyspace, name string) (entries []TopKEntry, ok bool, err error)
 
+    // ModeCMS
+    CMSIncr(ctx context.Context, keyspace, name string, item []byte, n uint64) error
+    CMSQuery(ctx context.Context, keyspace, name string, item []byte) (n uint64, ok bool, err error)
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -767,6 +790,7 @@ const (
     ModeBitmap
     ModeHLL
     ModeTopK
+    ModeCMS
 )
 
 type KeySpaceConfig struct {
@@ -800,7 +824,7 @@ type KeySpaceConfig struct {
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
 | TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
-| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx`, `pkg/topkx` |
+| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx`, `pkg/topkx`, `pkg/cmsx` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
@@ -810,7 +834,7 @@ type KeySpaceConfig struct {
 | Admin diagnostics + OpenAPI docs | admin HTTP `/docs`; GitHub Pages |
 | OTel | telemetry pkg |
 | TLS + gossip auth | transport + memberlist secret |
-| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, hlladd/hllcount, topkadd/topklist |
+| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, hlladd/hllcount, topkadd/topklist, cmsincr/cmsquery |
 
 ---
 
@@ -909,6 +933,9 @@ service Cache {
   // ModeTopK
   rpc TopKAdd(TopKAddRequest) returns (TopKAddResponse);
   rpc TopKList(TopKListRequest) returns (TopKListResponse);
+  // ModeCMS
+  rpc CMSIncr(CMSIncrRequest) returns (CMSIncrResponse);
+  rpc CMSQuery(CMSQueryRequest) returns (CMSQueryResponse);
 }
 
 // Messages carry: keyspace, key/name, value/item/member, score, start/stop,
@@ -1108,7 +1135,7 @@ Do **not** use SuperCache for:
 | No versioning | §6 owner versions + LWW apply rules |
 | groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
-| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK; §9.6; §11 Engine API; §14 Cache RPCs |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |

@@ -43,6 +43,8 @@ const (
 	ModeHLL
 	// ModeTopK is a named Space-Saving heavy-hitter table (TopKAdd / TopKList).
 	ModeTopK
+	// ModeCMS is a named Count-Min Sketch (CMSIncr / CMSQuery).
+	ModeCMS
 )
 
 func (m Mode) String() string {
@@ -73,6 +75,8 @@ func (m Mode) String() string {
 		return "HLL"
 	case ModeTopK:
 		return "TopK"
+	case ModeCMS:
+		return "CMS"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -183,6 +187,9 @@ func (c Config) Validate() error {
 	}
 	if c.Mode == ModeHLL && c.MaxValueSize > 0 && c.MaxValueSize < 12288 {
 		return fmt.Errorf("keyspace: ModeHLL MaxValueSize %d < 12288", c.MaxValueSize)
+	}
+	if c.Mode == ModeCMS && c.MaxValueSize > 0 && c.MaxValueSize < 65536 {
+		return fmt.Errorf("keyspace: ModeCMS MaxValueSize %d < 65536", c.MaxValueSize)
 	}
 	if c.Mode == ModeTopK {
 		if c.TopKSize < 0 {

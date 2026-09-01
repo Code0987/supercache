@@ -278,6 +278,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeTopK {
 		return nil, fmt.Errorf("%w: use TopKList", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeCMS {
+		return nil, fmt.Errorf("%w: use CMSQuery", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -496,6 +499,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		}
 		if ks.cfg.Mode == keyspace.ModeTopK {
 			return fmt.Errorf("%w: use TopKAdd", ErrInvalidArgument)
+		}
+		if ks.cfg.Mode == keyspace.ModeCMS {
+			return fmt.Errorf("%w: use CMSIncr", ErrInvalidArgument)
 		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
@@ -746,6 +752,17 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsTopK() {
 		return e.applyTopKInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsCMSIncr() {
+		if c := e.clusterSnapshot(); c != nil && c.Ring != nil {
+			if owner, ok := c.Ring.Owner(key); ok && owner.ID != "" && owner.ID != c.SelfID {
+				return false, nil
+			}
+		}
+		return e.applyCMSIncr(ks, key, ent.Value, ent.ExpireAt), nil
+	}
+	if ent.IsCMS() {
+		return e.applyCMSInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

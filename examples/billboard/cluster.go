@@ -130,6 +130,18 @@ func startNode(spec nodeSpec, shared *ChartSource, logger *log.Logger) (*running
 	}
 	nlog.Printf("keyspace plays mode=ModeTopK k=%d ttl=30m", playK)
 
+	// plays-count: ModeCMS point frequency (any named track, including evicted)
+	if err := eng.UpdateKeySpace(keyspace.Config{
+		Name:     playsCountKS,
+		Mode:     keyspace.ModeCMS,
+		MaxBytes: 8 << 20,
+		TTL:      30 * time.Minute,
+	}); err != nil {
+		eng.Close()
+		return nil, fmt.Errorf("keyspace plays-count: %w", err)
+	}
+	nlog.Printf("keyspace plays-count mode=ModeCMS ttl=30m")
+
 	wm := warmup.NewManager(eng, warmup.Config{Workers: 4, TopN: 32})
 	eng.AttachWarmup(wm, wm)
 	wm.Start(context.Background())
