@@ -6,10 +6,10 @@ import (
 
 	"github.com/Code0987/supercache/pkg/bitmapx"
 	"github.com/Code0987/supercache/pkg/keyspace"
-	"github.com/Code0987/supercache/pkg/store"
 )
 
 // BitSet writes a bit on a ModeBitmap (Redis SETBIT). ACK-only.
+// Non-owners forward an inbox FlagBitmapSet; the owner applies and fans a snapshot.
 func (e *Engine) BitSet(ctx context.Context, keyspaceName, name string, offset uint64, bit bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -143,106 +143,4 @@ func (e *Engine) bitmapNeed(ks *ksRuntime, offset uint64) error {
 		return ErrValueTooLarge
 	}
 	return nil
-}
-
-func (e *Engine) bMutViaOwner(ctx context.Context, ks *ksRuntime, name string, value []byte) error {
-	c := e.clusterSnapshot()
-	owner, _ := c.Ring.Owner(name)
-	ent := store.Entry{Value: value, Flags: store.FlagBitmapSet, Version: 1}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	applied, err := c.Transport.ApplyPut(pctx, owner.Addr, ks.cfg.Name, name, ent, c.Ring.Generation())
-	if err != nil {
-		return err
-	}
-	if !applied {
-		return fmt.Errorf("%w: bitmap set rejected", ErrInvalidArgument)
-	}
-	return nil
-}
-
-func (e *Engine) bSetLocal(ks *ksRuntime, name string, offset uint64, bit bool) error {
-	expire := e.expireAt(ks.cfg.TTL)
-	max := e.maxValueSize
-	if ks.cfg.MaxValueSize > 0 {
-		max = ks.cfg.MaxValueSize
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	applied, tooLarge := ks.store.BSet(name, offset, bit, gate, expire, max)
-	if tooLarge {
-		return ErrValueTooLarge
-	}
-	if !applied {
-		return fmt.Errorf("%w: bitmap set rejected", ErrInvalidArgument)
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.bReplicateSnapshot(ks, name, ver, expire)
-	return nil
-}
-
-func (e *Engine) bReplicateSnapshot(ks *ksRuntime, name string, ver uint64, expire int64) {
-	ent, ok := ks.store.Peek(name)
-	if !ok || !ent.IsBitmap() {
-		return
-	}
-	e.replicate(ks.cfg.Name, name, store.Entry{
-		Value:    ent.Value,
-		Version:  ver,
-		ExpireAt: expire,
-		Flags:    store.FlagBitmap,
-	}, false)
-}
-
-func (e *Engine) bFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsBitmap() {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.BInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
-}
-
-func (e *Engine) applyBitmapSet(ks *ksRuntime, name string, inbox []byte, expireAt int64) bool {
-	offset, bit, err := bitmapx.DecodeSet(inbox)
-	if err != nil {
-		return false
-	}
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	max := e.maxValueSize
-	if ks.cfg.MaxValueSize > 0 {
-		max = ks.cfg.MaxValueSize
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	ok, tooLarge := ks.store.BSet(name, offset, bit, gate, expireAt, max)
-	if !ok || tooLarge {
-		return false
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.bReplicateSnapshot(ks, name, ver, expireAt)
-	return true
-}
-
-func (e *Engine) applyBitmapInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.BInstall(name, blob, version, expireAt)
 }
