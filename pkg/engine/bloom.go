@@ -6,7 +6,14 @@ import (
 
 	"github.com/Code0987/supercache/pkg/bloom"
 	"github.com/Code0987/supercache/pkg/keyspace"
-	"github.com/Code0987/supercache/pkg/store"
+)
+
+const (
+	errEmptyBloomItem        = "%w: empty bloom item"
+	errBloomAddRequiresMode  = "%w: BloomAdd requires ModeBloom"
+	errBloomTestRequiresMode = "%w: BloomTest requires ModeBloom"
+	errBloomAddRejected      = "%w: bloom add rejected"
+	errOwnerNoAddress        = "%w: owner %s has no address"
 )
 
 // BloomAdd inserts item into the named filter (ModeBloom only).
@@ -18,14 +25,14 @@ func (e *Engine) BloomAdd(ctx context.Context, keyspaceName, name string, item [
 		return err
 	}
 	if len(item) == 0 {
-		return fmt.Errorf("%w: empty bloom item", ErrInvalidArgument)
+		return fmt.Errorf(errEmptyBloomItem, ErrInvalidArgument)
 	}
 	ks, err := e.getKS(keyspaceName)
 	if err != nil {
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeBloom {
-		return fmt.Errorf("%w: BloomAdd requires ModeBloom", ErrInvalidArgument)
+		return fmt.Errorf(errBloomAddRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -37,7 +44,7 @@ func (e *Engine) BloomAdd(ctx context.Context, keyspaceName, name string, item [
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			// Forward as a flagged Apply via ForwardPut? Owner must BloomAdd.
 			// Use peer ApplyPut with FlagBloomAdd after routing like Put.
@@ -45,40 +52,6 @@ func (e *Engine) BloomAdd(ctx context.Context, keyspaceName, name string, item [
 		}
 	}
 	return e.bloomAddLocal(ks, name, item, true)
-}
-
-func (e *Engine) bloomAddViaOwner(ctx context.Context, ks *ksRuntime, name string, item []byte) error {
-	c := e.clusterSnapshot()
-	owner, _ := c.Ring.Owner(name)
-	ent := store.Entry{Value: append([]byte(nil), item...), Flags: store.FlagBloomAdd, Version: 1}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	_, err := c.Transport.ApplyPut(pctx, owner.Addr, ks.cfg.Name, name, ent, c.Ring.Generation())
-	return err
-}
-
-func (e *Engine) bloomAddLocal(ks *ksRuntime, name string, item []byte, fanout bool) error {
-	ver := uint64(1)
-	if cur, ok := ks.store.Peek(name); ok {
-		ver = ks.nextVersion(name, cur.Version)
-		if cur.IsBloom() && !cur.IsTombstone() {
-			ver = cur.Version
-		}
-	}
-	expire := e.expireAt(ks.cfg.TTL)
-	m, k := ks.cfg.EffectiveBloomBits(), ks.cfg.EffectiveBloomHashes()
-	if !ks.store.BloomAdd(name, item, m, k, ver, expire) {
-		return fmt.Errorf("%w: bloom add rejected", ErrInvalidArgument)
-	}
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    append([]byte(nil), item...),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagBloomAdd,
-		}, false)
-	}
-	return nil
 }
 
 // BloomTest reports whether item may be in the named filter.
@@ -94,7 +67,7 @@ func (e *Engine) BloomTest(ctx context.Context, keyspaceName, name string, item 
 		return false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeBloom {
-		return false, fmt.Errorf("%w: BloomTest requires ModeBloom", ErrInvalidArgument)
+		return false, fmt.Errorf(errBloomTestRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return false, err
@@ -144,20 +117,4 @@ func (e *Engine) ApplyBloomMerge(keyspaceName, name string, bits []byte, version
 	}
 	ks.observeVersion(name, version)
 	return e.applyBloomMerge(ks, name, bits, version, 0), nil
-}
-
-func (e *Engine) applyBloomAdd(ks *ksRuntime, name string, item []byte, version uint64, expireAt int64) bool {
-	m, k := ks.cfg.EffectiveBloomBits(), ks.cfg.EffectiveBloomHashes()
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.BloomAdd(name, item, m, k, version, expireAt)
-}
-
-func (e *Engine) applyBloomMerge(ks *ksRuntime, name string, bits []byte, version uint64, expireAt int64) bool {
-	m, k := ks.cfg.EffectiveBloomBits(), ks.cfg.EffectiveBloomHashes()
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.BloomMerge(name, bits, m, k, version, expireAt)
 }
