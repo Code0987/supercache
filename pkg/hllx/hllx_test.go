@@ -92,7 +92,7 @@ func TestNewSize(t *testing.T) {
 	if len(New()) != DenseSize || DenseSize != 12288 {
 		t.Fatal(len(New()), DenseSize)
 	}
-	if err := Merge(New(), []byte{1}); err != ErrSize {
+	if err := merge(New(), []byte{1}); err != ErrSize {
 		t.Fatal(err)
 	}
 }
@@ -101,7 +101,7 @@ func TestMergeMax(t *testing.T) {
 	a, b := New(), New()
 	Add(a, []byte("alice"))
 	Add(b, []byte("bob"))
-	if err := Merge(a, b); err != nil {
+	if err := merge(a, b); err != nil {
 		t.Fatal(err)
 	}
 	n := Count(a)

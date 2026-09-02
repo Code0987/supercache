@@ -103,8 +103,9 @@ func Count(regs []byte) uint64 {
 	return uint64(math.Floor(e + 0.5))
 }
 
-// Merge writes per-register max(dst, src) into dst.
-func Merge(dst, src []byte) error {
+// merge writes per-register max(dst, src) into dst.
+// Not used on install (handoff is LWW replace, not max-merge).
+func merge(dst, src []byte) error {
 	if len(dst) != DenseSize || len(src) != DenseSize {
 		return ErrSize
 	}
