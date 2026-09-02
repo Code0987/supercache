@@ -10,6 +10,20 @@ import (
 	"github.com/Code0987/supercache/pkg/zset"
 )
 
+const (
+	errEmptyZSetMember           = "%w: empty zset member"
+	errNaNScore                  = "%w: NaN score"
+	errZAddRequiresMode          = "%w: ZAdd requires ModeZSet"
+	errZRemRequiresMode          = "%w: ZRem requires ModeZSet"
+	errZScoreRequiresMode        = "%w: ZScore requires ModeZSet"
+	errZCardRequiresMode         = "%w: ZCard requires ModeZSet"
+	errZRangeRequiresMode        = "%w: ZRange requires ModeZSet"
+	errZRangeByScoreRequiresMode = "%w: ZRangeByScore requires ModeZSet"
+	errZAddRejected              = "%w: zadd rejected"
+	errZRemRejected              = "%w: zrem rejected"
+	errOwnerNoAddress            = "%w: owner %s has no address"
+)
+
 // ZMember is a scored sorted-set element.
 type ZMember struct {
 	Member []byte
@@ -25,17 +39,17 @@ func (e *Engine) ZAdd(ctx context.Context, keyspaceName, name string, member []b
 		return err
 	}
 	if len(member) == 0 {
-		return fmt.Errorf("%w: empty zset member", ErrInvalidArgument)
+		return fmt.Errorf(errEmptyZSetMember, ErrInvalidArgument)
 	}
 	if math.IsNaN(score) {
-		return fmt.Errorf("%w: NaN score", ErrInvalidArgument)
+		return fmt.Errorf(errNaNScore, ErrInvalidArgument)
 	}
 	ks, err := e.getKS(keyspaceName)
 	if err != nil {
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return fmt.Errorf("%w: ZAdd requires ModeZSet", ErrInvalidArgument)
+		return fmt.Errorf(errZAddRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -47,7 +61,7 @@ func (e *Engine) ZAdd(ctx context.Context, keyspaceName, name string, member []b
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			return e.zMutViaOwner(ctx, ks, name, zset.EncodeAdd(member, score), store.FlagZSetAdd)
 		}
@@ -64,14 +78,14 @@ func (e *Engine) ZRem(ctx context.Context, keyspaceName, name string, member []b
 		return err
 	}
 	if len(member) == 0 {
-		return fmt.Errorf("%w: empty zset member", ErrInvalidArgument)
+		return fmt.Errorf(errEmptyZSetMember, ErrInvalidArgument)
 	}
 	ks, err := e.getKS(keyspaceName)
 	if err != nil {
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return fmt.Errorf("%w: ZRem requires ModeZSet", ErrInvalidArgument)
+		return fmt.Errorf(errZRemRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -83,7 +97,7 @@ func (e *Engine) ZRem(ctx context.Context, keyspaceName, name string, member []b
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			return e.zMutViaOwner(ctx, ks, name, append([]byte(nil), member...), store.FlagZSetRem)
 		}
@@ -104,7 +118,7 @@ func (e *Engine) ZScore(ctx context.Context, keyspaceName, name string, member [
 		return 0, false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return 0, false, fmt.Errorf("%w: ZScore requires ModeZSet", ErrInvalidArgument)
+		return 0, false, fmt.Errorf(errZScoreRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, false, err
@@ -140,7 +154,7 @@ func (e *Engine) ZCard(ctx context.Context, keyspaceName, name string) (int, err
 		return 0, err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return 0, fmt.Errorf("%w: ZCard requires ModeZSet", ErrInvalidArgument)
+		return 0, fmt.Errorf(errZCardRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, err
@@ -172,7 +186,7 @@ func (e *Engine) ZRange(ctx context.Context, keyspaceName, name string, start, s
 		return nil, err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return nil, fmt.Errorf("%w: ZRange requires ModeZSet", ErrInvalidArgument)
+		return nil, fmt.Errorf(errZRangeRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, err
@@ -204,7 +218,7 @@ func (e *Engine) ZRangeByScore(ctx context.Context, keyspaceName, name string, m
 		return nil, err
 	}
 	if ks.cfg.Mode != keyspace.ModeZSet {
-		return nil, fmt.Errorf("%w: ZRangeByScore requires ModeZSet", ErrInvalidArgument)
+		return nil, fmt.Errorf(errZRangeByScoreRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, err
@@ -223,108 +237,8 @@ func (e *Engine) ZRangeByScore(ctx context.Context, keyspaceName, name string, m
 	return toEngineZMembersFromPkg(z.RangeByScore(min, max)), nil
 }
 
-func (e *Engine) zMutViaOwner(ctx context.Context, ks *ksRuntime, name string, value []byte, flag uint32) error {
-	c := e.clusterSnapshot()
-	owner, _ := c.Ring.Owner(name)
-	ent := store.Entry{Value: value, Flags: flag, Version: 1}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	_, err := c.Transport.ApplyPut(pctx, owner.Addr, ks.cfg.Name, name, ent, c.Ring.Generation())
-	return err
-}
-
-func (e *Engine) zAddLocal(ks *ksRuntime, name string, member []byte, score float64, fanout bool) error {
-	ver := e.zNextVersion(ks, name)
-	expire := e.expireAt(ks.cfg.TTL)
-	if !ks.store.ZAdd(name, member, score, ver, expire) {
-		return fmt.Errorf("%w: zadd rejected", ErrInvalidArgument)
-	}
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    zset.EncodeAdd(member, score),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagZSetAdd,
-		}, false)
-	}
-	return nil
-}
-
-func (e *Engine) zRemLocal(ks *ksRuntime, name string, member []byte, fanout bool) error {
-	ver := e.zNextVersion(ks, name)
-	expire := e.expireAt(ks.cfg.TTL)
-	if !ks.store.ZRem(name, member, ver, expire) {
-		if !e.hasZSetLocal(ks, name) {
-			return nil
-		}
-		return fmt.Errorf("%w: zrem rejected", ErrInvalidArgument)
-	}
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    append([]byte(nil), member...),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagZSetRem,
-		}, false)
-	}
-	return nil
-}
-
-func (e *Engine) zNextVersion(ks *ksRuntime, name string) uint64 {
-	if ver, ok := ks.store.PeekVersion(name); ok {
-		return ks.nextVersion(name, ver)
-	}
-	return ks.nextVersion(name, 0)
-}
-
 func (e *Engine) hasZSetLocal(ks *ksRuntime, name string) bool {
 	return ks.store.HasZSet(name)
-}
-
-func (e *Engine) zFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsZSet() {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.ZInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
-}
-
-func (e *Engine) applyZSetAdd(ks *ksRuntime, name string, value []byte, version uint64, expireAt int64) bool {
-	member, score, err := zset.DecodeAdd(value)
-	if err != nil {
-		return false
-	}
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.ZAdd(name, member, score, version, expireAt)
-}
-
-func (e *Engine) applyZSetRem(ks *ksRuntime, name string, member []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.ZRem(name, member, version, expireAt)
-}
-
-func (e *Engine) applyZSetInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.ZInstall(name, blob, version, expireAt)
 }
 
 func toEngineZMembers(in []store.ZMember) []ZMember {
