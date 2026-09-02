@@ -24,6 +24,7 @@ Do not implement from a draft.
 | [2026-09-01-mode-cms.md](./2026-09-01-mode-cms.md) | `ModeCMS` |
 | [2026-09-02-refactor-hll.md](./2026-09-02-refactor-hll.md) | ModeHLL file layout (no contract) |
 | [2026-09-02-refactor-bitmap.md](./2026-09-02-refactor-bitmap.md) | ModeBitmap file layout (no contract) |
+| [2026-09-02-refactor-counter.md](./2026-09-02-refactor-counter.md) | ModeCounter file layout (no contract) |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 

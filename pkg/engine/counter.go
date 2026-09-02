@@ -6,10 +6,10 @@ import (
 
 	"github.com/Code0987/supercache/pkg/counter"
 	"github.com/Code0987/supercache/pkg/keyspace"
-	"github.com/Code0987/supercache/pkg/store"
 )
 
 // Incr adds delta to a ModeCounter and returns the new value.
+// Non-owners use peer CounterIncr (the return payload needs a Peer RPC).
 func (e *Engine) Incr(ctx context.Context, keyspaceName, name string, delta int64) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -59,7 +59,7 @@ func (e *Engine) CounterGet(ctx context.Context, keyspaceName, name string) (int
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, false, err
 	}
-	if e.hasCounterLocal(ks, name) {
+	if ks.store.HasCounter(name) {
 		v, ok := ks.store.CGet(name)
 		return v, ok, nil
 	}
@@ -72,63 +72,4 @@ func (e *Engine) CounterGet(ctx context.Context, keyspaceName, name string) (int
 		return 0, false, nil
 	}
 	return v, true, nil
-}
-
-func (e *Engine) cIncrLocal(ks *ksRuntime, name string, delta int64, fanout bool) (int64, error) {
-	expire := e.expireAt(ks.cfg.TTL)
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	n, applied, overflow := ks.store.CIncr(name, delta, gate, expire)
-	if overflow {
-		return 0, fmt.Errorf("%w: counter overflow", ErrInvalidArgument)
-	}
-	if !applied {
-		return 0, fmt.Errorf("%w: incr rejected", ErrInvalidArgument)
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    counter.Encode(n),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagCounter,
-		}, false)
-	}
-	return n, nil
-}
-
-func (e *Engine) hasCounterLocal(ks *ksRuntime, name string) bool {
-	return ks.store.HasCounter(name)
-}
-
-func (e *Engine) cFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsCounter() {
-		return store.Entry{}, false, nil
-	}
-	if _, decErr := counter.Decode(res.Entry.Value); decErr != nil {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.CInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
-}
-
-func (e *Engine) applyCounterInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.CInstall(name, blob, version, expireAt)
 }
