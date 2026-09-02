@@ -22,6 +22,7 @@ Do not implement from a draft.
 | [2026-08-25-mode-hll.md](./2026-08-25-mode-hll.md) | `ModeHLL` |
 | [2026-08-31-mode-topk.md](./2026-08-31-mode-topk.md) | `ModeTopK` |
 | [2026-09-01-mode-cms.md](./2026-09-01-mode-cms.md) | `ModeCMS` |
+| [2026-09-02-refactor-list.md](./2026-09-02-refactor-list.md) | ModeList file layout (no contract) |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
