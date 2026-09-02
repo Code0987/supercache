@@ -27,6 +27,8 @@ var (
 	ErrBatchTooLarge = errors.New("supercache: batch too large")
 )
 
+const errOwnerNoAddress = "%w: owner %s has no address"
+
 // PeerError is a failure talking to one peer (cluster mode).
 type PeerError struct {
 	PeerID string

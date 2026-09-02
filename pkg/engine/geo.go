@@ -21,7 +21,6 @@ const (
 	errGeoRadiusRequiresMode = "%w: GeoRadius requires ModeGeo"
 	errGeoAddRejected        = "%w: geoadd rejected"
 	errGeoRemRejected        = "%w: georem rejected"
-	errOwnerNoAddress        = "%w: owner %s has no address"
 )
 
 // GeoMember is a point plus optional distance from a query.

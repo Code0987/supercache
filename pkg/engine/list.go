@@ -17,7 +17,6 @@ const (
 	errLRangeRequiresMode = "%w: LRange requires ModeList"
 	errListPushRejected   = "%w: list push rejected"
 	errListPopRejected    = "%w: list pop rejected"
-	errOwnerNoAddress     = "%w: owner %s has no address"
 )
 
 // LPush prepends item on a ModeList.

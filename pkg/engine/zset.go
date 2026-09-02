@@ -21,7 +21,6 @@ const (
 	errZRangeByScoreRequiresMode = "%w: ZRangeByScore requires ModeZSet"
 	errZAddRejected              = "%w: zadd rejected"
 	errZRemRejected              = "%w: zrem rejected"
-	errOwnerNoAddress            = "%w: owner %s has no address"
 )
 
 // ZMember is a scored sorted-set element.

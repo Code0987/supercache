@@ -18,7 +18,6 @@ const (
 	errJSONMutateRejected  = "%w: json mutate rejected"
 	errJSONSetRejected     = "%w: json set rejected"
 	errJSONDelRejected     = "%w: json del rejected"
-	errOwnerNoAddress      = "%w: owner %s has no address"
 )
 
 // JsonSet upserts JSON value at path on a ModeJSON document.

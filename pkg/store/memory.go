@@ -6,10 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Code0987/supercache/pkg/bloom"
 	"github.com/Code0987/supercache/pkg/geo"
 	"github.com/Code0987/supercache/pkg/hashx"
-	"github.com/Code0987/supercache/pkg/jsonx"
 	"github.com/Code0987/supercache/pkg/listx"
 	"github.com/Code0987/supercache/pkg/set"
 	"github.com/Code0987/supercache/pkg/zset"
@@ -394,7 +392,6 @@ func (m *Memory) RangeAll(fn func(key string, e Entry) bool) {
 	}
 }
 
-
 // PeekVersion returns the stored version without flushing dirty set blobs or cloning Value.
 func (m *Memory) PeekVersion(key string) (uint64, bool) {
 	m.mu.Lock()
@@ -410,7 +407,6 @@ func (m *Memory) PeekVersion(key string) (uint64, bool) {
 	}
 	return it.entry.Version, true
 }
-
 
 func (m *Memory) Close() {
 	m.mu.Lock()

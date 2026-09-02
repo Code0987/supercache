@@ -17,7 +17,6 @@ const (
 	errSetMembersRequiresMode  = "%w: SetMembers requires ModeSet"
 	errSetAddRejected          = "%w: set add rejected"
 	errSetRemoveRejected       = "%w: set remove rejected"
-	errOwnerNoAddress          = "%w: owner %s has no address"
 )
 
 // SetAdd inserts item into the named set (ModeSet only).

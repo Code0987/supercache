@@ -13,7 +13,6 @@ const (
 	errBloomAddRequiresMode  = "%w: BloomAdd requires ModeBloom"
 	errBloomTestRequiresMode = "%w: BloomTest requires ModeBloom"
 	errBloomAddRejected      = "%w: bloom add rejected"
-	errOwnerNoAddress        = "%w: owner %s has no address"
 )
 
 // BloomAdd inserts item into the named filter (ModeBloom only).

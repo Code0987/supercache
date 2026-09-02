@@ -19,7 +19,6 @@ const (
 	errHGetAllRequiresMode = "%w: HGetAll requires ModeHash"
 	errHSetRejected        = "%w: hset rejected"
 	errHDelRejected        = "%w: hdel rejected"
-	errOwnerNoAddress      = "%w: owner %s has no address"
 )
 
 // HashField is one field/value pair returned by HGetAll.
