@@ -27,6 +27,7 @@ Do not implement from a draft.
 | [2026-09-02-refactor-counter.md](./2026-09-02-refactor-counter.md) | ModeCounter file layout (no contract) |
 | [2026-09-02-refactor-list.md](./2026-09-02-refactor-list.md) | ModeList file layout (no contract) |
 | [2026-09-02-refactor-hash.md](./2026-09-02-refactor-hash.md) | ModeHash file layout (no contract) |
+| [2026-09-02-refactor-json.md](./2026-09-02-refactor-json.md) | ModeJSON file layout (no contract) |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
