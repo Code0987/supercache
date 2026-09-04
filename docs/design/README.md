@@ -22,6 +22,17 @@ Do not implement from a draft.
 | [2026-08-25-mode-hll.md](./2026-08-25-mode-hll.md) | `ModeHLL` |
 | [2026-08-31-mode-topk.md](./2026-08-31-mode-topk.md) | `ModeTopK` |
 | [2026-09-01-mode-cms.md](./2026-09-01-mode-cms.md) | `ModeCMS` |
+| [2026-09-02-refactor-hll.md](./2026-09-02-refactor-hll.md) | ModeHLL file layout (no contract) |
+| [2026-09-02-refactor-bitmap.md](./2026-09-02-refactor-bitmap.md) | ModeBitmap file layout (no contract) |
+| [2026-09-02-refactor-counter.md](./2026-09-02-refactor-counter.md) | ModeCounter file layout (no contract) |
+| [2026-09-02-refactor-list.md](./2026-09-02-refactor-list.md) | ModeList file layout (no contract) |
+| [2026-09-02-refactor-hash.md](./2026-09-02-refactor-hash.md) | ModeHash file layout (no contract) |
+| [2026-09-02-refactor-json.md](./2026-09-02-refactor-json.md) | ModeJSON file layout (no contract) |
+| [2026-09-02-refactor-bloom.md](./2026-09-02-refactor-bloom.md) | ModeBloom file layout (no contract) |
+| [2026-09-02-refactor-set.md](./2026-09-02-refactor-set.md) | ModeSet file layout (no contract) |
+| [2026-09-02-refactor-zset.md](./2026-09-02-refactor-zset.md) | ModeZSet file layout (no contract) |
+| [2026-09-02-refactor-geo.md](./2026-09-02-refactor-geo.md) | ModeGeo file layout (no contract) |
+| [2026-09-02-feature-folders.md](./2026-09-02-feature-folders.md) | Feature folders (List first) |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 

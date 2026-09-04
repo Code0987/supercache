@@ -5,8 +5,21 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/hashx"
+	hasheng "github.com/Code0987/supercache/pkg/hashx/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
+)
+
+const (
+	errEmptyHashField      = "%w: empty hash field"
+	errHSetRequiresMode    = "%w: HSet requires ModeHash"
+	errHDelRequiresMode    = "%w: HDel requires ModeHash"
+	errHGetRequiresMode    = "%w: HGet requires ModeHash"
+	errHExistsRequiresMode = "%w: HExists requires ModeHash"
+	errHLenRequiresMode    = "%w: HLen requires ModeHash"
+	errHGetAllRequiresMode = "%w: HGetAll requires ModeHash"
+	errHSetRejected        = "%w: hset rejected"
+	errHDelRejected        = "%w: hdel rejected"
 )
 
 // HashField is one field/value pair returned by HGetAll.
@@ -17,7 +30,7 @@ type HashField struct {
 
 func (e *Engine) checkHashField(field []byte) error {
 	if len(field) == 0 {
-		return fmt.Errorf("%w: empty hash field", ErrInvalidArgument)
+		return fmt.Errorf(errEmptyHashField, ErrInvalidArgument)
 	}
 	if len(field) > e.maxKeyLen {
 		return ErrKeyTooLarge
@@ -41,7 +54,7 @@ func (e *Engine) HSet(ctx context.Context, keyspaceName, name string, field, val
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return fmt.Errorf("%w: HSet requires ModeHash", ErrInvalidArgument)
+		return fmt.Errorf(errHSetRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -53,12 +66,15 @@ func (e *Engine) HSet(ctx context.Context, keyspaceName, name string, field, val
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			return e.hMutViaOwner(ctx, ks, name, hashx.EncodeSet(field, value), store.FlagHashSet)
 		}
 	}
-	return e.hSetLocal(ks, name, field, value, true)
+	if err := hasheng.SetLocal(e.modeHost(ks), name, field, value, true); err != nil {
+		return fmt.Errorf(errHSetRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // HDel removes a field from a ModeHash map.
@@ -77,7 +93,7 @@ func (e *Engine) HDel(ctx context.Context, keyspaceName, name string, field []by
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return fmt.Errorf("%w: HDel requires ModeHash", ErrInvalidArgument)
+		return fmt.Errorf(errHDelRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -86,12 +102,15 @@ func (e *Engine) HDel(ctx context.Context, keyspaceName, name string, field []by
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			return e.hMutViaOwner(ctx, ks, name, append([]byte(nil), field...), store.FlagHashDel)
 		}
 	}
-	return e.hDelLocal(ks, name, field, true)
+	if err := hasheng.DelLocal(e.modeHost(ks), name, field, true); err != nil {
+		return fmt.Errorf(errHDelRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // HGet returns a copy of the field value.
@@ -110,7 +129,7 @@ func (e *Engine) HGet(ctx context.Context, keyspaceName, name string, field []by
 		return nil, false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return nil, false, fmt.Errorf("%w: HGet requires ModeHash", ErrInvalidArgument)
+		return nil, false, fmt.Errorf(errHGetRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, false, err
@@ -121,7 +140,7 @@ func (e *Engine) HGet(ctx context.Context, keyspaceName, name string, field []by
 	if e.hasHashLocal(ks, name) {
 		return nil, false, nil
 	}
-	ent, found, err := e.hFetchOwner(ctx, ks, name)
+	ent, found, err := hasheng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return nil, false, err
 	}
@@ -149,7 +168,7 @@ func (e *Engine) HExists(ctx context.Context, keyspaceName, name string, field [
 		return false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return false, fmt.Errorf("%w: HExists requires ModeHash", ErrInvalidArgument)
+		return false, fmt.Errorf(errHExistsRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return false, err
@@ -157,7 +176,7 @@ func (e *Engine) HExists(ctx context.Context, keyspaceName, name string, field [
 	if e.hasHashLocal(ks, name) {
 		return ks.store.HExists(name, field), nil
 	}
-	ent, found, err := e.hFetchOwner(ctx, ks, name)
+	ent, found, err := hasheng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return false, err
 	}
@@ -181,7 +200,7 @@ func (e *Engine) HLen(ctx context.Context, keyspaceName, name string) (int, erro
 		return 0, err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return 0, fmt.Errorf("%w: HLen requires ModeHash", ErrInvalidArgument)
+		return 0, fmt.Errorf(errHLenRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, err
@@ -189,7 +208,7 @@ func (e *Engine) HLen(ctx context.Context, keyspaceName, name string) (int, erro
 	if e.hasHashLocal(ks, name) {
 		return ks.store.HLen(name), nil
 	}
-	ent, ok, err := e.hFetchOwner(ctx, ks, name)
+	ent, ok, err := hasheng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return 0, err
 	}
@@ -213,7 +232,7 @@ func (e *Engine) HGetAll(ctx context.Context, keyspaceName, name string) ([]Hash
 		return nil, err
 	}
 	if ks.cfg.Mode != keyspace.ModeHash {
-		return nil, fmt.Errorf("%w: HGetAll requires ModeHash", ErrInvalidArgument)
+		return nil, fmt.Errorf(errHGetAllRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, err
@@ -221,7 +240,7 @@ func (e *Engine) HGetAll(ctx context.Context, keyspaceName, name string) ([]Hash
 	if e.hasHashLocal(ks, name) {
 		return toEngineHashFields(ks.store.HGetAll(name)), nil
 	}
-	ent, ok, err := e.hFetchOwner(ctx, ks, name)
+	ent, ok, err := hasheng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -232,108 +251,8 @@ func (e *Engine) HGetAll(ctx context.Context, keyspaceName, name string) ([]Hash
 	return toEngineHashFieldsFromPkg(h.All()), nil
 }
 
-func (e *Engine) hMutViaOwner(ctx context.Context, ks *ksRuntime, name string, value []byte, flag uint32) error {
-	c := e.clusterSnapshot()
-	owner, _ := c.Ring.Owner(name)
-	ent := store.Entry{Value: value, Flags: flag, Version: 1}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	_, err := c.Transport.ApplyPut(pctx, owner.Addr, ks.cfg.Name, name, ent, c.Ring.Generation())
-	return err
-}
-
-func (e *Engine) hSetLocal(ks *ksRuntime, name string, field, value []byte, fanout bool) error {
-	ver := e.hNextVersion(ks, name)
-	expire := e.expireAt(ks.cfg.TTL)
-	if !ks.store.HSet(name, field, value, ver, expire) {
-		return fmt.Errorf("%w: hset rejected", ErrInvalidArgument)
-	}
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    hashx.EncodeSet(field, value),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagHashSet,
-		}, false)
-	}
-	return nil
-}
-
-func (e *Engine) hDelLocal(ks *ksRuntime, name string, field []byte, fanout bool) error {
-	ver := e.hNextVersion(ks, name)
-	expire := e.expireAt(ks.cfg.TTL)
-	if !ks.store.HDel(name, field, ver, expire) {
-		if !e.hasHashLocal(ks, name) {
-			return nil
-		}
-		return fmt.Errorf("%w: hdel rejected", ErrInvalidArgument)
-	}
-	if fanout {
-		e.replicate(ks.cfg.Name, name, store.Entry{
-			Value:    append([]byte(nil), field...),
-			Version:  ver,
-			ExpireAt: expire,
-			Flags:    store.FlagHashDel,
-		}, false)
-	}
-	return nil
-}
-
-func (e *Engine) hNextVersion(ks *ksRuntime, name string) uint64 {
-	if ver, ok := ks.store.PeekVersion(name); ok {
-		return ks.nextVersion(name, ver)
-	}
-	return ks.nextVersion(name, 0)
-}
-
 func (e *Engine) hasHashLocal(ks *ksRuntime, name string) bool {
 	return ks.store.HasHash(name)
-}
-
-func (e *Engine) hFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsHash() {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.HInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
-}
-
-func (e *Engine) applyHashSet(ks *ksRuntime, name string, value []byte, version uint64, expireAt int64) bool {
-	field, val, err := hashx.DecodeSet(value)
-	if err != nil {
-		return false
-	}
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.HSet(name, field, val, version, expireAt)
-}
-
-func (e *Engine) applyHashDel(ks *ksRuntime, name string, field []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.HDel(name, field, version, expireAt)
-}
-
-func (e *Engine) applyHashInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.HInstall(name, blob, version, expireAt)
 }
 
 func toEngineHashFields(in []store.HashField) []HashField {
@@ -356,4 +275,14 @@ func toEngineHashFieldsFromPkg(in []hashx.Field) []HashField {
 		out[i] = HashField{Field: f.Field, Value: f.Value}
 	}
 	return out
+}
+
+func (e *Engine) applyHashSet(ks *ksRuntime, name string, value []byte, version uint64, expireAt int64) bool {
+	return hasheng.ApplySet(e.modeHost(ks), name, value, version, expireAt)
+}
+func (e *Engine) applyHashDel(ks *ksRuntime, name string, field []byte, version uint64, expireAt int64) bool {
+	return hasheng.ApplyDel(e.modeHost(ks), name, field, version, expireAt)
+}
+func (e *Engine) applyHashInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return hasheng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

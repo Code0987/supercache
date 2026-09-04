@@ -191,7 +191,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/set` | Exact set encode/decode for `ModeSet` |
 | `pkg/zset` | Sorted-set encode/decode for `ModeZSet` |
 | `pkg/geo` | Point index encode/haversine for `ModeGeo` |
-| `pkg/listx` | Ordered list encode for `ModeList` |
+| `pkg/list` | ModeList codec + owner/cluster helpers |
 | `pkg/hashx` | Field-map encode for `ModeHash` |
 | `pkg/counter` | int64 encode/add for `ModeCounter` |
 | `pkg/jsonx` | Nested JSON path encode for `ModeJSON` |

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/cmsx"
+	cmseng "github.com/Code0987/supercache/pkg/cmsx/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 )
@@ -45,7 +46,12 @@ func (e *Engine) CMSIncr(ctx context.Context, keyspaceName, name string, item []
 			return e.cmsMutViaOwner(ctx, ks, name, item, n)
 		}
 	}
-	return e.cmsIncrLocal(ks, name, item, n)
+	if err := cmseng.IncrLocal(e.modeHost(ks), name, item, n); err == cmseng.ErrTooLarge {
+		return ErrValueTooLarge
+	} else if err != nil {
+		return fmt.Errorf("%w: cms incr rejected", ErrInvalidArgument)
+	}
+	return nil
 }
 
 // CMSQuery is min-of-d for item. Missing name → ok=false.
@@ -73,7 +79,7 @@ func (e *Engine) CMSQuery(ctx context.Context, keyspaceName, name string, item [
 		n, ok := ks.store.CMSQuery(name, item)
 		return n, ok, nil
 	}
-	ent, found, err := e.cmsFetchOwner(ctx, ks, name)
+	ent, found, err := cmseng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, false, err
 	}
@@ -111,88 +117,10 @@ func (e *Engine) cmsMutViaOwner(ctx context.Context, ks *ksRuntime, name string,
 	return nil
 }
 
-func (e *Engine) cmsIncrLocal(ks *ksRuntime, name string, item []byte, n uint64) error {
-	expire := e.expireAt(ks.cfg.TTL)
-	max := e.maxValueSize
-	if ks.cfg.MaxValueSize > 0 {
-		max = ks.cfg.MaxValueSize
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	applied, tooLarge := ks.store.CMSIncr(name, item, n, gate, expire, max)
-	if tooLarge {
-		return ErrValueTooLarge
-	}
-	if !applied {
-		return fmt.Errorf("%w: cms incr rejected", ErrInvalidArgument)
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.cmsReplicateSnapshot(ks, name, ver, expire)
-	return nil
-}
-
-func (e *Engine) cmsReplicateSnapshot(ks *ksRuntime, name string, ver uint64, expire int64) {
-	ent, ok := ks.store.Peek(name)
-	if !ok || !ent.IsCMS() {
-		return
-	}
-	e.replicate(ks.cfg.Name, name, store.Entry{
-		Value:    ent.Value,
-		Version:  ver,
-		ExpireAt: expire,
-		Flags:    store.FlagCMS,
-	}, false)
-}
-
-func (e *Engine) cmsFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsCMS() {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.CMSInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
-}
-
 func (e *Engine) applyCMSIncr(ks *ksRuntime, name string, inbox []byte, expireAt int64) bool {
-	n, item, err := cmsx.DecodeInbox(inbox)
-	if err != nil || len(item) == 0 {
-		return false
-	}
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	max := e.maxValueSize
-	if ks.cfg.MaxValueSize > 0 {
-		max = ks.cfg.MaxValueSize
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	ok, tooLarge := ks.store.CMSIncr(name, item, n, gate, expireAt, max)
-	if !ok || tooLarge {
-		return false
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.cmsReplicateSnapshot(ks, name, ver, expireAt)
-	return true
+	return cmseng.ApplyIncr(e.modeHost(ks), name, inbox, expireAt)
 }
 
 func (e *Engine) applyCMSInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.CMSInstall(name, blob, version, expireAt)
+	return cmseng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

@@ -5,8 +5,18 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/keyspace"
-	"github.com/Code0987/supercache/pkg/listx"
+	listeng "github.com/Code0987/supercache/pkg/list/eng"
 	"github.com/Code0987/supercache/pkg/store"
+)
+
+const (
+	errEmptyListItem      = "%w: empty list item"
+	errListOpRequiresMode = "%w: list op requires ModeList"
+	errLLenRequiresMode   = "%w: LLen requires ModeList"
+	errLIndexRequiresMode = "%w: LIndex requires ModeList"
+	errLRangeRequiresMode = "%w: LRange requires ModeList"
+	errListPushRejected   = "%w: list push rejected"
+	errListPopRejected    = "%w: list pop rejected"
 )
 
 // LPush prepends item on a ModeList.
@@ -27,14 +37,14 @@ func (e *Engine) lPush(ctx context.Context, keyspaceName, name string, item []by
 		return err
 	}
 	if len(item) == 0 {
-		return fmt.Errorf("%w: empty list item", ErrInvalidArgument)
+		return fmt.Errorf(errEmptyListItem, ErrInvalidArgument)
 	}
 	ks, err := e.getKS(keyspaceName)
 	if err != nil {
 		return err
 	}
 	if ks.cfg.Mode != keyspace.ModeList {
-		return fmt.Errorf("%w: list op requires ModeList", ErrInvalidArgument)
+		return fmt.Errorf(errListOpRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return err
@@ -50,7 +60,7 @@ func (e *Engine) lPush(ctx context.Context, keyspaceName, name string, item []by
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			ent := store.Entry{Value: append([]byte(nil), item...), Flags: flag, Version: 1}
 			pctx, cancel := e.peerCtx(ctx, ks)
@@ -59,7 +69,10 @@ func (e *Engine) lPush(ctx context.Context, keyspaceName, name string, item []by
 			return err
 		}
 	}
-	return e.lPushLocal(ks, name, item, left, true)
+	if err := listeng.Push(e.modeHost(ks), name, item, left, true); err != nil {
+		return fmt.Errorf(errListPushRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // LPop removes and returns the head.
@@ -84,7 +97,7 @@ func (e *Engine) lPop(ctx context.Context, keyspaceName, name string, left bool)
 		return nil, false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeList {
-		return nil, false, fmt.Errorf("%w: list op requires ModeList", ErrInvalidArgument)
+		return nil, false, fmt.Errorf(errListOpRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, false, err
@@ -93,14 +106,18 @@ func (e *Engine) lPop(ctx context.Context, keyspaceName, name string, left bool)
 	if c != nil && c.Ring != nil {
 		if owner, ok := c.Ring.Owner(name); ok && owner.ID != "" && owner.ID != c.SelfID {
 			if c.Transport == nil || owner.Addr == "" {
-				return nil, false, fmt.Errorf("%w: owner %s has no address", ErrUnavailable, owner.ID)
+				return nil, false, fmt.Errorf(errOwnerNoAddress, ErrUnavailable, owner.ID)
 			}
 			pctx, cancel := e.peerCtx(ctx, ks)
 			defer cancel()
 			return c.Transport.ListPop(pctx, owner.Addr, ks.cfg.Name, name, left)
 		}
 	}
-	return e.lPopLocal(ks, name, left, true)
+	item, popped, err := listeng.Pop(e.modeHost(ks), name, left, true)
+	if err != nil {
+		return nil, false, fmt.Errorf(errListPopRejected, ErrInvalidArgument)
+	}
+	return item, popped, nil
 }
 
 // LLen returns list length.
@@ -116,23 +133,21 @@ func (e *Engine) LLen(ctx context.Context, keyspaceName, name string) (int, erro
 		return 0, err
 	}
 	if ks.cfg.Mode != keyspace.ModeList {
-		return 0, fmt.Errorf("%w: LLen requires ModeList", ErrInvalidArgument)
+		return 0, fmt.Errorf(errLLenRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		return ks.store.LLen(name), nil
 	}
-	ent, ok, err := e.lFetchOwner(ctx, ks, name)
+	ent, ok, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !ok {
 		return 0, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return 0, nil
-	}
-	return l.Len(), nil
+	n, _ := listeng.LenFromBlob(ent.Value)
+	return n, nil
 }
 
 // LIndex returns a copy of the element at idx.
@@ -148,24 +163,21 @@ func (e *Engine) LIndex(ctx context.Context, keyspaceName, name string, idx int)
 		return nil, false, err
 	}
 	if ks.cfg.Mode != keyspace.ModeList {
-		return nil, false, fmt.Errorf("%w: LIndex requires ModeList", ErrInvalidArgument)
+		return nil, false, fmt.Errorf(errLIndexRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, false, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		it, ok := ks.store.LIndex(name, idx)
 		return it, ok, nil
 	}
-	ent, found, err := e.lFetchOwner(ctx, ks, name)
+	ent, found, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !found {
 		return nil, false, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return nil, false, nil
-	}
-	it, ok := l.Index(idx)
+	it, ok := listeng.IndexFromBlob(ent.Value, idx)
 	return it, ok, nil
 }
 
@@ -182,142 +194,30 @@ func (e *Engine) LRange(ctx context.Context, keyspaceName, name string, start, s
 		return nil, err
 	}
 	if ks.cfg.Mode != keyspace.ModeList {
-		return nil, fmt.Errorf("%w: LRange requires ModeList", ErrInvalidArgument)
+		return nil, fmt.Errorf(errLRangeRequiresMode, ErrInvalidArgument)
 	}
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		return ks.store.LRange(name, start, stop), nil
 	}
-	ent, ok, err := e.lFetchOwner(ctx, ks, name)
+	ent, ok, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !ok {
 		return nil, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return nil, nil
-	}
-	return l.Range(start, stop), nil
-}
-
-func (e *Engine) lPushLocal(ks *ksRuntime, name string, item []byte, left, fanout bool) error {
-	expire := e.expireAt(ks.cfg.TTL)
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	ok := false
-	if left {
-		ok = ks.store.LPush(name, item, gate, expire)
-	} else {
-		ok = ks.store.RPush(name, item, gate, expire)
-	}
-	if !ok {
-		return fmt.Errorf("%w: list push rejected", ErrInvalidArgument)
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	if fanout {
-		e.lReplicateSnapshot(ks, name, ver, expire)
-	}
-	return nil
-}
-
-func (e *Engine) lPopLocal(ks *ksRuntime, name string, left, fanout bool) ([]byte, bool, error) {
-	expire := e.expireAt(ks.cfg.TTL)
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	var item []byte
-	var popped, applied bool
-	if left {
-		item, popped, applied = ks.store.LPop(name, gate, expire)
-	} else {
-		item, popped, applied = ks.store.RPop(name, gate, expire)
-	}
-	if !applied {
-		if !e.hasListLocal(ks, name) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("%w: list pop rejected", ErrInvalidArgument)
-	}
-	if popped && fanout {
-		ver, _ := ks.store.PeekVersion(name)
-		ks.observeVersion(name, ver)
-		e.lReplicateSnapshot(ks, name, ver, expire)
-	}
-	return item, popped, nil
-}
-
-func (e *Engine) lReplicateSnapshot(ks *ksRuntime, name string, ver uint64, expire int64) {
-	ent, ok := ks.store.Peek(name)
-	if !ok || !ent.IsList() {
-		return
-	}
-	e.replicate(ks.cfg.Name, name, store.Entry{
-		Value:    ent.Value,
-		Version:  ver,
-		ExpireAt: expire,
-		Flags:    store.FlagList,
-	}, false)
-}
-
-func (e *Engine) hasListLocal(ks *ksRuntime, name string) bool {
-	return ks.store.HasList(name)
-}
-
-func (e *Engine) lFetchOwner(ctx context.Context, ks *ksRuntime, name string) (store.Entry, bool, error) {
-	c := e.clusterSnapshot()
-	if c == nil || c.Ring == nil || c.Transport == nil {
-		return store.Entry{}, false, nil
-	}
-	owner, ok := c.Ring.Owner(name)
-	if !ok || owner.ID == "" || owner.ID == c.SelfID || owner.Addr == "" {
-		return store.Entry{}, false, nil
-	}
-	pctx, cancel := e.peerCtx(ctx, ks)
-	defer cancel()
-	res, err := c.Transport.GetOrLoad(pctx, owner.Addr, ks.cfg.Name, name)
-	if err != nil || !res.Found || !res.Entry.IsList() {
-		return store.Entry{}, false, nil
-	}
-	if e.holdsReplica(c, ks, name) {
-		_ = ks.store.LInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
-	}
-	return res.Entry, true, nil
+	return listeng.RangeFromBlob(ent.Value, start, stop), nil
 }
 
 func (e *Engine) applyListLPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	if !ks.store.LPush(name, item, gate, expireAt) {
-		return false
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.lReplicateSnapshot(ks, name, ver, expireAt)
-	return true
+	return listeng.ApplyLPush(e.modeHost(ks), name, item, expireAt)
 }
 
 func (e *Engine) applyListRPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	cur, _ := ks.store.PeekVersion(name)
-	gate := cur + 1
-	if !ks.store.RPush(name, item, gate, expireAt) {
-		return false
-	}
-	ver, _ := ks.store.PeekVersion(name)
-	ks.observeVersion(name, ver)
-	e.lReplicateSnapshot(ks, name, ver, expireAt)
-	return true
+	return listeng.ApplyRPush(e.modeHost(ks), name, item, expireAt)
 }
 
 func (e *Engine) applyListInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
-	if expireAt == 0 {
-		expireAt = e.expireAt(ks.cfg.TTL)
-	}
-	return ks.store.LInstall(name, blob, version, expireAt)
+	return listeng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

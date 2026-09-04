@@ -7,6 +7,7 @@ import (
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 	"github.com/Code0987/supercache/pkg/topkx"
+	topkeng "github.com/Code0987/supercache/pkg/topkx/eng"
 )
 
 // TopKEntry is one chart row (same shape as topkx.Entry; clients must not import topkx).
@@ -52,7 +53,12 @@ func (e *Engine) TopKAdd(ctx context.Context, keyspaceName, name string, item []
 			return e.topkMutViaOwner(ctx, ks, name, item)
 		}
 	}
-	return e.topkAddLocal(ks, name, item)
+	if err := topkeng.AddLocal(e.modeHost(ks), name, item); err == topkeng.ErrTooLarge {
+		return ErrValueTooLarge
+	} else if err != nil {
+		return fmt.Errorf("%w: topk add rejected", ErrInvalidArgument)
+	}
+	return nil
 }
 
 // TopKList is the current chart. Missing name → ok=false, nil entries, nil error.
@@ -78,7 +84,7 @@ func (e *Engine) TopKList(ctx context.Context, keyspaceName, name string) ([]Top
 		rows, ok := ks.store.TopKList(name, k)
 		return storeToEngineTopK(rows), ok, nil
 	}
-	ent, found, err := e.topkFetchOwner(ctx, ks, name)
+	ent, found, err := topkeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return nil, false, err
 	}
@@ -132,4 +138,11 @@ func topkxToEngineTopK(rows []topkx.Entry) []TopKEntry {
 		out[i] = TopKEntry{Item: r.Item, Count: r.Count}
 	}
 	return out
+}
+
+func (e *Engine) applyTopKAdd(ks *ksRuntime, name string, item []byte, expireAt int64) bool {
+	return topkeng.ApplyAdd(e.modeHost(ks), name, item, expireAt)
+}
+func (e *Engine) applyTopKInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return topkeng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

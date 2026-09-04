@@ -68,9 +68,6 @@ func TestJoinHandoffEndToEnd(t *testing.T) {
 	wmA.Start(bg)
 	wmB.Start(bg)
 	wmC.Start(bg)
-	defer wmA.Stop()
-	defer wmB.Stop()
-	defer wmC.Stop()
 
 	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
 	if err != nil {
@@ -105,6 +102,11 @@ func TestJoinHandoffEndToEnd(t *testing.T) {
 	defer foA.Close()
 	defer foB.Close()
 	defer foC.Close()
+	// Stop warmup after fanout Close is deferred so LIFO teardown waits for
+	// workers before closechan (Submit vs Close race under -race).
+	defer wmA.Stop()
+	defer wmB.Stop()
+	defer wmC.Stop()
 
 	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
 	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
@@ -289,9 +291,6 @@ func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 	wmA.Start(bg)
 	wmB.Start(bg)
 	wmC.Start(bg)
-	defer wmA.Stop()
-	defer wmB.Stop()
-	defer wmC.Stop()
 
 	gsA, _, err := peerserver.ListenAndServe(addrA, engA)
 	if err != nil {
@@ -325,6 +324,11 @@ func TestJoinWithoutHandoffStaysCold(t *testing.T) {
 	defer foA.Close()
 	defer foB.Close()
 	defer foC.Close()
+	// Stop warmup after fanout Close is deferred so LIFO teardown waits for
+	// workers before closechan (Submit vs Close race under -race).
+	defer wmA.Stop()
+	defer wmB.Stop()
+	defer wmC.Stop()
 	engA.AttachCluster(&engine.Cluster{SelfID: "a", Ring: rA, Transport: trA, Fanout: foA})
 	engB.AttachCluster(&engine.Cluster{SelfID: "b", Ring: rB, Transport: trB, Fanout: foB})
 
