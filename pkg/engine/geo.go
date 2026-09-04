@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/geo"
+	geoeng "github.com/Code0987/supercache/pkg/geo/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 )
@@ -67,7 +68,10 @@ func (e *Engine) GeoAdd(ctx context.Context, keyspaceName, name string, member [
 			return e.gMutViaOwner(ctx, ks, name, geo.EncodeAdd(member, lon, lat), store.FlagGeoAdd)
 		}
 	}
-	return e.gAddLocal(ks, name, member, lon, lat, true)
+	if err := geoeng.AddLocal(e.modeHost(ks), name, member, lon, lat, true); err != nil {
+		return fmt.Errorf(errGeoAddRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // GeoRem removes a member from a ModeGeo index.
@@ -103,7 +107,10 @@ func (e *Engine) GeoRem(ctx context.Context, keyspaceName, name string, member [
 			return e.gMutViaOwner(ctx, ks, name, append([]byte(nil), member...), store.FlagGeoRem)
 		}
 	}
-	return e.gRemLocal(ks, name, member, true)
+	if err := geoeng.RemLocal(e.modeHost(ks), name, member, true); err != nil {
+		return fmt.Errorf(errGeoRemRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // GeoPos returns lon/lat if the member is present.
@@ -130,7 +137,7 @@ func (e *Engine) GeoPos(ctx context.Context, keyspaceName, name string, member [
 	if e.hasGeoLocal(ks, name) {
 		return 0, 0, false, nil
 	}
-	ent, found, err := e.gFetchOwner(ctx, ks, name)
+	ent, found, err := geoeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, 0, false, err
 	}
@@ -163,7 +170,7 @@ func (e *Engine) GeoCard(ctx context.Context, keyspaceName, name string) (int, e
 	if e.hasGeoLocal(ks, name) {
 		return ks.store.GeoCard(name), nil
 	}
-	ent, ok, err := e.gFetchOwner(ctx, ks, name)
+	ent, ok, err := geoeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return 0, err
 	}
@@ -196,7 +203,7 @@ func (e *Engine) GeoDist(ctx context.Context, keyspaceName, name string, a, b []
 		d, ok := ks.store.GeoDist(name, a, b)
 		return d, ok, nil
 	}
-	ent, found, err := e.gFetchOwner(ctx, ks, name)
+	ent, found, err := geoeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, false, err
 	}
@@ -235,7 +242,7 @@ func (e *Engine) GeoRadius(ctx context.Context, keyspaceName, name string, lon, 
 	if e.hasGeoLocal(ks, name) {
 		return toEngineGeoMembers(ks.store.GeoRadius(name, lon, lat, radiusM, limit)), nil
 	}
-	ent, ok, err := e.gFetchOwner(ctx, ks, name)
+	ent, ok, err := geoeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -274,4 +281,14 @@ func toEngineGeoMembersFromPkg(in []geo.Member) []GeoMember {
 		out[i] = GeoMember{Member: m.Member, Lon: m.Lon, Lat: m.Lat, Dist: m.Dist}
 	}
 	return out
+}
+
+func (e *Engine) applyGeoAdd(ks *ksRuntime, name string, value []byte, version uint64, expireAt int64) bool {
+	return geoeng.ApplyAdd(e.modeHost(ks), name, value, version, expireAt)
+}
+func (e *Engine) applyGeoRem(ks *ksRuntime, name string, member []byte, version uint64, expireAt int64) bool {
+	return geoeng.ApplyRem(e.modeHost(ks), name, member, version, expireAt)
+}
+func (e *Engine) applyGeoInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return geoeng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

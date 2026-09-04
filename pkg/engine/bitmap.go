@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/bitmapx"
+	bitmapeng "github.com/Code0987/supercache/pkg/bitmapx/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 )
 
@@ -39,7 +40,12 @@ func (e *Engine) BitSet(ctx context.Context, keyspaceName, name string, offset u
 			return e.bMutViaOwner(ctx, ks, name, bitmapx.EncodeSet(offset, bit))
 		}
 	}
-	return e.bSetLocal(ks, name, offset, bit)
+	if err := bitmapeng.SetLocal(e.modeHost(ks), name, offset, bit); err == bitmapeng.ErrTooLarge {
+		return ErrValueTooLarge
+	} else if err != nil {
+		return fmt.Errorf("%w: bitmap set rejected", ErrInvalidArgument)
+	}
+	return nil
 }
 
 // BitGet returns the bit at offset. Missing name → ok=false.
@@ -64,7 +70,7 @@ func (e *Engine) BitGet(ctx context.Context, keyspaceName, name string, offset u
 		bit, ok := ks.store.BGet(name, offset)
 		return bit, ok, nil
 	}
-	ent, found, err := e.bFetchOwner(ctx, ks, name)
+	ent, found, err := bitmapeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return false, false, err
 	}
@@ -93,7 +99,7 @@ func (e *Engine) BitCount(ctx context.Context, keyspaceName, name string, start,
 		n, _ := ks.store.BCount(name, start, end)
 		return n, nil
 	}
-	ent, found, err := e.bFetchOwner(ctx, ks, name)
+	ent, found, err := bitmapeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, err
 	}
@@ -122,7 +128,7 @@ func (e *Engine) BitPos(ctx context.Context, keyspaceName, name string, bit bool
 		pos, found, _ := ks.store.BPos(name, bit, start, end)
 		return pos, found, nil
 	}
-	ent, found, err := e.bFetchOwner(ctx, ks, name)
+	ent, found, err := bitmapeng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, false, err
 	}
@@ -143,4 +149,11 @@ func (e *Engine) bitmapNeed(ks *ksRuntime, offset uint64) error {
 		return ErrValueTooLarge
 	}
 	return nil
+}
+
+func (e *Engine) applyBitmapSet(ks *ksRuntime, name string, inbox []byte, expireAt int64) bool {
+	return bitmapeng.ApplySet(e.modeHost(ks), name, inbox, expireAt)
+}
+func (e *Engine) applyBitmapInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return bitmapeng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

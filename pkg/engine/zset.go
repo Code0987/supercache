@@ -8,6 +8,7 @@ import (
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 	"github.com/Code0987/supercache/pkg/zset"
+	zseteng "github.com/Code0987/supercache/pkg/zset/eng"
 )
 
 const (
@@ -65,7 +66,10 @@ func (e *Engine) ZAdd(ctx context.Context, keyspaceName, name string, member []b
 			return e.zMutViaOwner(ctx, ks, name, zset.EncodeAdd(member, score), store.FlagZSetAdd)
 		}
 	}
-	return e.zAddLocal(ks, name, member, score, true)
+	if err := zseteng.AddLocal(e.modeHost(ks), name, member, score, true); err != nil {
+		return fmt.Errorf(errZAddRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // ZRem removes a member from a ModeZSet.
@@ -101,7 +105,10 @@ func (e *Engine) ZRem(ctx context.Context, keyspaceName, name string, member []b
 			return e.zMutViaOwner(ctx, ks, name, append([]byte(nil), member...), store.FlagZSetRem)
 		}
 	}
-	return e.zRemLocal(ks, name, member, true)
+	if err := zseteng.RemLocal(e.modeHost(ks), name, member, true); err != nil {
+		return fmt.Errorf(errZRemRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // ZScore returns the score if the member is present.
@@ -128,7 +135,7 @@ func (e *Engine) ZScore(ctx context.Context, keyspaceName, name string, member [
 	if e.hasZSetLocal(ks, name) {
 		return 0, false, nil
 	}
-	ent, ok, err := e.zFetchOwner(ctx, ks, name)
+	ent, ok, err := zseteng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return 0, false, err
 	}
@@ -161,7 +168,7 @@ func (e *Engine) ZCard(ctx context.Context, keyspaceName, name string) (int, err
 	if e.hasZSetLocal(ks, name) {
 		return ks.store.ZCard(name), nil
 	}
-	ent, ok, err := e.zFetchOwner(ctx, ks, name)
+	ent, ok, err := zseteng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return 0, err
 	}
@@ -193,7 +200,7 @@ func (e *Engine) ZRange(ctx context.Context, keyspaceName, name string, start, s
 	if e.hasZSetLocal(ks, name) {
 		return toEngineZMembers(ks.store.ZRange(name, start, stop)), nil
 	}
-	ent, ok, err := e.zFetchOwner(ctx, ks, name)
+	ent, ok, err := zseteng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -225,7 +232,7 @@ func (e *Engine) ZRangeByScore(ctx context.Context, keyspaceName, name string, m
 	if e.hasZSetLocal(ks, name) {
 		return toEngineZMembers(ks.store.ZRangeByScore(name, min, max)), nil
 	}
-	ent, ok, err := e.zFetchOwner(ctx, ks, name)
+	ent, ok, err := zseteng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -260,4 +267,14 @@ func toEngineZMembersFromPkg(in []zset.Member) []ZMember {
 		out[i] = ZMember{Member: m.Member, Score: m.Score}
 	}
 	return out
+}
+
+func (e *Engine) applyZSetAdd(ks *ksRuntime, name string, value []byte, version uint64, expireAt int64) bool {
+	return zseteng.ApplyAdd(e.modeHost(ks), name, value, version, expireAt)
+}
+func (e *Engine) applyZSetRem(ks *ksRuntime, name string, member []byte, version uint64, expireAt int64) bool {
+	return zseteng.ApplyRem(e.modeHost(ks), name, member, version, expireAt)
+}
+func (e *Engine) applyZSetInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return zseteng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

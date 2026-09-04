@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/keyspace"
-	"github.com/Code0987/supercache/pkg/listx"
+	listeng "github.com/Code0987/supercache/pkg/list/eng"
 	"github.com/Code0987/supercache/pkg/store"
 )
 
@@ -69,7 +69,10 @@ func (e *Engine) lPush(ctx context.Context, keyspaceName, name string, item []by
 			return err
 		}
 	}
-	return e.lPushLocal(ks, name, item, left, true)
+	if err := listeng.Push(e.modeHost(ks), name, item, left, true); err != nil {
+		return fmt.Errorf(errListPushRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // LPop removes and returns the head.
@@ -110,7 +113,11 @@ func (e *Engine) lPop(ctx context.Context, keyspaceName, name string, left bool)
 			return c.Transport.ListPop(pctx, owner.Addr, ks.cfg.Name, name, left)
 		}
 	}
-	return e.lPopLocal(ks, name, left, true)
+	item, popped, err := listeng.Pop(e.modeHost(ks), name, left, true)
+	if err != nil {
+		return nil, false, fmt.Errorf(errListPopRejected, ErrInvalidArgument)
+	}
+	return item, popped, nil
 }
 
 // LLen returns list length.
@@ -131,18 +138,16 @@ func (e *Engine) LLen(ctx context.Context, keyspaceName, name string) (int, erro
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return 0, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		return ks.store.LLen(name), nil
 	}
-	ent, ok, err := e.lFetchOwner(ctx, ks, name)
+	ent, ok, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !ok {
 		return 0, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return 0, nil
-	}
-	return l.Len(), nil
+	n, _ := listeng.LenFromBlob(ent.Value)
+	return n, nil
 }
 
 // LIndex returns a copy of the element at idx.
@@ -163,19 +168,16 @@ func (e *Engine) LIndex(ctx context.Context, keyspaceName, name string, idx int)
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, false, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		it, ok := ks.store.LIndex(name, idx)
 		return it, ok, nil
 	}
-	ent, found, err := e.lFetchOwner(ctx, ks, name)
+	ent, found, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !found {
 		return nil, false, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return nil, false, nil
-	}
-	it, ok := l.Index(idx)
+	it, ok := listeng.IndexFromBlob(ent.Value, idx)
 	return it, ok, nil
 }
 
@@ -197,20 +199,25 @@ func (e *Engine) LRange(ctx context.Context, keyspaceName, name string, start, s
 	if err := e.validateKeyLen(ks, name); err != nil {
 		return nil, err
 	}
-	if e.hasListLocal(ks, name) {
+	h := e.modeHost(ks)
+	if h.HasList(name) {
 		return ks.store.LRange(name, start, stop), nil
 	}
-	ent, ok, err := e.lFetchOwner(ctx, ks, name)
+	ent, ok, err := listeng.FetchOwner(ctx, h, name)
 	if err != nil || !ok {
 		return nil, err
 	}
-	l, err := listx.Decode(ent.Value)
-	if err != nil {
-		return nil, nil
-	}
-	return l.Range(start, stop), nil
+	return listeng.RangeFromBlob(ent.Value, start, stop), nil
 }
 
-func (e *Engine) hasListLocal(ks *ksRuntime, name string) bool {
-	return ks.store.HasList(name)
+func (e *Engine) applyListLPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
+	return listeng.ApplyLPush(e.modeHost(ks), name, item, expireAt)
+}
+
+func (e *Engine) applyListRPush(ks *ksRuntime, name string, item []byte, _ uint64, expireAt int64) bool {
+	return listeng.ApplyRPush(e.modeHost(ks), name, item, expireAt)
+}
+
+func (e *Engine) applyListInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return listeng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

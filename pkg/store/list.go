@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/Code0987/supercache/pkg/listx"
+	listx "github.com/Code0987/supercache/pkg/list"
 )
 
 func (m *Memory) LPush(key string, item []byte, version uint64, expireAt int64) bool {

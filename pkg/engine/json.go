@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/jsonx"
+	jsoneng "github.com/Code0987/supercache/pkg/jsonx/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 	"github.com/Code0987/supercache/pkg/store"
 )
@@ -59,7 +60,12 @@ func (e *Engine) JsonSet(ctx context.Context, keyspaceName, name, path string, v
 			return e.jMutViaOwner(ctx, ks, name, jsonx.EncodeSet(path, value), store.FlagJSONSet)
 		}
 	}
-	return e.jSetLocal(ks, name, path, value)
+	if err := jsoneng.SetLocal(e.modeHost(ks), name, path, value); err == jsoneng.ErrTooLarge {
+		return ErrValueTooLarge
+	} else if err != nil {
+		return fmt.Errorf(errJSONSetRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // JsonGet returns a copy of the JSON at path. Missing doc or path → ok=false.
@@ -90,7 +96,7 @@ func (e *Engine) JsonGet(ctx context.Context, keyspaceName, name, path string) (
 		v, ok := ks.store.JGet(name, path)
 		return v, ok, nil
 	}
-	ent, found, err := e.jFetchOwner(ctx, ks, name)
+	ent, found, err := jsoneng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return nil, false, err
 	}
@@ -130,7 +136,10 @@ func (e *Engine) JsonDel(ctx context.Context, keyspaceName, name, path string) e
 			return e.jMutViaOwner(ctx, ks, name, []byte(path), store.FlagJSONDel)
 		}
 	}
-	return e.jDelLocal(ks, name, path)
+	if err := jsoneng.DelLocal(e.modeHost(ks), name, path); err != nil {
+		return fmt.Errorf(errJSONDelRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 func jExtract(blob []byte, path string) ([]byte, bool, error) {
@@ -151,4 +160,14 @@ func jExtract(blob []byte, path string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 	return out, true, nil
+}
+
+func (e *Engine) applyJSONSet(ks *ksRuntime, name string, inbox []byte, expireAt int64) bool {
+	return jsoneng.ApplySet(e.modeHost(ks), name, inbox, expireAt)
+}
+func (e *Engine) applyJSONDel(ks *ksRuntime, name string, path []byte, expireAt int64) bool {
+	return jsoneng.ApplyDel(e.modeHost(ks), name, path, expireAt)
+}
+func (e *Engine) applyJSONInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return jsoneng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

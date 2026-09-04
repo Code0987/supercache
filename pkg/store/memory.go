@@ -8,7 +8,7 @@ import (
 
 	"github.com/Code0987/supercache/pkg/geo"
 	"github.com/Code0987/supercache/pkg/hashx"
-	"github.com/Code0987/supercache/pkg/listx"
+	listx "github.com/Code0987/supercache/pkg/list"
 	"github.com/Code0987/supercache/pkg/set"
 	"github.com/Code0987/supercache/pkg/zset"
 )

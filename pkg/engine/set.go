@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/keyspace"
+	"github.com/Code0987/supercache/pkg/set/eng"
 	"github.com/Code0987/supercache/pkg/store"
 )
 
@@ -52,7 +53,10 @@ func (e *Engine) SetAdd(ctx context.Context, keyspaceName, name string, item []b
 			return e.setMutViaOwner(ctx, ks, name, item, store.FlagSetAdd)
 		}
 	}
-	return e.setAddLocal(ks, name, item, true)
+	if err := eng.AddLocal(e.modeHost(ks), name, item, true); err != nil {
+		return fmt.Errorf(errSetAddRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // SetRemove removes item from the named set (ModeSet only).
@@ -88,7 +92,10 @@ func (e *Engine) SetRemove(ctx context.Context, keyspaceName, name string, item 
 			return e.setMutViaOwner(ctx, ks, name, item, store.FlagSetRemove)
 		}
 	}
-	return e.setRemoveLocal(ks, name, item, true)
+	if err := eng.RemoveLocal(e.modeHost(ks), name, item, true); err != nil {
+		return fmt.Errorf(errSetRemoveRejected, ErrInvalidArgument)
+	}
+	return nil
 }
 
 // SetContains reports exact membership.
@@ -136,7 +143,7 @@ func (e *Engine) SetContains(ctx context.Context, keyspaceName, name string, ite
 		return ks.store.SetContains(name, item), nil
 	}
 	// Non-replica: decode once without storing.
-	return setContainsBlob(res.Entry.Value, item), nil
+	return eng.ContainsBlob(res.Entry.Value, item), nil
 }
 
 // SetCard returns the number of elements (0 if missing).
@@ -178,7 +185,7 @@ func (e *Engine) SetCard(ctx context.Context, keyspaceName, name string) (int, e
 		_ = ks.store.SetInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
 		return ks.store.SetCard(name), nil
 	}
-	return setCardBlob(res.Entry.Value), nil
+	return eng.CardBlob(res.Entry.Value), nil
 }
 
 // SetMembers returns all members (defensive copies). Missing → empty.
@@ -220,9 +227,19 @@ func (e *Engine) SetMembers(ctx context.Context, keyspaceName, name string) ([][
 		_ = ks.store.SetInstall(name, res.Entry.Value, res.Entry.Version, res.Entry.ExpireAt)
 		return ks.store.SetMembers(name), nil
 	}
-	return setMembersBlob(res.Entry.Value), nil
+	return eng.MembersBlob(res.Entry.Value), nil
 }
 
 func (e *Engine) hasSetLocal(ks *ksRuntime, name string) bool {
 	return ks.store.HasSet(name)
+}
+
+func (e *Engine) applySetAdd(ks *ksRuntime, name string, item []byte, version uint64, expireAt int64) bool {
+	return eng.ApplyAdd(e.modeHost(ks), name, item, version, expireAt)
+}
+func (e *Engine) applySetRemove(ks *ksRuntime, name string, item []byte, version uint64, expireAt int64) bool {
+	return eng.ApplyRemove(e.modeHost(ks), name, item, version, expireAt)
+}
+func (e *Engine) applySetInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return eng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }

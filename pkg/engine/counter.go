@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Code0987/supercache/pkg/counter"
+	countereng "github.com/Code0987/supercache/pkg/counter/eng"
 	"github.com/Code0987/supercache/pkg/keyspace"
 )
 
@@ -38,7 +39,14 @@ func (e *Engine) Incr(ctx context.Context, keyspaceName, name string, delta int6
 			return c.Transport.CounterIncr(pctx, owner.Addr, ks.cfg.Name, name, delta)
 		}
 	}
-	return e.cIncrLocal(ks, name, delta, true)
+	n, err := countereng.IncrLocal(e.modeHost(ks), name, delta, true)
+	if err == countereng.ErrOverflow {
+		return 0, fmt.Errorf("%w: counter overflow", ErrInvalidArgument)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%w: incr rejected", ErrInvalidArgument)
+	}
+	return n, nil
 }
 
 // CounterGet returns the counter value. Missing → 0, ok=false.
@@ -63,7 +71,7 @@ func (e *Engine) CounterGet(ctx context.Context, keyspaceName, name string) (int
 		v, ok := ks.store.CGet(name)
 		return v, ok, nil
 	}
-	ent, found, err := e.cFetchOwner(ctx, ks, name)
+	ent, found, err := countereng.FetchOwner(ctx, e.modeHost(ks), name)
 	if err != nil || !found {
 		return 0, false, err
 	}
@@ -72,4 +80,8 @@ func (e *Engine) CounterGet(ctx context.Context, keyspaceName, name string) (int
 		return 0, false, nil
 	}
 	return v, true, nil
+}
+
+func (e *Engine) applyCounterInstall(ks *ksRuntime, name string, blob []byte, version uint64, expireAt int64) bool {
+	return countereng.ApplyInstall(e.modeHost(ks), name, blob, version, expireAt)
 }
