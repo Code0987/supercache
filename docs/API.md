@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, `vadd`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -198,6 +198,22 @@ Named Space-Saving table. Writes are observations, not scores (`ZAdd` is the exa
 | `Delete(name)` | Tombstone whole sketch |
 
 Named Count-Min Sketch. Items are hashed, not stored. Fixed **64 KiB** (`d=4`, `w=2048`). Empty item is invalid. Replicas install a **full `FlagCMS` snapshot**. Replica `CMSQuery` may lag. Get/Put on `ModeCMS` are invalid. Not Redis `CMS.*` (different hash; no merge). Billboard complement: [`examples/billboard`](../examples/billboard/) `plays-count`.
+
+### Vector set (`ModeVectorSet`)
+
+Hosted shapes: Cache gRPC tab on [`/docs`](https://code0987.github.io/supercache/) (`VAdd` … `VEmb`).
+
+| RPC | Notes |
+|-----|--------|
+| `VAdd` | Upsert `member` → `[]float32`. Creates the set if missing. **ACK-only**. First add locks dim |
+| `VRem` | Remove member if present. Last rem keeps an empty live set (dim still present) |
+| `VSim` | Brute-force top-`k` (k≤0 → 10, k>50 → 50). Missing name → empty hits. Best first |
+| `VCard` | Member count. Missing **name** ⇒ `present=false`. Empty live set ⇒ `present=true`, `n=0` |
+| `VDim` | Locked dim. Missing **name** ⇒ `present=false`. Empty live set still reports dim |
+| `VEmb` | Stored vector copy. Missing name/member ⇒ `found=false` |
+| `Delete(name)` | Tombstone whole set |
+
+Named embedding set. Dim **2–256**, max **512** members, member id **1–255** bytes. Keyspace `VectorMetric`: **cosine** (default, high→low; rejects zero), **l2** (low→high), **ip** (high→low). Replicas install a **full `FlagVectorSet` snapshot**. Replica `VSim` may lag. Get/Put on `ModeVectorSet` are invalid. Not HNSW / not Redis `VADD` wire. Walkthrough: [`examples/vecset`](../examples/vecset/). CLI: `sc -keyspace vectorset vadd items a 1,0`.
 
 ## Enabling GitHub Pages
 

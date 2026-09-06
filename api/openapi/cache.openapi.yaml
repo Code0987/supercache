@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.12.0
+  version: 0.13.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,8 +14,11 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` / `topkadd` / `cmsincr` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` / `topkadd` / `cmsincr` / `vadd` … |
     | Proto | `api/proto/cache.proto` |
+
+    Stock demo keyspaces are lowercase `Mode.String()`: `cacheonly`, `set`, `zset`,
+    `hash`, `json`, `bitmap`, `vectorset`. `sc` defaults to `-keyspace cacheonly`.
 
     ### Keyspace modes
 
@@ -40,8 +43,8 @@ info:
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount / TopKList / CMSQuery** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd / TopKAdd / CMSIncr** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount / TopKList / CMSQuery / VSim / VCard / VDim / VEmb** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd / TopKAdd / CMSIncr / VAdd / VRem** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -87,6 +90,12 @@ tags:
     description: Named Space-Saving heavy-hitters (ModeTopK)
   - name: CMS
     description: Named Count-Min frequency sketch (ModeCMS)
+  - name: Vector
+    description: |
+      Named embedding set + brute-force K-NN (`ModeVectorSet`).
+      Dim 2–256 (first `VAdd` locks). Max 512 members, member id 1–255 bytes.
+      Keyspace `VectorMetric`: cosine (default, high→low), l2 (low→high), ip (high→low).
+      Cosine rejects the zero vector; L2/IP allow zeros. Not HNSW / not Redis VADD wire.
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -99,6 +108,8 @@ paths:
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
         Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
+
+        CLI: `sc get greeting` (miss → `(nil)`).
       requestBody:
         required: true
         content:
@@ -106,7 +117,7 @@ paths:
             schema:
               $ref: "#/components/schemas/GetRequest"
             example:
-              keyspace: demo
+              keyspace: cacheonly
               key: greeting
       responses:
         "200":
@@ -127,6 +138,8 @@ paths:
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
         Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
+
+        CLI: `sc put greeting "hello"` → `OK put greeting (5 bytes)`.
       requestBody:
         required: true
         content:
@@ -134,7 +147,7 @@ paths:
             schema:
               $ref: "#/components/schemas/PutRequest"
             example:
-              keyspace: demo
+              keyspace: cacheonly
               key: greeting
               value: aGVsbG8=  # base64 "hello" in JSON mapping
               ttl_nanos: 60000000000
@@ -1243,6 +1256,178 @@ paths:
               schema:
                 $ref: "#/components/schemas/CMSQueryResponse"
 
+  /supercache.cache.v1.Cache/VAdd:
+    post:
+      tags: [Vector]
+      operationId: Cache_VAdd
+      summary: Upsert a member vector
+      description: |
+        ModeVectorSet only. Creates the set if missing. **ACK-only.**
+        First successful add locks dim for that name. Replace is allowed
+        (same member, new vector). Empty member, dim 1 or >256, or a
+        non-finite component → InvalidArgument. Cosine keyspaces also
+        reject the zero vector; L2/IP allow zeros.
+
+        Last `VRem` keeps an empty live set (dim still present).
+        Replicas install a full `FlagVectorSet` snapshot.
+
+        CLI: `sc -keyspace vectorset vadd items a 1,0` → `OK vadd items a`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VAddRequest"
+            example:
+              keyspace: vectorset
+              name: items
+              member: YQ==
+              vec: [1, 0]
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/VRem:
+    post:
+      tags: [Vector]
+      operationId: Cache_VRem
+      summary: Remove a member
+      description: |
+        ModeVectorSet only. No-op if the name or member is missing.
+        Removing the last member leaves an empty set (VDim still present).
+
+        CLI: `sc -keyspace vectorset vrem items a` → `OK vrem items a`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VRemRequest"
+            example:
+              keyspace: vectorset
+              name: items
+              member: YQ==
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/VSim:
+    post:
+      tags: [Vector]
+      operationId: Cache_VSim
+      summary: Nearest neighbors
+      description: |
+        ModeVectorSet only. Brute-force K-NN under the store mutex.
+        Missing name → empty `hits` (not an error). `k<=0` → 10; `k>50` → 50.
+        Query dim must match the locked dim. Cosine rejects a zero query.
+
+        Order: cosine / inner product **high → low**; L2 **low → high**.
+        Score meaning follows the keyspace `VectorMetric`. Replica may lag.
+
+        CLI: `sc -keyspace vectorset vsim items 1,0 3` → lines `score member`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VSimRequest"
+            example:
+              keyspace: vectorset
+              name: items
+              vec: [1, 0]
+              k: 3
+      responses:
+        "200":
+          description: Neighbors, best first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VSimResponse"
+
+  /supercache.cache.v1.Cache/VCard:
+    post:
+      tags: [Vector]
+      operationId: Cache_VCard
+      summary: Member count
+      description: |
+        ModeVectorSet only. Missing name → `present=false`, `n=0`.
+        Empty live set → `present=true`, `n=0`.
+
+        CLI: `sc -keyspace vectorset vcard items`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VCardRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VCardResponse"
+
+  /supercache.cache.v1.Cache/VDim:
+    post:
+      tags: [Vector]
+      operationId: Cache_VDim
+      summary: Locked dimension
+      description: |
+        ModeVectorSet only. Missing name → `present=false`.
+        Empty live set still reports the locked dim.
+
+        CLI: `sc -keyspace vectorset vdim items` (miss → `(nil)`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VDimRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VDimResponse"
+
+  /supercache.cache.v1.Cache/VEmb:
+    post:
+      tags: [Vector]
+      operationId: Cache_VEmb
+      summary: Stored member vector
+      description: |
+        ModeVectorSet only. Missing name or member → `found=false`.
+        Returned slice is a copy.
+
+        CLI: `sc -keyspace vectorset vemb items a` → `1,0` (miss → `(nil)`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VEmbRequest"
+            example:
+              keyspace: vectorset
+              name: items
+              member: YQ==
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VEmbResponse"
+
 components:
   schemas:
     Empty:
@@ -1983,3 +2168,121 @@ components:
           type: integer
           format: uint64
           description: Approximate frequency when present=true
+    VAddRequest:
+      type: object
+      required: [keyspace, name, member, vec]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+          description: Member id, 1–255 bytes
+        vec:
+          type: array
+          items:
+            type: number
+            format: float
+          description: float32 components; dim 2–256; first add locks dim
+    VRemRequest:
+      type: object
+      required: [keyspace, name, member]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+    VSimRequest:
+      type: object
+      required: [keyspace, name, vec]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        vec:
+          type: array
+          items:
+            type: number
+            format: float
+        k:
+          type: integer
+          format: int32
+          description: Neighbors to return; <=0 → 10; >50 → 50
+    VSimHit:
+      type: object
+      properties:
+        member:
+          type: string
+          format: byte
+        score:
+          type: number
+          format: float
+          description: Cosine / IP similarity, or L2 distance
+    VSimResponse:
+      type: object
+      properties:
+        hits:
+          type: array
+          items:
+            $ref: "#/components/schemas/VSimHit"
+    VCardRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+    VCardResponse:
+      type: object
+      properties:
+        n:
+          type: integer
+          format: int64
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+    VDimRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+    VDimResponse:
+      type: object
+      properties:
+        dim:
+          type: integer
+          format: int32
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+    VEmbRequest:
+      type: object
+      required: [keyspace, name, member]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        member:
+          type: string
+          format: byte
+    VEmbResponse:
+      type: object
+      properties:
+        vec:
+          type: array
+          items:
+            type: number
+            format: float
+        found:
+          type: boolean

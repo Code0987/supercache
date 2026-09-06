@@ -11,7 +11,7 @@ info:
     | Port | Role |
     |------|------|
     | Admin HTTP | health, peers, keyspaces, metrics, this docs UI |
-    | Cache gRPC | Get / Put / Delete |
+    | Cache gRPC | KV + typed modes (set, zset, geo, list, hash, json, bitmap, vectorset, …) |
     | Peer gRPC | mesh internal only |
 
     Open this UI on a running node: `http://127.0.0.1:8080/docs`
