@@ -71,6 +71,12 @@ const (
 	Cache_TopKList_FullMethodName      = "/supercache.cache.v1.Cache/TopKList"
 	Cache_CMSIncr_FullMethodName       = "/supercache.cache.v1.Cache/CMSIncr"
 	Cache_CMSQuery_FullMethodName      = "/supercache.cache.v1.Cache/CMSQuery"
+	Cache_VAdd_FullMethodName          = "/supercache.cache.v1.Cache/VAdd"
+	Cache_VRem_FullMethodName          = "/supercache.cache.v1.Cache/VRem"
+	Cache_VSim_FullMethodName          = "/supercache.cache.v1.Cache/VSim"
+	Cache_VCard_FullMethodName         = "/supercache.cache.v1.Cache/VCard"
+	Cache_VDim_FullMethodName          = "/supercache.cache.v1.Cache/VDim"
+	Cache_VEmb_FullMethodName          = "/supercache.cache.v1.Cache/VEmb"
 )
 
 // CacheClient is the client API for Cache service.
@@ -131,6 +137,12 @@ type CacheClient interface {
 	TopKList(ctx context.Context, in *TopKListRequest, opts ...grpc.CallOption) (*TopKListResponse, error)
 	CMSIncr(ctx context.Context, in *CMSIncrRequest, opts ...grpc.CallOption) (*CMSIncrResponse, error)
 	CMSQuery(ctx context.Context, in *CMSQueryRequest, opts ...grpc.CallOption) (*CMSQueryResponse, error)
+	VAdd(ctx context.Context, in *VAddRequest, opts ...grpc.CallOption) (*VAddResponse, error)
+	VRem(ctx context.Context, in *VRemRequest, opts ...grpc.CallOption) (*VRemResponse, error)
+	VSim(ctx context.Context, in *VSimRequest, opts ...grpc.CallOption) (*VSimResponse, error)
+	VCard(ctx context.Context, in *VCardRequest, opts ...grpc.CallOption) (*VCardResponse, error)
+	VDim(ctx context.Context, in *VDimRequest, opts ...grpc.CallOption) (*VDimResponse, error)
+	VEmb(ctx context.Context, in *VEmbRequest, opts ...grpc.CallOption) (*VEmbResponse, error)
 }
 
 type cacheClient struct {
@@ -661,6 +673,66 @@ func (c *cacheClient) CMSQuery(ctx context.Context, in *CMSQueryRequest, opts ..
 	return out, nil
 }
 
+func (c *cacheClient) VAdd(ctx context.Context, in *VAddRequest, opts ...grpc.CallOption) (*VAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VAddResponse)
+	err := c.cc.Invoke(ctx, Cache_VAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) VRem(ctx context.Context, in *VRemRequest, opts ...grpc.CallOption) (*VRemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VRemResponse)
+	err := c.cc.Invoke(ctx, Cache_VRem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) VSim(ctx context.Context, in *VSimRequest, opts ...grpc.CallOption) (*VSimResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VSimResponse)
+	err := c.cc.Invoke(ctx, Cache_VSim_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) VCard(ctx context.Context, in *VCardRequest, opts ...grpc.CallOption) (*VCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VCardResponse)
+	err := c.cc.Invoke(ctx, Cache_VCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) VDim(ctx context.Context, in *VDimRequest, opts ...grpc.CallOption) (*VDimResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VDimResponse)
+	err := c.cc.Invoke(ctx, Cache_VDim_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) VEmb(ctx context.Context, in *VEmbRequest, opts ...grpc.CallOption) (*VEmbResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VEmbResponse)
+	err := c.cc.Invoke(ctx, Cache_VEmb_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -719,6 +791,12 @@ type CacheServer interface {
 	TopKList(context.Context, *TopKListRequest) (*TopKListResponse, error)
 	CMSIncr(context.Context, *CMSIncrRequest) (*CMSIncrResponse, error)
 	CMSQuery(context.Context, *CMSQueryRequest) (*CMSQueryResponse, error)
+	VAdd(context.Context, *VAddRequest) (*VAddResponse, error)
+	VRem(context.Context, *VRemRequest) (*VRemResponse, error)
+	VSim(context.Context, *VSimRequest) (*VSimResponse, error)
+	VCard(context.Context, *VCardRequest) (*VCardResponse, error)
+	VDim(context.Context, *VDimRequest) (*VDimResponse, error)
+	VEmb(context.Context, *VEmbRequest) (*VEmbResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -884,6 +962,24 @@ func (UnimplementedCacheServer) CMSIncr(context.Context, *CMSIncrRequest) (*CMSI
 }
 func (UnimplementedCacheServer) CMSQuery(context.Context, *CMSQueryRequest) (*CMSQueryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CMSQuery not implemented")
+}
+func (UnimplementedCacheServer) VAdd(context.Context, *VAddRequest) (*VAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VAdd not implemented")
+}
+func (UnimplementedCacheServer) VRem(context.Context, *VRemRequest) (*VRemResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VRem not implemented")
+}
+func (UnimplementedCacheServer) VSim(context.Context, *VSimRequest) (*VSimResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VSim not implemented")
+}
+func (UnimplementedCacheServer) VCard(context.Context, *VCardRequest) (*VCardResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VCard not implemented")
+}
+func (UnimplementedCacheServer) VDim(context.Context, *VDimRequest) (*VDimResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VDim not implemented")
+}
+func (UnimplementedCacheServer) VEmb(context.Context, *VEmbRequest) (*VEmbResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VEmb not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -1842,6 +1938,114 @@ func _Cache_CMSQuery_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_VAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VAdd(ctx, req.(*VAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_VRem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VRemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VRem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VRem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VRem(ctx, req.(*VRemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_VSim_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VSimRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VSim(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VSim_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VSim(ctx, req.(*VSimRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_VCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VCard(ctx, req.(*VCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_VDim_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VDimRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VDim(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VDim_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VDim(ctx, req.(*VDimRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_VEmb_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VEmbRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).VEmb(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_VEmb_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).VEmb(ctx, req.(*VEmbRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2056,6 +2260,30 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CMSQuery",
 			Handler:    _Cache_CMSQuery_Handler,
+		},
+		{
+			MethodName: "VAdd",
+			Handler:    _Cache_VAdd_Handler,
+		},
+		{
+			MethodName: "VRem",
+			Handler:    _Cache_VRem_Handler,
+		},
+		{
+			MethodName: "VSim",
+			Handler:    _Cache_VSim_Handler,
+		},
+		{
+			MethodName: "VCard",
+			Handler:    _Cache_VCard_Handler,
+		},
+		{
+			MethodName: "VDim",
+			Handler:    _Cache_VDim_Handler,
+		},
+		{
+			MethodName: "VEmb",
+			Handler:    _Cache_VEmb_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

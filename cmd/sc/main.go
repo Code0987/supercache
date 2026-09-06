@@ -112,7 +112,8 @@ func run(args []string) int {
 		"bitset", "bitget", "bitcount", "bitpos",
 		"hlladd", "hllcount",
 		"topkadd", "topklist",
-		"cmsincr", "cmsquery":
+		"cmsincr", "cmsquery",
+		"vadd", "vrem", "vsim", "vcard", "vdim", "vemb":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -352,6 +353,12 @@ Cache commands (gRPC -addr seeds):
   topklist <name>              ModeTopK chart (item count lines, or (nil))
   cmsincr <name> <item> [n]    ModeCMS increment (n optional, default 1)
   cmsquery <name> <item>       ModeCMS estimate (or (nil))
+  vadd <name> <member> <f1,f2,…>  ModeVectorSet upsert
+  vrem <name> <member>         ModeVectorSet remove
+  vsim <name> <f1,f2,…> [k]    ModeVectorSet neighbors
+  vcard <name>                 ModeVectorSet member count
+  vdim <name>                  ModeVectorSet dim (or missing)
+  vemb <name> <member>         ModeVectorSet vector (or missing)
   ping                         Dial cache seeds (+ admin /healthz)
 
 Admin commands (HTTP -admin seeds):

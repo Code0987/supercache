@@ -339,6 +339,7 @@ KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 | ModeHLL | owner `HLLAdd` then **`FlagHLL` snapshot** | `HLLCount` | dense 12 KiB registers |
 | ModeTopK | owner `TopKAdd` then **`FlagTopK` snapshot** | `TopKList` | Space-Saving table (≤ K slots) |
 | ModeCMS | owner `CMSIncr` then **`FlagCMS` snapshot** | `CMSQuery` | dense 64 KiB Count-Min |
+| ModeVectorSet | owner `VAdd`/`VRem` then **`FlagVectorSet` snapshot** | `VSim` / `VEmb` / `VCard` / `VDim` | brute-force cosine/L2/IP |
 
 `Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
 
@@ -413,7 +414,7 @@ flowchart TD
   E --> E8["Owner down on Get"]
   E --> E9["Owner down on ForwardPut"]
   E --> E10["SetAdd / ZAdd / BloomAdd / HSet"]
-  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet / JsonGet / BitGet / HLLCount / TopKList / CMSQuery"]
+  E --> E11["SetContains / ZScore / BloomTest / HGet / CounterGet / JsonGet / BitGet / HLLCount / TopKList / CMSQuery / VSim"]
 
   E1 --> A1["Owner apply + async ApplyPut × R−1"]
   E2 --> A2["Local store only"]

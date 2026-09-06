@@ -224,6 +224,7 @@ func printREPLHelp() {
   hlladd|hllcount   ModeHLL
   topkadd|topklist  ModeTopK
   cmsincr|cmsquery  ModeCMS
+  vadd|vrem|vsim|vcard|vdim|vemb  ModeVectorSet
   ping                     Cache + admin health
   peers | keyspaces | metrics | health | ready
 

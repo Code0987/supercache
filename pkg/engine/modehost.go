@@ -73,7 +73,9 @@ func (h modeHost) MaxValue() int {
 func (h modeHost) BloomMK() (mBits, k int) {
 	return h.ks.cfg.EffectiveBloomBits(), h.ks.cfg.EffectiveBloomHashes()
 }
-func (h modeHost) TopKSize() int { return h.ks.cfg.EffectiveTopKSize() }
+func (h modeHost) TopKSize() int     { return h.ks.cfg.EffectiveTopKSize() }
+func (h modeHost) VectorDim() int    { return h.ks.cfg.VectorDim }
+func (h modeHost) VectorMetric() int { return int(h.ks.cfg.VectorMetric) }
 func (h modeHost) ItemMax() int {
 	max := h.e.maxKeyLen
 	if h.ks.cfg.MaxKeyLen > 0 {
@@ -81,17 +83,18 @@ func (h modeHost) ItemMax() int {
 	}
 	return max
 }
-func (h modeHost) HasList(name string) bool    { return h.ks.store.HasList(name) }
-func (h modeHost) HasHash(name string) bool    { return h.ks.store.HasHash(name) }
-func (h modeHost) HasSet(name string) bool     { return h.ks.store.HasSet(name) }
-func (h modeHost) HasZSet(name string) bool    { return h.ks.store.HasZSet(name) }
-func (h modeHost) HasGeo(name string) bool     { return h.ks.store.HasGeo(name) }
-func (h modeHost) HasCounter(name string) bool { return h.ks.store.HasCounter(name) }
-func (h modeHost) HasJSON(name string) bool    { return h.ks.store.HasJSON(name) }
-func (h modeHost) HasBitmap(name string) bool  { return h.ks.store.HasBitmap(name) }
-func (h modeHost) HasHLL(name string) bool     { return h.ks.store.HasHLL(name) }
-func (h modeHost) HasTopK(name string) bool    { return h.ks.store.HasTopK(name) }
-func (h modeHost) HasCMS(name string) bool     { return h.ks.store.HasCMS(name) }
+func (h modeHost) HasList(name string) bool      { return h.ks.store.HasList(name) }
+func (h modeHost) HasHash(name string) bool      { return h.ks.store.HasHash(name) }
+func (h modeHost) HasSet(name string) bool       { return h.ks.store.HasSet(name) }
+func (h modeHost) HasZSet(name string) bool      { return h.ks.store.HasZSet(name) }
+func (h modeHost) HasGeo(name string) bool       { return h.ks.store.HasGeo(name) }
+func (h modeHost) HasCounter(name string) bool   { return h.ks.store.HasCounter(name) }
+func (h modeHost) HasJSON(name string) bool      { return h.ks.store.HasJSON(name) }
+func (h modeHost) HasBitmap(name string) bool    { return h.ks.store.HasBitmap(name) }
+func (h modeHost) HasHLL(name string) bool       { return h.ks.store.HasHLL(name) }
+func (h modeHost) HasTopK(name string) bool      { return h.ks.store.HasTopK(name) }
+func (h modeHost) HasCMS(name string) bool       { return h.ks.store.HasCMS(name) }
+func (h modeHost) HasVectorSet(name string) bool { return h.ks.store.HasVectorSet(name) }
 func (h modeHost) HasBloom(name string) bool {
 	ent, ok := h.ks.store.Peek(name)
 	return ok && ent.IsBloom() && !ent.IsTombstone()

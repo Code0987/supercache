@@ -11,6 +11,7 @@ import (
 	"github.com/Code0987/supercache/pkg/datasource"
 	"github.com/Code0987/supercache/pkg/protect"
 	"github.com/Code0987/supercache/pkg/topkx"
+	"github.com/Code0987/supercache/pkg/vecset"
 )
 
 // Mode selects miss behavior for a keyspace.
@@ -45,6 +46,8 @@ const (
 	ModeTopK
 	// ModeCMS is a named Count-Min Sketch (CMSIncr / CMSQuery).
 	ModeCMS
+	// ModeVectorSet is a named embedding set (VAdd / VSim / VRem / …).
+	ModeVectorSet
 )
 
 func (m Mode) String() string {
@@ -77,6 +80,8 @@ func (m Mode) String() string {
 		return "TopK"
 	case ModeCMS:
 		return "CMS"
+	case ModeVectorSet:
+		return "VectorSet"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -172,6 +177,31 @@ type Config struct {
 
 	// TopKSize is K for ModeTopK (0 → DefaultTopKSize). Per-name RESERVE is not v1.
 	TopKSize int
+
+	// VectorDim is the locked dim for ModeVectorSet (0 = first VAdd locks). Range 2..256.
+	VectorDim int
+	// VectorMetric is cosine (0), L2, or IP for ModeVectorSet.
+	VectorMetric VectorMetric
+}
+
+// VectorMetric is the keyspace K-NN formula.
+type VectorMetric int
+
+const (
+	VectorMetricCosine VectorMetric = iota
+	VectorMetricL2
+	VectorMetricIP
+)
+
+func (m VectorMetric) String() string {
+	switch m {
+	case VectorMetricL2:
+		return "l2"
+	case VectorMetricIP:
+		return "ip"
+	default:
+		return "cosine"
+	}
 }
 
 // Validate checks config invariants.
@@ -206,6 +236,35 @@ func (c Config) Validate() error {
 		need := topkx.WorstEncodedSize(c.EffectiveTopKSize(), maxItem)
 		if maxVal > 0 && need > maxVal {
 			return fmt.Errorf("keyspace: ModeTopK WorstEncodedSize %d > MaxValueSize %d", need, maxVal)
+		}
+	}
+	if c.Mode == ModeVectorSet {
+		if c.VectorDim < 0 || c.VectorDim == 1 || c.VectorDim > vecset.MaxDim {
+			return fmt.Errorf("keyspace: VectorDim %d out of range", c.VectorDim)
+		}
+		switch c.VectorMetric {
+		case VectorMetricCosine, VectorMetricL2, VectorMetricIP:
+		default:
+			return fmt.Errorf("keyspace: unknown VectorMetric %d", int(c.VectorMetric))
+		}
+		dim := c.VectorDim
+		if dim == 0 {
+			dim = vecset.MaxDim
+		}
+		maxItem := DefaultMaxKeyLen
+		if c.MaxKeyLen > 0 {
+			maxItem = c.MaxKeyLen
+		}
+		if maxItem > vecset.MaxMemberLen {
+			maxItem = vecset.MaxMemberLen
+		}
+		maxVal := DefaultMaxValueSize
+		if c.MaxValueSize > 0 {
+			maxVal = c.MaxValueSize
+		}
+		need := vecset.WorstEncodedSize(dim, vecset.MaxMembers, maxItem)
+		if maxVal > 0 && need > maxVal {
+			return fmt.Errorf("keyspace: ModeVectorSet WorstEncodedSize %d > MaxValueSize %d", need, maxVal)
 		}
 	}
 	if c.Mode == ModeBloom {
@@ -269,6 +328,8 @@ func (c Config) ConfigHash() string {
 		BloomBits         int
 		BloomHashes       int
 		TopKSize          int
+		VectorDim         int
+		VectorMetric      int
 	}
 	b, _ := json.Marshal(wire{
 		Name:              c.Name,
@@ -292,6 +353,8 @@ func (c Config) ConfigHash() string {
 		BloomBits:         c.BloomBits,
 		BloomHashes:       c.BloomHashes,
 		TopKSize:          c.TopKSize,
+		VectorDim:         c.VectorDim,
+		VectorMetric:      int(c.VectorMetric),
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])

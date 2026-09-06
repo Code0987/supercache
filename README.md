@@ -2,7 +2,7 @@
 
 Eventually consistent, read-heavy distributed cache for shared runtime storage (Go).
 
-In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK), and a bounded per-node LRU.
+In-process Engine or dedicated nodes. Owner writes with async fan-out, local reads, gossip membership, load-through keyspaces, structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK / CMS / VectorSet), and a bounded per-node LRU.
 
 ```text
 github.com/Code0987/supercache

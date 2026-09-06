@@ -35,6 +35,7 @@ const (
 	FlagTopKAdd   uint32 = 1 << 28 // owner-inbox only: raw item to Add (replicas ignore)
 	FlagCMS       uint32 = 1 << 29 // value is dense 64 KiB Count-Min snapshot
 	FlagCMSIncr   uint32 = 1 << 30 // owner-inbox only: uvarint(n) || item (replicas ignore)
+	FlagVectorSet uint32 = 1 << 31 // snapshot or owner-inbox; discriminate by Value[0]
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -180,6 +181,10 @@ func (e Entry) IsCMS() bool {
 
 func (e Entry) IsCMSIncr() bool {
 	return e.Flags&FlagCMSIncr != 0
+}
+
+func (e Entry) IsVectorSet() bool {
+	return e.Flags&FlagVectorSet != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.
