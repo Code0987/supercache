@@ -44,7 +44,7 @@ func main() {
 		gossipAdv    = flag.String("gossip-advertise", "127.0.0.1", "gossip advertise address")
 		seeds        = flag.String("seeds", "", "comma-separated gossip seeds host:port")
 		gossipSecret = flag.String("gossip-secret", "", "optional gossip shared secret")
-		demoKS       = flag.Bool("demo-keyspace", true, "register stock demo keyspaces (demo/tags/board/profile/doc/flags/embeddings)")
+		demoKS       = flag.Bool("demo-keyspace", true, "register stock demo keyspaces named after the mode (cacheonly/set/zset/hash/json/bitmap/vectorset)")
 		globalRPS    = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
 		cluster      = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
 		showVersion  = flag.Bool("version", false, "print version and exit")
@@ -90,7 +90,7 @@ func main() {
 		if err := registerDemoKeyspaces(eng); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON flags=ModeBitmap embeddings=ModeVectorSet")
+		log.Printf("demo keyspaces: %s", strings.Join(demoKeyspaceNames(), " "))
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(
@@ -285,21 +285,36 @@ func buildTLS(
 	return cacheOpts, peerOpts, peerDial, nil
 }
 
+// demoKeyspaceName is lowercase Mode.String() so sc -keyspace <mode> is guessable.
+func demoKeyspaceName(m keyspace.Mode) string {
+	return strings.ToLower(m.String())
+}
+
+func demoKeyspaceNames() []string {
+	var out []string
+	for _, cfg := range demoKeyspaceConfigs() {
+		out = append(out, cfg.Name+"="+cfg.Mode.String())
+	}
+	return out
+}
+
+func demoKeyspaceConfigs() []keyspace.Config {
+	ttl := 30 * time.Minute
+	return []keyspace.Config{
+		{Name: demoKeyspaceName(keyspace.ModeCacheOnly), Mode: keyspace.ModeCacheOnly, MaxBytes: 64 << 20, TTL: 5 * time.Minute},
+		{Name: demoKeyspaceName(keyspace.ModeSet), Mode: keyspace.ModeSet, MaxBytes: 16 << 20, TTL: ttl},
+		{Name: demoKeyspaceName(keyspace.ModeZSet), Mode: keyspace.ModeZSet, MaxBytes: 16 << 20, TTL: ttl},
+		{Name: demoKeyspaceName(keyspace.ModeHash), Mode: keyspace.ModeHash, MaxBytes: 16 << 20, TTL: ttl},
+		{Name: demoKeyspaceName(keyspace.ModeJSON), Mode: keyspace.ModeJSON, MaxBytes: 16 << 20, TTL: ttl},
+		{Name: demoKeyspaceName(keyspace.ModeBitmap), Mode: keyspace.ModeBitmap, MaxBytes: 16 << 20, TTL: ttl},
+		{Name: demoKeyspaceName(keyspace.ModeVectorSet), Mode: keyspace.ModeVectorSet, MaxBytes: 16 << 20, TTL: ttl},
+	}
+}
+
 // registerDemoKeyspaces installs the stock -demo-keyspace set.
 func registerDemoKeyspaces(eng *engine.Engine) error {
-	type ks struct {
-		cfg keyspace.Config
-	}
-	for _, item := range []ks{
-		{keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 64 << 20, TTL: 5 * time.Minute}},
-		{keyspace.Config{Name: "tags", Mode: keyspace.ModeSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-		{keyspace.Config{Name: "board", Mode: keyspace.ModeZSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-		{keyspace.Config{Name: "profile", Mode: keyspace.ModeHash, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-		{keyspace.Config{Name: "doc", Mode: keyspace.ModeJSON, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-		{keyspace.Config{Name: "flags", Mode: keyspace.ModeBitmap, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-		{keyspace.Config{Name: "embeddings", Mode: keyspace.ModeVectorSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
-	} {
-		if err := eng.UpdateKeySpace(item.cfg); err != nil {
+	for _, cfg := range demoKeyspaceConfigs() {
+		if err := eng.UpdateKeySpace(cfg); err != nil {
 			return err
 		}
 	}

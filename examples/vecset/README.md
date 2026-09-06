@@ -30,7 +30,7 @@ CI covers the same path: `go test ./examples/vecset`.
 
 ## Manual `sc` against a stock node
 
-`supercache-node -demo-keyspace` (the default) registers **`embeddings`**
+`supercache-node -demo-keyspace` (the default) registers **`vectorset`**
 (`ModeVectorSet`, cosine, dim unlocked until first `vadd`).
 
 ```bash
@@ -39,21 +39,21 @@ go run ./cmd/supercache-node \
   -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
 
 # terminal 2 — add, inspect, search
-go run ./cmd/sc -keyspace embeddings vadd products east 1,0
-go run ./cmd/sc -keyspace embeddings vadd products north 0,1
-go run ./cmd/sc -keyspace embeddings vadd products ne 0.7,0.7
-go run ./cmd/sc -keyspace embeddings vcard products
-go run ./cmd/sc -keyspace embeddings vdim products
-go run ./cmd/sc -keyspace embeddings vemb products east
-go run ./cmd/sc -keyspace embeddings vsim products 1,0.05 3
+go run ./cmd/sc -keyspace vectorset vadd products east 1,0
+go run ./cmd/sc -keyspace vectorset vadd products north 0,1
+go run ./cmd/sc -keyspace vectorset vadd products ne 0.7,0.7
+go run ./cmd/sc -keyspace vectorset vcard products
+go run ./cmd/sc -keyspace vectorset vdim products
+go run ./cmd/sc -keyspace vectorset vemb products east
+go run ./cmd/sc -keyspace vectorset vsim products 1,0.05 3
 
 # replace, rem, missing
-go run ./cmd/sc -keyspace embeddings vadd products east 0,1
-go run ./cmd/sc -keyspace embeddings vsim products 1,0 3
-go run ./cmd/sc -keyspace embeddings vrem products north
-go run ./cmd/sc -keyspace embeddings vcard products
-go run ./cmd/sc -keyspace embeddings vdim missing   # prints missing, exit 1
+go run ./cmd/sc -keyspace vectorset vadd products east 0,1
+go run ./cmd/sc -keyspace vectorset vsim products 1,0 3
+go run ./cmd/sc -keyspace vectorset vrem products north
+go run ./cmd/sc -keyspace vectorset vcard products
+go run ./cmd/sc -keyspace vectorset vdim missing   # prints missing, exit 1
 
 # cosine rejects a zero vector (L2/IP would allow it on another keyspace)
-# go run ./cmd/sc -keyspace embeddings vadd products origin 0,0
+# go run ./cmd/sc -keyspace vectorset vadd products origin 0,0
 ```

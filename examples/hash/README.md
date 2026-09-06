@@ -35,7 +35,7 @@ CI covers the same path: `go test ./examples/hash`.
 ## Manual `sc` against a node
 
 `supercache-node -demo-keyspace` (the default) now also registers
-**`profile`** (`ModeHash`).
+**`hash`** (`ModeHash`).
 
 ```bash
 # terminal 1
@@ -43,18 +43,18 @@ go run ./cmd/supercache-node \
   -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
 
 # terminal 2
-go run ./cmd/sc -keyspace profile hset alice email alice@example.com
-go run ./cmd/sc -keyspace profile hset alice name Alice
-go run ./cmd/sc -keyspace profile hset alice plan pro
-go run ./cmd/sc -keyspace profile hget alice email
-go run ./cmd/sc -keyspace profile hexists alice plan
-go run ./cmd/sc -keyspace profile hlen alice
-go run ./cmd/sc -keyspace profile hgetall alice
+go run ./cmd/sc -keyspace hash hset alice email alice@example.com
+go run ./cmd/sc -keyspace hash hset alice name Alice
+go run ./cmd/sc -keyspace hash hset alice plan pro
+go run ./cmd/sc -keyspace hash hget alice email
+go run ./cmd/sc -keyspace hash hexists alice plan
+go run ./cmd/sc -keyspace hash hlen alice
+go run ./cmd/sc -keyspace hash hgetall alice
 # values may contain spaces:
-go run ./cmd/sc -keyspace profile hset alice bio writes caches
-go run ./cmd/sc -keyspace profile hdel alice plan
-go run ./cmd/sc -keyspace profile hlen alice
-go run ./cmd/sc -keyspace profile del alice     # tombstone whole hash
+go run ./cmd/sc -keyspace hash hset alice bio writes caches
+go run ./cmd/sc -keyspace hash hdel alice plan
+go run ./cmd/sc -keyspace hash hlen alice
+go run ./cmd/sc -keyspace hash del alice     # tombstone whole hash
 ```
 
 `hgetall` prints one `field<TAB>value` line per pair. `hget` of a missing

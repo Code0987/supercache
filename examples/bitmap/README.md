@@ -33,7 +33,7 @@ CI covers the same path: `go test ./examples/bitmap`.
 ## Manual `sc` against a node
 
 `supercache-node -demo-keyspace` (the default) now also registers
-**`flags`** (`ModeBitmap`).
+**`bitmap`** (`ModeBitmap`).
 
 `sc bitset` / `bitget` take a numeric offset. The bit token must be `0` or `1`.
 
@@ -43,16 +43,16 @@ go run ./cmd/supercache-node \
   -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
 
 # terminal 2
-go run ./cmd/sc -keyspace flags bitset seen 0 1
-go run ./cmd/sc -keyspace flags bitset seen 8 1
-go run ./cmd/sc -keyspace flags bitget seen 0
-go run ./cmd/sc -keyspace flags bitget seen 3
-go run ./cmd/sc -keyspace flags bitcount seen
-go run ./cmd/sc -keyspace flags bitcount seen 0 0
-go run ./cmd/sc -keyspace flags bitpos seen 1
-go run ./cmd/sc -keyspace flags bitset seen 0 0
-go run ./cmd/sc -keyspace flags bitcount seen
-go run ./cmd/sc -keyspace flags del seen     # tombstone whole bitmap
+go run ./cmd/sc -keyspace bitmap bitset seen 0 1
+go run ./cmd/sc -keyspace bitmap bitset seen 8 1
+go run ./cmd/sc -keyspace bitmap bitget seen 0
+go run ./cmd/sc -keyspace bitmap bitget seen 3
+go run ./cmd/sc -keyspace bitmap bitcount seen
+go run ./cmd/sc -keyspace bitmap bitcount seen 0 0
+go run ./cmd/sc -keyspace bitmap bitpos seen 1
+go run ./cmd/sc -keyspace bitmap bitset seen 0 0
+go run ./cmd/sc -keyspace bitmap bitcount seen
+go run ./cmd/sc -keyspace bitmap del seen     # tombstone whole bitmap
 ```
 
 `bitget` of a missing name prints `(nil)` and exits 1.

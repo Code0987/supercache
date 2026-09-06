@@ -35,7 +35,7 @@ CI covers the same path: `go test ./examples/json`.
 ## Manual `sc` against a node
 
 `supercache-node -demo-keyspace` (the default) now also registers
-**`doc`** (`ModeJSON`).
+**`json`** (`ModeJSON`).
 
 `sc jsonset` joins remaining args like `put` / `hset`. The server rejects
 non-JSON, so quote string values:
@@ -46,14 +46,14 @@ go run ./cmd/supercache-node \
   -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
 
 # terminal 2
-go run ./cmd/sc -keyspace doc jsonset user $ '{"name":"Ada","n":1}'
-go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
-go run ./cmd/sc -keyspace doc jsonset user $.n 1
-go run ./cmd/sc -keyspace doc jsonget user $.n
-go run ./cmd/sc -keyspace doc jsonget user
-go run ./cmd/sc -keyspace doc jsondel user $.name
-go run ./cmd/sc -keyspace doc jsondel user          # clear to {}
-go run ./cmd/sc -keyspace doc del user              # tombstone
+go run ./cmd/sc -keyspace json jsonset user $ '{"name":"Ada","n":1}'
+go run ./cmd/sc -keyspace json jsonset user $.name '"Ada"'
+go run ./cmd/sc -keyspace json jsonset user $.n 1
+go run ./cmd/sc -keyspace json jsonget user $.n
+go run ./cmd/sc -keyspace json jsonget user
+go run ./cmd/sc -keyspace json jsondel user $.name
+go run ./cmd/sc -keyspace json jsondel user          # clear to {}
+go run ./cmd/sc -keyspace json del user              # tombstone
 ```
 
 `jsonget` of a missing path prints `(nil)` and exits 1.
