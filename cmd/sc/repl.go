@@ -13,14 +13,17 @@ func runREPL(cfg *config) int {
 	sess := newSession(cfg)
 	defer sess.Close()
 
+	applyJSONColor(cfg.jsonOut)
+
 	// Eager dial so the first prompt shows the connected seed.
 	if _, addr, err := sess.Client(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: not connected yet: %v\n", err)
+		printWarn(fmt.Sprintf("not connected yet: %v", err))
 		fmt.Fprintf(os.Stderr, "seeds: %s\n", strings.Join(cfg.addrs, ", "))
 	} else {
-		fmt.Printf("connected %s  keyspace=%s  seeds=%d\n", addr, cfg.keyspace, len(cfg.addrs))
+		fmt.Printf("%s %s  keyspace=%s  seeds=%d\n",
+			paint(os.Stdout, ansiGreen, "connected"), addr, cfg.keyspace, len(cfg.addrs))
 	}
-	fmt.Println("type help for commands, quit to exit")
+	fmt.Println(paint(os.Stdout, ansiDim, "type help for commands, quit to exit"))
 
 	in := bufio.NewScanner(os.Stdin)
 	// Allow long put lines
@@ -31,7 +34,7 @@ func runREPL(cfg *config) int {
 		if addr == "" {
 			addr = "?"
 		}
-		fmt.Printf("sc %s@%s> ", cfg.keyspace, shortAddr(addr))
+		fmt.Print(colorPrompt(cfg.keyspace, shortAddr(addr)))
 		if !in.Scan() {
 			fmt.Println()
 			break
@@ -42,7 +45,7 @@ func runREPL(cfg *config) int {
 		}
 		args, err := tokenize(line)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "parse: %v\n", err)
+			printCmdErr("parse", err)
 			continue
 		}
 		if len(args) == 0 {
@@ -62,11 +65,11 @@ func runREPL(cfg *config) int {
 			continue
 		case "keyspace", "use", "ks":
 			if len(rest) != 1 {
-				fmt.Fprintln(os.Stderr, "usage: keyspace <name>")
+				printUsageLine("usage: keyspace <name>")
 				continue
 			}
 			cfg.keyspace = rest[0]
-			fmt.Printf("keyspace = %s\n", cfg.keyspace)
+			fmt.Printf("keyspace = %s\n", paint(os.Stdout, ansiBold, cfg.keyspace))
 			continue
 		case "seeds", "addrs":
 			fmt.Printf("cache seeds (%d):\n", len(cfg.addrs))
@@ -108,14 +111,14 @@ func runREPL(cfg *config) int {
 					sess.seedIdx = found
 					sess.mu.Unlock()
 				} else {
-					fmt.Fprintf(os.Stderr, "unknown seed %q (use seeds to list)\n", target)
+					printCmdMsg("connect", fmt.Sprintf("unknown seed %q (use seeds to list)", target))
 					continue
 				}
 			}
 			if _, addr, err := sess.Client(); err != nil {
-				fmt.Fprintf(os.Stderr, "connect: %v\n", err)
+				printCmdErr("connect", err)
 			} else {
-				fmt.Printf("connected %s\n", addr)
+				fmt.Printf("%s %s\n", paint(os.Stdout, ansiGreen, "connected"), addr)
 			}
 			continue
 		case "ttl":
@@ -135,7 +138,7 @@ func runREPL(cfg *config) int {
 			}
 			d, err := time.ParseDuration(rest[0])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "ttl: %v\n", err)
+				printCmdErr("ttl", err)
 				continue
 			}
 			cfg.ttl = d
@@ -150,17 +153,18 @@ func runREPL(cfg *config) int {
 				case "off", "0", "false":
 					cfg.jsonOut = false
 				default:
-					fmt.Fprintln(os.Stderr, "usage: json [on|off]")
+					printUsageLine("usage: json [on|off]")
 					continue
 				}
 			}
+			applyJSONColor(cfg.jsonOut)
 			fmt.Printf("json = %v\n", cfg.jsonOut)
 			continue
 		case "timeout":
 			if len(rest) == 1 {
 				d, err := time.ParseDuration(rest[0])
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "timeout: %v\n", err)
+					printCmdErr("timeout", err)
 					continue
 				}
 				cfg.timeout = d
@@ -180,16 +184,17 @@ func runREPL(cfg *config) int {
 		// Inline flags for a single REPL command: put k -file x, get k -base64, etc.
 		cmdArgs, err := applyREPLFlags(cfg, rest)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
+			printCmdErr("sc", err)
 			continue
 		}
+		applyJSONColor(cfg.jsonOut)
 
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 		_ = dispatch(ctx, sess, cmd, cmdArgs)
 		cancel()
 	}
 	if err := in.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "stdin: %v\n", err)
+		printCmdErr("stdin", err)
 		return 1
 	}
 	return 0
@@ -204,40 +209,6 @@ func shortAddr(addr string) string {
 		return addr[len("localhost"):]
 	}
 	return addr
-}
-
-func printREPLHelp() {
-	fmt.Print(`REPL commands:
-  get <key> [key...]       Get
-  put <key> <value>        Put (quotes ok: put k "hello world")
-  put <key> -file <path>   Put file bytes
-  del <key> [key...]       Delete
-  sadd|srem|sismember|scard|smembers   ModeSet
-  bloom add|test           ModeBloom
-  zadd|zrem|zscore|zcard|zrange|zrangebyscore   ModeZSet
-  geoadd|georem|geopos|geocard|geodist|georadius   ModeGeo
-  lpush|rpush|lpop|rpop|llen|lindex|lrange   ModeList
-  hset|hget|hdel|hexists|hlen|hgetall   ModeHash
-  incr|cget   ModeCounter
-  jsonset|jsonget|jsondel   ModeJSON
-  bitset|bitget|bitcount|bitpos   ModeBitmap
-  hlladd|hllcount   ModeHLL
-  topkadd|topklist  ModeTopK
-  cmsincr|cmsquery  ModeCMS
-  vadd|vrem|vsim|vcard|vdim|vemb  ModeVectorSet
-  ping                     Cache + admin health
-  peers | keyspaces | metrics | health | ready
-
-Session:
-  keyspace <name>          Switch keyspace (alias: use, ks)
-  seeds                    List cache/admin seeds (* = active)
-  connect [seed]           Re-dial (optional seed / substring)
-  ttl [duration|default]   Show/set put TTL
-  json [on|off]            JSON output mode
-  timeout [duration]       Request timeout
-  clear                    Clear screen
-  help | version | quit
-`)
 }
 
 // applyREPLFlags peels common flags out of REPL args for one command.

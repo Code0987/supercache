@@ -17,9 +17,9 @@ go run ./cmd/sc peers
 
 # Interactive REPL
 go run ./cmd/sc
-# sc demo@:9000> put k v
-# sc demo@:9000> get k
-# sc demo@:9000> quit
+# sc cacheonly@:9000> put k v
+# sc cacheonly@:9000> get k
+# sc cacheonly@:9000> quit
 ```
 
 Install:
@@ -50,10 +50,10 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 
 | Command | Port | What it does |
 |---------|------|----------------|
-| `get <key> [key...]` | Cache gRPC | Fetch value(s); exit `1` if any missing |
+| `get <key> [key...]` | Cache gRPC | Fetch value(s); miss = `(nil)`; exit `1` if any missing |
 | `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
 | `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json/bitmap |
-| `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership |
+| `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership (`test` prints `true`/`false`) |
 | `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
 | `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
 | `sismember <name> <item>` | Cache gRPC | `ModeSet` contains (`true`/`false`; exit 1 if false) |
@@ -97,13 +97,14 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `topklist <name>` | Cache gRPC | `item count` lines, or `(nil)` + exit 1 if name missing |
 | `cmsincr <name> <item> [n]` | Cache gRPC | `ModeCMS` increment (`n` optional, default 1; 0 means 1) |
 | `cmsquery <name> <item>` | Cache gRPC | decimal estimate, or `(nil)` + exit 1 if name missing |
+| `vadd` / `vrem` / `vsim` / `vcard` / `vdim` / `vemb` | Cache gRPC | `ModeVectorSet`; miss = `(nil)` |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |
 | `repl` (or bare `sc` on a TTY) | — | Interactive shell |
 | `version` | — | CLI version |
 
-Use `-keyspace` / REPL `keyspace` to select the mode’s keyspace (`demo` KV, `tags` ModeSet, `board` ModeZSet, `profile` ModeHash, `doc` ModeJSON, `flags` ModeBitmap, or your own).
+Use `-keyspace` / REPL `keyspace` to select an existing keyspace. Stock demo names are lowercase `Mode.String()`: `cacheonly`, `set`, `zset`, `hash`, `json`, `bitmap`, `vectorset`.
 
 ## REPL
 
@@ -112,16 +113,16 @@ sc -addr 127.0.0.1:9000,127.0.0.1:9010
 ```
 
 ```text
-connected 127.0.0.1:9000  keyspace=demo  seeds=2
-sc demo@:9000> put session:1 '{"user":1}'
-sc demo@:9000> get session:1
-sc demo@:9000> keyspace board
-sc board@:9000> zadd lb 100 alice
-sc board@:9000> zrange lb 0 -1
-sc board@:9000> seeds
-sc board@:9000> connect :9010
-sc board@:9000> peers
-sc board@:9000> quit
+connected 127.0.0.1:9000  keyspace=cacheonly  seeds=2
+sc cacheonly@:9000> put session:1 '{"user":1}'
+sc cacheonly@:9000> get session:1
+sc cacheonly@:9000> keyspace zset
+sc zset@:9000> zadd lb 100 alice
+sc zset@:9000> zrange lb 0 -1
+sc zset@:9000> seeds
+sc zset@:9000> connect :9010
+sc zset@:9000> peers
+sc zset@:9000> quit
 ```
 
 | REPL meta | Meaning |
@@ -142,7 +143,7 @@ Quotes work: `put k "hello world"`. Per-line flags: `put k -file ./x.bin`, `get 
 |------|---------|-----|
 | `-addr` | `127.0.0.1:9000` | `SC_ADDR` (comma-separated OK) |
 | `-admin` | `127.0.0.1:8080` | `SC_ADMIN` |
-| `-keyspace` | `demo` | `SC_KEYSPACE` |
+| `-keyspace` | `cacheonly` | `SC_KEYSPACE` |
 | `-timeout` | `5s` | |
 | `-ttl` / `-no-expiry` | keyspace default | put only |
 | `-file` | | put value from path (`-` = stdin) |
@@ -150,6 +151,17 @@ Quotes work: `put k "hello world"`. Per-line flags: `put k -file ./x.bin`, `get 
 | `-tls-ca` / `-tls-cert` / `-tls-key` / `-tls-server-name` | | `SC_TLS_*` |
 
 Flags may appear before or after the subcommand.
+
+## Output
+
+On a TTY, `sc` colors `OK`, errors, `usage:`, `warning:`, help headings, and the REPL prompt. Color is off when the stream is not a TTY, `NO_COLOR` is set, `TERM=dumb`, or `-json` is on.
+
+| Kind | Text |
+|------|------|
+| Mutation | `OK <verb> …` (e.g. `OK put greeting (11 bytes)`, `OK del greeting`) |
+| Miss | `(nil)` on stdout; exit `1` |
+| Bool | `true` / `false` |
+| Usage / error | `usage: …` / `<cmd>: …` on stderr |
 
 ## Notes
 

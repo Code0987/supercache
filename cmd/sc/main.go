@@ -63,7 +63,7 @@ func run(args []string) int {
 	if cmd == "" {
 		_ = fs.Parse(flagArgs)
 		if wantHelp || !stdinIsTTY() {
-			printUsage(fs)
+			printUsage()
 			if wantHelp {
 				return 0
 			}
@@ -79,15 +79,15 @@ func run(args []string) int {
 
 	if err := fs.Parse(flagArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			printUsage(fs)
+			printUsage()
 			return 0
 		}
 		fmt.Fprintln(os.Stderr, err)
-		printUsage(fs)
+		printNote("type help for commands")
 		return 2
 	}
 	if wantHelp && (cmd == "help" || cmd == "-h" || cmd == "--help") {
-		printUsage(fs)
+		printUsage()
 		return 0
 	}
 
@@ -120,8 +120,8 @@ func run(args []string) int {
 		defer cancel()
 		return dispatch(ctx, sess, cmd, posArgs)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
-		printUsage(fs)
+		printUnknown(cmd)
+		printNote("type help for commands")
 		return 2
 	}
 }
@@ -161,6 +161,7 @@ func configFromFlags(
 		cfg.ttl = 0
 		cfg.ttlSet = true
 	}
+	applyJSONColor(cfg.jsonOut)
 	return cfg, nil
 }
 
@@ -292,106 +293,4 @@ func splitArgs(args []string) (cmd string, flagArgs, posArgs []string, err error
 		i++
 	}
 	return cmd, flagArgs, posArgs, nil
-}
-
-func printUsage(fs *flag.FlagSet) {
-	w := os.Stderr
-	fmt.Fprintf(w, `sc — SuperCache CLI (%s)
-
-Usage:
-  sc [flags] <command> [args]
-  sc [flags]                   # interactive REPL (TTY)
-  sc [flags] repl
-
-Cache commands (gRPC -addr seeds):
-  get <key> [key...]           Get key(s); exit 1 if any missing
-  put <key> <value>            Put string value
-  put <key> -file <path>       Put file bytes (-file - = stdin)
-  del <key> [key...]           Delete key(s) cluster-wide (best-effort)
-  set ...                      Alias for put (KV; not ModeSet)
-  bloom add|test <name> <item> ModeBloom membership
-  sadd <name> <item>           ModeSet add
-  srem <name> <item>           ModeSet remove
-  sismember <name> <item>      ModeSet contains (true/false)
-  scard <name>                 ModeSet member count
-  smembers <name>              ModeSet list members
-  zadd <name> <score> <member> ModeZSet upsert score
-  zrem <name> <member>         ModeZSet remove member
-  zscore <name> <member>       ModeZSet score (or (nil))
-  zcard <name>                 ModeZSet member count
-  zrange <name> <start> <stop> ModeZSet by rank (Redis-style)
-  zrangebyscore <name> <min> <max>
-  geoadd <name> <lon> <lat> <member>  ModeGeo upsert
-  georem <name> <member>       ModeGeo remove
-  geopos <name> <member>       ModeGeo lon lat (or (nil))
-  geocard <name>               ModeGeo member count
-  geodist <name> <a> <b>       ModeGeo meters (or (nil))
-  georadius <name> <lon> <lat> <radius_m> [limit]
-  lpush|rpush <name> <item>    ModeList push
-  lpop|rpop <name>             ModeList pop (or (nil))
-  llen <name>                  ModeList length
-  lindex <name> <idx>          ModeList element
-  lrange <name> <start> <stop> ModeList window
-  hset <name> <field> <value...>  ModeHash upsert (value may contain spaces)
-  hget <name> <field>          ModeHash get (or (nil))
-  hdel <name> <field>          ModeHash delete field
-  hexists <name> <field>       ModeHash exists (true/false)
-  hlen <name>                  ModeHash field count
-  hgetall <name>               ModeHash field<TAB>value lines
-  incr <name> [delta]          ModeCounter add (default 1); print new value
-  cget <name>                  ModeCounter get (or (nil))
-  jsonset <name> <path> <json...>  ModeJSON upsert (quoted JSON: '"Ada"')
-  jsonget <name> [path]        ModeJSON get (or (nil)); omitted path = $
-  jsondel <name> [path]        ModeJSON delete path; omitted path = $ (clear to {})
-  bitset <name> <offset> <0|1> ModeBitmap SETBIT
-  bitget <name> <offset>       ModeBitmap GETBIT (0/1 or (nil))
-  bitcount <name> [start end]  ModeBitmap BITCOUNT (byte window; omitted = 0 -1)
-  bitpos <name> <0|1> [start end]  ModeBitmap BITPOS
-  hlladd <name> <item...>      ModeHLL add (hashed, not stored)
-  hllcount <name>              ModeHLL estimate (or (nil))
-  topkadd <name> <item...>     ModeTopK observe (+1 per item)
-  topklist <name>              ModeTopK chart (item count lines, or (nil))
-  cmsincr <name> <item> [n]    ModeCMS increment (n optional, default 1)
-  cmsquery <name> <item>       ModeCMS estimate (or (nil))
-  vadd <name> <member> <f1,f2,…>  ModeVectorSet upsert
-  vrem <name> <member>         ModeVectorSet remove
-  vsim <name> <f1,f2,…> [k]    ModeVectorSet neighbors
-  vcard <name>                 ModeVectorSet member count
-  vdim <name>                  ModeVectorSet dim (or missing)
-  vemb <name> <member>         ModeVectorSet vector (or missing)
-  ping                         Dial cache seeds (+ admin /healthz)
-
-Admin commands (HTTP -admin seeds):
-  peers | keyspaces | metrics | health | ready
-
-Other:
-  repl                         Interactive shell
-  version | help
-
-Multi-seed:
-  -addr host1:9000,host2:9010  try seeds in order; sticky last success; fail over on dial errors
-  Puts still go to the ring owner via ForwardPut — seeds are only the client entry point.
-
-Global flags:
-`, version)
-	fs.SetOutput(w)
-	fs.PrintDefaults()
-	fmt.Fprintf(w, `
-Environment: SC_ADDR, SC_ADMIN, SC_KEYSPACE, SC_TLS_CA, SC_TLS_CERT, SC_TLS_KEY, SC_TLS_SERVER_NAME
-
-Examples:
-  sc put greeting "hello world"
-  sc get greeting
-  sc -keyspace set sadd features dark_mode
-  sc -keyspace set sismember features dark_mode
-  sc -keyspace zset zadd lb 100 alice
-  sc -keyspace zset zrange lb 0 -1
-  sc -addr 127.0.0.1:9000,127.0.0.1:9010,127.0.0.1:9020 ping
-  sc -admin 127.0.0.1:8081,127.0.0.1:8082 peers
-  sc                                    # REPL
-  sc> put k v
-  sc> get k
-  sc> keyspace cacheonly
-  sc> quit
-`)
 }

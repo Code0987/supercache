@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/Code0987/supercache/pkg/client"
@@ -12,7 +11,7 @@ import (
 // cmdCMSIncr is `cmsincr <name> <item> [n]`. n optional, default 1. 0 means 1.
 func cmdCMSIncr(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 || len(args) > 3 {
-		fmt.Fprintln(os.Stderr, "usage: cmsincr <name> <item> [n]")
+		printUsageLine("usage: cmsincr <name> <item> [n]")
 		return 2
 	}
 	name := args[0]
@@ -21,7 +20,7 @@ func cmdCMSIncr(ctx context.Context, sess *session, args []string) int {
 	if len(args) == 3 {
 		parsed, err := strconv.ParseUint(args[2], 10, 64)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cmsincr: bad n %q\n", args[2])
+			printCmdMsg("cmsincr", fmt.Sprintf("bad n %q", args[2]))
 			return 2
 		}
 		n = parsed
@@ -30,11 +29,11 @@ func cmdCMSIncr(ctx context.Context, sess *session, args []string) int {
 		return cli.CMSIncr(ctx, sess.cfg.keyspace, name, []byte(item), n)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmsincr: %v\n", err)
+		printCmdErr("cmsincr", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK cmsincr %s %s %d\n", name, item, n)
+		printOK(fmt.Sprintf("cmsincr %s %s %d", name, item, n))
 	}
 	return 0
 }
@@ -42,7 +41,7 @@ func cmdCMSIncr(ctx context.Context, sess *session, args []string) int {
 // cmdCMSQuery is `cmsquery <name> <item>`. Miss → "(nil)" + exit 1.
 func cmdCMSQuery(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: cmsquery <name> <item>")
+		printUsageLine("usage: cmsquery <name> <item>")
 		return 2
 	}
 	var n uint64
@@ -53,11 +52,11 @@ func cmdCMSQuery(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmsquery: %v\n", err)
+		printCmdErr("cmsquery", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(n)
