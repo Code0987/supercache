@@ -44,7 +44,7 @@ func main() {
 		gossipAdv    = flag.String("gossip-advertise", "127.0.0.1", "gossip advertise address")
 		seeds        = flag.String("seeds", "", "comma-separated gossip seeds host:port")
 		gossipSecret = flag.String("gossip-secret", "", "optional gossip shared secret")
-		demoKS       = flag.Bool("demo-keyspace", true, "register demo CacheOnly keyspace")
+		demoKS       = flag.Bool("demo-keyspace", true, "register stock demo keyspaces (demo/tags/board/profile/doc/flags/embeddings)")
 		globalRPS    = flag.Float64("global-rps", 0, "global DataSource rate limit (0=off)")
 		cluster      = flag.Bool("cluster", false, "enable gossip membership + peer fan-out")
 		showVersion  = flag.Bool("version", false, "print version and exit")
@@ -87,60 +87,10 @@ func main() {
 	defer wm.Stop()
 
 	if *demoKS {
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "demo",
-			Mode:     keyspace.ModeCacheOnly,
-			MaxBytes: 64 << 20,
-			TTL:      5 * time.Minute,
-		}); err != nil {
+		if err := registerDemoKeyspaces(eng); err != nil {
 			log.Fatal(err)
 		}
-		// ModeSet for exact membership demos (feature tags, allow-lists, …).
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "tags",
-			Mode:     keyspace.ModeSet,
-			MaxBytes: 16 << 20,
-			TTL:      30 * time.Minute,
-		}); err != nil {
-			log.Fatal(err)
-		}
-		// ModeZSet for scored rankings (leaderboards, time-ordered feeds, …).
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "board",
-			Mode:     keyspace.ModeZSet,
-			MaxBytes: 16 << 20,
-			TTL:      30 * time.Minute,
-		}); err != nil {
-			log.Fatal(err)
-		}
-		// ModeHash for per-field maps (user profiles, session attrs, …).
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "profile",
-			Mode:     keyspace.ModeHash,
-			MaxBytes: 16 << 20,
-			TTL:      30 * time.Minute,
-		}); err != nil {
-			log.Fatal(err)
-		}
-		// ModeJSON for nested documents (path set/get/del).
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "doc",
-			Mode:     keyspace.ModeJSON,
-			MaxBytes: 16 << 20,
-			TTL:      30 * time.Minute,
-		}); err != nil {
-			log.Fatal(err)
-		}
-		// ModeBitmap for packed flags (SETBIT / GETBIT / BITCOUNT / BITPOS).
-		if err := eng.UpdateKeySpace(keyspace.Config{
-			Name:     "flags",
-			Mode:     keyspace.ModeBitmap,
-			MaxBytes: 16 << 20,
-			TTL:      30 * time.Minute,
-		}); err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON flags=ModeBitmap")
+		log.Printf("demo keyspaces: demo=CacheOnly tags=ModeSet board=ModeZSet profile=ModeHash doc=ModeJSON flags=ModeBitmap embeddings=ModeVectorSet")
 	}
 
 	cacheSrvOpts, peerSrvOpts, peerDialTLS, err := buildTLS(
@@ -333,4 +283,25 @@ func buildTLS(
 		}
 	}
 	return cacheOpts, peerOpts, peerDial, nil
+}
+
+// registerDemoKeyspaces installs the stock -demo-keyspace set.
+func registerDemoKeyspaces(eng *engine.Engine) error {
+	type ks struct {
+		cfg keyspace.Config
+	}
+	for _, item := range []ks{
+		{keyspace.Config{Name: "demo", Mode: keyspace.ModeCacheOnly, MaxBytes: 64 << 20, TTL: 5 * time.Minute}},
+		{keyspace.Config{Name: "tags", Mode: keyspace.ModeSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+		{keyspace.Config{Name: "board", Mode: keyspace.ModeZSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+		{keyspace.Config{Name: "profile", Mode: keyspace.ModeHash, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+		{keyspace.Config{Name: "doc", Mode: keyspace.ModeJSON, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+		{keyspace.Config{Name: "flags", Mode: keyspace.ModeBitmap, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+		{keyspace.Config{Name: "embeddings", Mode: keyspace.ModeVectorSet, MaxBytes: 16 << 20, TTL: 30 * time.Minute}},
+	} {
+		if err := eng.UpdateKeySpace(item.cfg); err != nil {
+			return err
+		}
+	}
+	return nil
 }

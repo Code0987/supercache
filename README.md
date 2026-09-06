@@ -64,7 +64,7 @@ Optional: `-gossip-secret <key>`.
 ### CLI (`sc`)
 
 ```bash
-# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile + doc + flags):
+# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile + doc + flags + embeddings):
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
@@ -84,6 +84,11 @@ go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
 go run ./cmd/sc -keyspace doc jsonget user $.name
 go run ./cmd/sc -keyspace flags bitset seen 0 1
 go run ./cmd/sc -keyspace flags bitget seen 0
+go run ./cmd/sc -keyspace embeddings vadd products east 1,0
+go run ./cmd/sc -keyspace embeddings vadd products north 0,1
+go run ./cmd/sc -keyspace embeddings vadd products ne 0.7,0.7
+go run ./cmd/sc -keyspace embeddings vcard products
+go run ./cmd/sc -keyspace embeddings vsim products 1,0.05 3
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 # ModeTopK (register a ModeTopK keyspace, or use examples/billboard plays/hot):
 # go run ./cmd/sc -keyspace plays topkadd hot t001
@@ -208,7 +213,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap + HLL + TopK) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc / flags) |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc / flags / embeddings) |
 | `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bit*, hlladd/hllcount, topkadd/topklist, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 

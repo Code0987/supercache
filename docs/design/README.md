@@ -6,12 +6,6 @@ Use the template in [WORKFLOW.md](../WORKFLOW.md). Status is `draft` until revie
 
 Do not implement from a draft.
 
-## Drafts (not approved)
-
-| Design | Feature |
-|--------|---------|
-| [2026-09-04-mode-vector-set.md](./2026-09-04-mode-vector-set.md) | `ModeVectorSet` (approved in chat; implementing on `feat/mode-vector-set`) |
-
 ## Shipped (reference)
 
 | Design | Feature |
@@ -39,6 +33,7 @@ Do not implement from a draft.
 | [2026-09-02-refactor-zset.md](./2026-09-02-refactor-zset.md) | ModeZSet file layout (no contract) |
 | [2026-09-02-refactor-geo.md](./2026-09-02-refactor-geo.md) | ModeGeo file layout (no contract) |
 | [2026-09-02-feature-folders.md](./2026-09-02-feature-folders.md) | Feature folders (List first) |
+| [2026-09-04-mode-vector-set.md](./2026-09-04-mode-vector-set.md) | `ModeVectorSet` |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 
