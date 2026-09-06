@@ -14,7 +14,7 @@ This document freezes product intent and the technical decisions for v1.
 ### Default path
 
 ```text
-docs → review → revision → tests → coding → review → revision
+docs → review → revision → tests → coding → product docs → review → revision
   → bench (local) → revision → commit → PR → bench monitor (CI)
   → merge only if overall drift < 10%  (and user says merge)
 ```
@@ -26,6 +26,7 @@ docs → review → revision → tests → coding → review → revision
 | **Revision** | Update design from feedback | Re-approval if contract changed |
 | **Tests** | Failing tests from the design table | — |
 | **Coding** | Minimum code to pass `go test ./...` | — |
+| **Product docs** | Same PR: API.md, OpenAPI, PLAN, OPERATIONS, CLUSTER_FLOWS, README, sc help | Must match the new surface |
 | **Review** | Check vs design / reviewer feedback | Issues fixed |
 | **Revision** | Address code review | Tests still green |
 | **Bench (local)** | Micros / smoke flagged in the design | No Get-hit alloc jump |
@@ -59,7 +60,7 @@ After a green `bench` job, read the sticky PR comment `<!-- supercache-bench-com
 | Get-hit / StoreGetHit **allocs/op** | **unchanged** (any increase = fail) |
 | New micros only on PR | report only; not a fail by themselves |
 
-Eligible to merge only if the table passes **and** the user said **merge** (or clearly pre-authorized merge-if-green). CI green alone is not ship. If the user said merge but drift ≥10% or allocs jumped: **do not merge**; report numbers.
+Eligible to merge only if the table passes, **product docs match the shipped surface** (or the PR says no public change), **and** the user said **merge** (or clearly pre-authorized merge-if-green). CI green alone is not ship. If the user said merge but drift ≥10% or allocs jumped: **do not merge**; report numbers.
 
 ```text
 gh pr create
