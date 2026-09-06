@@ -188,9 +188,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK / CMS entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK / CMS / vector-set entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
@@ -203,6 +203,7 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | **HLLAdd / HLLCount** | `ModeHLL` only. Approximate distinct count of hashed items; FNV-1a 64, `p=14` dense 12 KiB. Owner applies the op then fans out a **full `FlagHLL` snapshot**. Replica `HLLCount` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `HLLAdd` is ACK-only (no Redis changed-bool). Estimates do **not** match Redis `PFCOUNT`. |
 | **TopKAdd / TopKList** | `ModeTopK` only. Approximate heavy-hitters; Space-Saving, +1 observations. Owner applies the op then fans out a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `TopKAdd` is ACK-only. Estimates do **not** match Redis `TOPK`. |
 | **CMSIncr / CMSQuery** | `ModeCMS` only. Approximate frequency of a named item; Count-Min, d=4 w=2048 dense 64 KiB. Owner applies the op then fans out a **full `FlagCMS` snapshot**. Replica `CMSQuery` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `CMSIncr` is ACK-only (`n==0` means 1; no returned estimate). Estimates do **not** match Redis `CMS.QUERY`. |
+| **VAdd / VRem / VSim / VCard / VDim / VEmb** | `ModeVectorSet` only. Named embedding set; brute-force K-NN (`VectorMetric` cosine/L2/IP). Owner applies then fans a **full `FlagVectorSet` snapshot** (inbox `A`/`R` owner-only). Replica `VSim` may lag. Missing name → `VSim` empty, `VCard`/`VDim` `present=false`. Last rem keeps empty set (dim locked). Get/Put **invalid**. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
@@ -315,6 +316,7 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeHLL` | sketch `name` | HLLAdd, HLLCount; Delete(name) | `FlagHLL` snapshot; owner-inbox `FlagHLLAdd` |
 | `ModeTopK` | table `name` | TopKAdd, TopKList; Delete(name) | `FlagTopK` snapshot; owner-inbox `FlagTopKAdd` |
 | `ModeCMS` | sketch `name` | CMSIncr, CMSQuery; Delete(name) | `FlagCMS` snapshot; owner-inbox `FlagCMSIncr` |
+| `ModeVectorSet` | set `name` | VAdd, VRem, VSim, VCard, VDim, VEmb; Delete(name) | `FlagVectorSet` snapshot; owner-inbox same flag + A/R prefix |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 

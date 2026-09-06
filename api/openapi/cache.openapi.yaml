@@ -34,6 +34,7 @@ info:
     | ModeHLL | HLLAdd, HLLCount; Delete(name) |
     | ModeTopK | TopKAdd, TopKList; Delete(name) |
     | ModeCMS | CMSIncr, CMSQuery; Delete(name) |
+    | ModeVectorSet | VAdd, VRem, VSim, VCard, VDim, VEmb; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
@@ -97,7 +98,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
       requestBody:
         required: true
         content:
@@ -125,7 +126,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
       requestBody:
         required: true
         content:

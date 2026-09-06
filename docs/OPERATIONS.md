@@ -74,6 +74,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeHLL` | HLLAdd / HLLCount / Delete(name) | dense 12 KiB sketch; snapshot fan-out + owner-inbox; replica HLLCount may lag |
 | `ModeTopK` | TopKAdd / TopKList / Delete(name) | Space-Saving table; snapshot fan-out + owner-inbox; replica TopKList may lag |
 | `ModeCMS` | CMSIncr / CMSQuery / Delete(name) | Count-Min 64 KiB; snapshot fan-out + owner-inbox; replica CMSQuery may lag |
+| `ModeVectorSet` | VAdd / VRem / VSim / VCard / VDim / VEmb / Delete(name) | embeddings; cosine/L2/IP; snapshot fan-out + A/R inbox; replica VSim may lag |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
@@ -98,6 +99,7 @@ Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `b
 | HLLAdd / HLLCount | `ModeHLL` only. Owner applies the op then fans out a **full `FlagHLL` snapshot** (inbox `FlagHLLAdd` stays owner-only). Replica `HLLCount` may lag. Missing name → `ok=false`. `HLLAdd` is ACK-only (no changed-bool). |
 | TopKAdd / TopKList | `ModeTopK` only. Owner applies the op then fans out a **full `FlagTopK` snapshot** (inbox `FlagTopKAdd` stays owner-only). Replica `TopKList` may lag. Missing name → `ok=false`. `TopKAdd` is ACK-only (+1). |
 | CMSIncr / CMSQuery | `ModeCMS` only. Owner applies the op then fans out a **full `FlagCMS` snapshot** (inbox `FlagCMSIncr` stays owner-only). Replica `CMSQuery` may lag. Missing name → `ok=false`. `CMSIncr` is ACK-only (`n==0` means 1). See [`examples/billboard`](../examples/billboard/) for the ModeCMS complement. |
+| VAdd / VSim / VRem | `ModeVectorSet` only. Owner applies then fans a **full `FlagVectorSet` snapshot** (`A`/`R` inbox owner-only). Metric is keyspace `VectorMetric`. Replica `VSim` may lag. See [`examples/vecset`](../examples/vecset/). |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).

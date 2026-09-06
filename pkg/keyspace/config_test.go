@@ -99,6 +99,9 @@ func TestModeString(t *testing.T) {
 	if ModeCMS.String() != "CMS" {
 		t.Fatal(ModeCMS.String())
 	}
+	if ModeVectorSet.String() != "VectorSet" {
+		t.Fatal(ModeVectorSet.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}
@@ -150,6 +153,15 @@ func TestValidate(t *testing.T) {
 	if err := (Config{Name: "c", Mode: ModeCMS, MaxBytes: 1}).Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if err := (Config{Name: "v", Mode: ModeVectorSet, VectorDim: 1, MaxBytes: 1 << 20}).Validate(); err == nil {
+		t.Fatal("VectorDim 1")
+	}
+	if err := (Config{Name: "v", Mode: ModeVectorSet, VectorMetric: 99, MaxBytes: 1 << 20}).Validate(); err == nil {
+		t.Fatal("bad metric")
+	}
+	if err := (Config{Name: "v", Mode: ModeVectorSet, MaxBytes: 1 << 20}).Validate(); err != nil {
+		t.Fatal(err)
+	}
 	if (Config{TopKSize: 0}).EffectiveTopKSize() != DefaultTopKSize {
 		t.Fatal("default K")
 	}
@@ -189,6 +201,20 @@ func TestConfigHashIncludesTopKSize(t *testing.T) {
 	b.TopKSize = 50
 	if a.ConfigHash() == b.ConfigHash() {
 		t.Fatal("TopKSize must change hash")
+	}
+}
+
+func TestConfigHashIncludesVectorFields(t *testing.T) {
+	a := Config{Name: "k", Mode: ModeVectorSet, MaxBytes: 1 << 20, VectorDim: 8}
+	b := a
+	b.VectorDim = 16
+	if a.ConfigHash() == b.ConfigHash() {
+		t.Fatal("VectorDim must change hash")
+	}
+	c := a
+	c.VectorMetric = VectorMetricL2
+	if a.ConfigHash() == c.ConfigHash() {
+		t.Fatal("VectorMetric must change hash")
 	}
 }
 

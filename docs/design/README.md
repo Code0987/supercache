@@ -6,6 +6,12 @@ Use the template in [WORKFLOW.md](../WORKFLOW.md). Status is `draft` until revie
 
 Do not implement from a draft.
 
+## Drafts (not approved)
+
+| Design | Feature |
+|--------|---------|
+| [2026-09-04-mode-vector-set.md](./2026-09-04-mode-vector-set.md) | `ModeVectorSet` (approved in chat; implementing on `feat/mode-vector-set`) |
+
 ## Shipped (reference)
 
 | Design | Feature |

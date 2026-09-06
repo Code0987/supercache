@@ -48,8 +48,9 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeHLL` | Named HyperLogLog sketch | `HLLAdd`, `HLLCount`; `Delete(name)` |
 | `ModeTopK` | Named Space-Saving heavy-hitters | `TopKAdd`, `TopKList`; `Delete(name)` |
 | `ModeCMS` | Named Count-Min frequency sketch | `CMSIncr`, `CMSQuery`; `Delete(name)` |
+| `ModeVectorSet` | Named embedding set + K-NN | `VAdd`, `VRem`, `VSim`, `VCard`, `VDim`, `VEmb`; `Delete(name)` |
 
-Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100).
+Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100). ModeVectorSet uses `VectorDim` (0 = first add locks) and `VectorMetric` (cosine / l2 / ip).
 
 ## Cache gRPC RPCs
 

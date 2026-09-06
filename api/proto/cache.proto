@@ -58,6 +58,12 @@ service Cache {
   rpc TopKList(TopKListRequest) returns (TopKListResponse);
   rpc CMSIncr(CMSIncrRequest) returns (CMSIncrResponse);
   rpc CMSQuery(CMSQueryRequest) returns (CMSQueryResponse);
+  rpc VAdd(VAddRequest) returns (VAddResponse);
+  rpc VRem(VRemRequest) returns (VRemResponse);
+  rpc VSim(VSimRequest) returns (VSimResponse);
+  rpc VCard(VCardRequest) returns (VCardResponse);
+  rpc VDim(VDimRequest) returns (VDimResponse);
+  rpc VEmb(VEmbRequest) returns (VEmbResponse);
 }
 
 message GetRequest {
@@ -572,4 +578,61 @@ message CMSQueryRequest {
 message CMSQueryResponse {
   bool present = 1;
   uint64 count = 2;
+}
+
+message VAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+  repeated float vec = 4;
+}
+message VAddResponse {}
+
+message VRemRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+message VRemResponse {}
+
+message VSimRequest {
+  string keyspace = 1;
+  string name = 2;
+  repeated float vec = 3;
+  int32 k = 4;
+}
+message VSimHit {
+  bytes member = 1;
+  float score = 2;
+}
+message VSimResponse {
+  repeated VSimHit hits = 1;
+}
+
+message VCardRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message VCardResponse {
+  int64 n = 1;
+  bool present = 2;
+}
+
+message VDimRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message VDimResponse {
+  int32 dim = 1;
+  bool present = 2;
+}
+
+message VEmbRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes member = 3;
+}
+message VEmbResponse {
+  repeated float vec = 1;
+  bool found = 2;
 }

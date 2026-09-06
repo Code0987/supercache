@@ -257,8 +257,14 @@ func (c *Cluster) ready() error {
 		}
 		// ModeCMS rejects Get; missing name is ok=false, nil error.
 		_, _, cerr2 := cli.CMSQuery(ctx, ks, "__testcluster_ready__", []byte("x"))
-		_ = cli.Close()
 		if cerr2 == nil {
+			_ = cli.Close()
+			continue
+		}
+		// ModeVectorSet rejects Get; missing name is present=false, nil error.
+		_, _, verr := cli.VCard(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if verr == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

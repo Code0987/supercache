@@ -128,6 +128,18 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdCMSIncr(ctx, sess, args)
 	case "cmsquery":
 		return cmdCMSQuery(ctx, sess, args)
+	case "vadd":
+		return cmdVAdd(ctx, sess, args)
+	case "vrem":
+		return cmdVRem(ctx, sess, args)
+	case "vsim":
+		return cmdVSim(ctx, sess, args)
+	case "vcard":
+		return cmdVCard(ctx, sess, args)
+	case "vdim":
+		return cmdVDim(ctx, sess, args)
+	case "vemb":
+		return cmdVEmb(ctx, sess, args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		return 2

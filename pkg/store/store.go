@@ -207,8 +207,24 @@ type Store interface {
 	// CMSInstall installs a versioned full-sketch snapshot (incoming > local).
 	CMSInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	// VAdd upserts member/vec (creates the set if missing). Incoming version is a tombstone gate.
+	VAdd(key string, member []byte, vec []float32, version uint64, expireAt int64, maxValue int) (applied, tooLarge bool)
+	VRem(key string, member []byte, version uint64, expireAt int64) bool
+	VSim(key string, vec []float32, k int, metric int) (hits []VSimHit, ok bool)
+	VCard(key string) (n int, ok bool)
+	VDim(key string) (dim int, ok bool)
+	VEmb(key string, member []byte) (vec []float32, ok bool)
+	HasVectorSet(key string) bool
+	VSInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
+}
+
+// VSimHit is one neighbor returned by VSim.
+type VSimHit struct {
+	Member []byte
+	Score  float32
 }
 
 // TopKEntry is one chart row returned by TopKList.

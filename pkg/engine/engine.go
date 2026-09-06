@@ -281,6 +281,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeCMS {
 		return nil, fmt.Errorf("%w: use CMSQuery", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeVectorSet {
+		return nil, fmt.Errorf("%w: use VEmb", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -502,6 +505,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		}
 		if ks.cfg.Mode == keyspace.ModeCMS {
 			return fmt.Errorf("%w: use CMSIncr", ErrInvalidArgument)
+		}
+		if ks.cfg.Mode == keyspace.ModeVectorSet {
+			return fmt.Errorf("%w: use VAdd", ErrInvalidArgument)
 		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
@@ -763,6 +769,9 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsCMS() {
 		return e.applyCMSInstall(ks, key, ent.Value, ent.Version, ent.ExpireAt), nil
+	}
+	if ent.IsVectorSet() {
+		return e.applyVectorSet(ks, key, ent), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).
