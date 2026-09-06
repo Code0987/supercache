@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/Code0987/supercache/pkg/client"
 )
@@ -11,7 +10,7 @@ import (
 // cmdTopKAdd is `topkadd <name> <item...>` — one TopKAdd RPC per item.
 func cmdTopKAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: topkadd <name> <item...>")
+		printUsageLine("usage: topkadd <name> <item...>")
 		return 2
 	}
 	name := args[0]
@@ -20,11 +19,11 @@ func cmdTopKAdd(ctx context.Context, sess *session, args []string) int {
 			return cli.TopKAdd(ctx, sess.cfg.keyspace, name, []byte(item))
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "topkadd: %v\n", err)
+			printCmdErr("topkadd", err)
 			return 1
 		}
 		if !sess.cfg.quiet {
-			fmt.Printf("OK topkadd %s %s\n", name, item)
+			printOK(fmt.Sprintf("topkadd %s %s", name, item))
 		}
 	}
 	return 0
@@ -33,7 +32,7 @@ func cmdTopKAdd(ctx context.Context, sess *session, args []string) int {
 // cmdTopKList is `topklist <name>`. Miss → "(nil)" + exit 1. Live empty chart → exit 0, no lines.
 func cmdTopKList(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: topklist <name>")
+		printUsageLine("usage: topklist <name>")
 		return 2
 	}
 	var rows []client.TopKEntry
@@ -44,11 +43,11 @@ func cmdTopKList(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "topklist: %v\n", err)
+		printCmdErr("topklist", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	for _, r := range rows {

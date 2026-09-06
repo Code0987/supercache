@@ -141,14 +141,15 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 	case "vemb":
 		return cmdVEmb(ctx, sess, args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
+		printUnknown(cmd)
+		printNote("type help for commands")
 		return 2
 	}
 }
 
 func cmdGet(ctx context.Context, sess *session, keys []string) int {
 	if len(keys) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: get <key> [key...]")
+		printUsageLine("usage: get <key> [key...]")
 		return 2
 	}
 	cfg := sess.cfg
@@ -197,7 +198,7 @@ func cmdGet(ctx context.Context, sess *session, keys []string) int {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "get: %v\n", err)
+		printCmdErr("get", err)
 		return 1
 	}
 
@@ -217,11 +218,15 @@ func cmdGet(ctx context.Context, sess *session, keys []string) int {
 
 	for _, it := range items {
 		if it.Error != "" {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", it.Key, it.Error)
+			printCmdMsg(it.Key, it.Error)
 			continue
 		}
 		if !it.Found {
-			fmt.Fprintf(os.Stderr, "%s: (not found)\n", it.Key)
+			if len(keys) == 1 {
+				printNil()
+			} else {
+				fmt.Printf("%s\t%s\n", it.Key, paint(os.Stdout, ansiDim, "(nil)"))
+			}
 			continue
 		}
 		if len(keys) == 1 {
@@ -230,13 +235,13 @@ func cmdGet(ctx context.Context, sess *session, keys []string) int {
 			} else {
 				fmt.Println(it.Value)
 				if it.Base64 && !cfg.base64 {
-					fmt.Fprintln(os.Stderr, "# note: binary value shown as base64; pass -base64 to make it explicit")
+					printNote("binary value shown as base64; pass -base64 to make it explicit")
 				}
 			}
 			continue
 		}
 		if it.Base64 {
-			fmt.Printf("%s\t(base64)\t%s\n", it.Key, it.Value)
+			fmt.Printf("%s\t%s\t%s\n", it.Key, paint(os.Stdout, ansiDim, "(base64)"), it.Value)
 		} else {
 			fmt.Printf("%s\t%s\n", it.Key, it.Value)
 		}
@@ -249,7 +254,7 @@ func cmdGet(ctx context.Context, sess *session, keys []string) int {
 
 func cmdPut(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: put <key> <value> | put <key> -file <path>")
+		printUsageLine("usage: put <key> <value> | put <key> -file <path>")
 		return 2
 	}
 	cfg := sess.cfg
@@ -261,7 +266,7 @@ func cmdPut(ctx context.Context, sess *session, args []string) int {
 	case cfg.filePath != "":
 		value, err = readFileOrStdin(cfg.filePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read value: %v\n", err)
+			printCmdErr("put", err)
 			return 1
 		}
 	case len(args) >= 2:
@@ -269,14 +274,14 @@ func cmdPut(ctx context.Context, sess *session, args []string) int {
 		if cfg.base64 {
 			value, err = base64.StdEncoding.DecodeString(raw)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "base64 decode: %v\n", err)
+				printCmdMsg("put", fmt.Sprintf("bad base64: %v", err))
 				return 1
 			}
 		} else {
 			value = []byte(raw)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: put <key> <value> | put <key> -file <path>")
+		printUsageLine("usage: put <key> <value> | put <key> -file <path>")
 		return 2
 	}
 
@@ -289,7 +294,7 @@ func cmdPut(ctx context.Context, sess *session, args []string) int {
 		return cli.Put(ctx, cfg.keyspace, key, value, opts...)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "put: %v\n", err)
+		printCmdErr("put", err)
 		return 1
 	}
 	if cfg.jsonOut {
@@ -299,14 +304,14 @@ func cmdPut(ctx context.Context, sess *session, args []string) int {
 			"seed": sess.ConnectedAddr(),
 		})
 	} else if !cfg.quiet {
-		fmt.Printf("OK %s/%s (%d bytes) via %s\n", cfg.keyspace, key, len(value), sess.ConnectedAddr())
+		printOK(fmt.Sprintf("put %s (%d bytes)", key, len(value)))
 	}
 	return 0
 }
 
 func cmdDel(ctx context.Context, sess *session, keys []string) int {
 	if len(keys) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: del <key> [key...]")
+		printUsageLine("usage: del <key> [key...]")
 		return 2
 	}
 	cfg := sess.cfg
@@ -333,25 +338,25 @@ func cmdDel(ctx context.Context, sess *session, keys []string) int {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "delete: %v\n", err)
+		printCmdErr("del", err)
 		return 1
 	}
 	if delErr != nil {
 		var pf client.PeerFailures
 		var ke client.KeyErrors
 		if errors.As(delErr, &pf) || errors.As(delErr, &ke) {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", delErr)
+			printWarn(delErr.Error())
 			if cfg.jsonOut {
 				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
 					"ok": true, "partial": true, "keyspace": cfg.keyspace,
 					"keys": keys, "warning": delErr.Error(), "seed": sess.ConnectedAddr(),
 				})
 			} else if !cfg.quiet {
-				fmt.Printf("OK %s (with peer warnings) via %s\n", strings.Join(keys, ", "), sess.ConnectedAddr())
+				printOK("del " + strings.Join(keys, " "))
 			}
 			return 0
 		}
-		fmt.Fprintf(os.Stderr, "delete: %v\n", delErr)
+		printCmdErr("del", delErr)
 		return 1
 	}
 	if cfg.jsonOut {
@@ -359,17 +364,21 @@ func cmdDel(ctx context.Context, sess *session, keys []string) int {
 			"ok": true, "keyspace": cfg.keyspace, "keys": keys, "seed": sess.ConnectedAddr(),
 		})
 	} else if !cfg.quiet {
-		fmt.Printf("OK deleted %s via %s\n", strings.Join(keys, ", "), sess.ConnectedAddr())
+		printOK("del " + strings.Join(keys, " "))
 	}
 	return 0
 }
 
 func cmdBloom(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: bloom add|test <name> <item>")
+		printUsageLine("usage: bloom add|test <name> <item>")
 		return 2
 	}
 	op, name, item := strings.ToLower(args[0]), args[1], args[2]
+	if op != "add" && op != "test" {
+		printUsageLine("usage: bloom add|test <name> <item>")
+		return 2
+	}
 	var (
 		maybe bool
 		opErr error
@@ -379,37 +388,32 @@ func cmdBloom(ctx context.Context, sess *session, args []string) int {
 		case "add":
 			opErr = cli.BloomAdd(ctx, sess.cfg.keyspace, name, []byte(item))
 			return opErr
-		case "test":
+		default:
 			maybe, opErr = cli.BloomTest(ctx, sess.cfg.keyspace, name, []byte(item))
 			return opErr
-		default:
-			opErr = fmt.Errorf("usage: bloom add|test <name> <item>")
-			return nil
 		}
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bloom: %v\n", err)
+		printCmdErr("bloom", err)
 		return 1
 	}
-	if opErr != nil && op != "add" && op != "test" {
-		fmt.Fprintf(os.Stderr, "%v\n", opErr)
-		return 2
-	}
 	if opErr != nil {
-		fmt.Fprintf(os.Stderr, "bloom: %v\n", opErr)
+		printCmdErr("bloom", opErr)
 		return 1
 	}
 	if op == "test" {
-		fmt.Printf("maybe=%v\n", maybe)
-	} else if !sess.cfg.quiet {
-		fmt.Printf("OK bloom add %s %s\n", name, item)
+		printBool(maybe)
+		return 0
+	}
+	if !sess.cfg.quiet {
+		printOK(fmt.Sprintf("bloom add %s %s", name, item))
 	}
 	return 0
 }
 
 func cmdSAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: sadd <name> <item>")
+		printUsageLine("usage: sadd <name> <item>")
 		return 2
 	}
 	name, item := args[0], args[1]
@@ -417,18 +421,18 @@ func cmdSAdd(ctx context.Context, sess *session, args []string) int {
 		return cli.SetAdd(ctx, sess.cfg.keyspace, name, []byte(item))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "sadd: %v\n", err)
+		printCmdErr("sadd", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK sadd %s %s\n", name, item)
+		printOK(fmt.Sprintf("sadd %s %s", name, item))
 	}
 	return 0
 }
 
 func cmdSRem(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: srem <name> <item>")
+		printUsageLine("usage: srem <name> <item>")
 		return 2
 	}
 	name, item := args[0], args[1]
@@ -436,18 +440,18 @@ func cmdSRem(ctx context.Context, sess *session, args []string) int {
 		return cli.SetRemove(ctx, sess.cfg.keyspace, name, []byte(item))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "srem: %v\n", err)
+		printCmdErr("srem", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK srem %s %s\n", name, item)
+		printOK(fmt.Sprintf("srem %s %s", name, item))
 	}
 	return 0
 }
 
 func cmdSIsMember(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: sismember <name> <item>")
+		printUsageLine("usage: sismember <name> <item>")
 		return 2
 	}
 	name, item := args[0], args[1]
@@ -458,10 +462,10 @@ func cmdSIsMember(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "sismember: %v\n", err)
+		printCmdErr("sismember", err)
 		return 1
 	}
-	fmt.Println(present)
+	printBool(present)
 	if !present {
 		return 1
 	}
@@ -470,7 +474,7 @@ func cmdSIsMember(ctx context.Context, sess *session, args []string) int {
 
 func cmdSCard(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: scard <name>")
+		printUsageLine("usage: scard <name>")
 		return 2
 	}
 	name := args[0]
@@ -481,7 +485,7 @@ func cmdSCard(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "scard: %v\n", err)
+		printCmdErr("scard", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -490,7 +494,7 @@ func cmdSCard(ctx context.Context, sess *session, args []string) int {
 
 func cmdSMembers(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: smembers <name>")
+		printUsageLine("usage: smembers <name>")
 		return 2
 	}
 	name := args[0]
@@ -501,7 +505,7 @@ func cmdSMembers(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "smembers: %v\n", err)
+		printCmdErr("smembers", err)
 		return 1
 	}
 	for _, m := range mem {
@@ -512,31 +516,31 @@ func cmdSMembers(ctx context.Context, sess *session, args []string) int {
 
 func cmdZAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: zadd <name> <score> <member>")
+		printUsageLine("usage: zadd <name> <score> <member>")
 		return 2
 	}
 	name, scoreStr, member := args[0], args[1], args[2]
 	score, err := parseFloat(scoreStr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zadd: bad score %q: %v\n", scoreStr, err)
+		printCmdMsg("zadd", fmt.Sprintf("bad score %q: %v", scoreStr, err))
 		return 2
 	}
 	err = sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.ZAdd(ctx, sess.cfg.keyspace, name, []byte(member), score)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zadd: %v\n", err)
+		printCmdErr("zadd", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK zadd %s %g %s\n", name, score, member)
+		printOK(fmt.Sprintf("zadd %s %g %s", name, score, member))
 	}
 	return 0
 }
 
 func cmdZRem(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: zrem <name> <member>")
+		printUsageLine("usage: zrem <name> <member>")
 		return 2
 	}
 	name, member := args[0], args[1]
@@ -544,18 +548,18 @@ func cmdZRem(ctx context.Context, sess *session, args []string) int {
 		return cli.ZRem(ctx, sess.cfg.keyspace, name, []byte(member))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrem: %v\n", err)
+		printCmdErr("zrem", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK zrem %s %s\n", name, member)
+		printOK(fmt.Sprintf("zrem %s %s", name, member))
 	}
 	return 0
 }
 
 func cmdZScore(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: zscore <name> <member>")
+		printUsageLine("usage: zscore <name> <member>")
 		return 2
 	}
 	name, member := args[0], args[1]
@@ -569,11 +573,11 @@ func cmdZScore(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zscore: %v\n", err)
+		printCmdErr("zscore", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(score)
@@ -582,7 +586,7 @@ func cmdZScore(ctx context.Context, sess *session, args []string) int {
 
 func cmdZCard(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: zcard <name>")
+		printUsageLine("usage: zcard <name>")
 		return 2
 	}
 	name := args[0]
@@ -593,7 +597,7 @@ func cmdZCard(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zcard: %v\n", err)
+		printCmdErr("zcard", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -602,18 +606,18 @@ func cmdZCard(ctx context.Context, sess *session, args []string) int {
 
 func cmdZRange(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: zrange <name> <start> <stop>")
+		printUsageLine("usage: zrange <name> <start> <stop>")
 		return 2
 	}
 	name := args[0]
 	start, err := parseInt(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrange: bad start %q: %v\n", args[1], err)
+		printCmdMsg("zrange", fmt.Sprintf("bad start %q: %v", args[1], err))
 		return 2
 	}
 	stop, err := parseInt(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrange: bad stop %q: %v\n", args[2], err)
+		printCmdMsg("zrange", fmt.Sprintf("bad stop %q: %v", args[2], err))
 		return 2
 	}
 	var mem []client.ZMember
@@ -623,7 +627,7 @@ func cmdZRange(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrange: %v\n", err)
+		printCmdErr("zrange", err)
 		return 1
 	}
 	printZMembers(mem)
@@ -632,18 +636,18 @@ func cmdZRange(ctx context.Context, sess *session, args []string) int {
 
 func cmdZRangeByScore(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: zrangebyscore <name> <min> <max>")
+		printUsageLine("usage: zrangebyscore <name> <min> <max>")
 		return 2
 	}
 	name := args[0]
 	min, err := parseFloat(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrangebyscore: bad min %q: %v\n", args[1], err)
+		printCmdMsg("zrangebyscore", fmt.Sprintf("bad min %q: %v", args[1], err))
 		return 2
 	}
 	max, err := parseFloat(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrangebyscore: bad max %q: %v\n", args[2], err)
+		printCmdMsg("zrangebyscore", fmt.Sprintf("bad max %q: %v", args[2], err))
 		return 2
 	}
 	var mem []client.ZMember
@@ -653,7 +657,7 @@ func cmdZRangeByScore(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "zrangebyscore: %v\n", err)
+		printCmdErr("zrangebyscore", err)
 		return 1
 	}
 	printZMembers(mem)
@@ -668,36 +672,36 @@ func printZMembers(mem []client.ZMember) {
 
 func cmdGeoAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 4 {
-		fmt.Fprintln(os.Stderr, "usage: geoadd <name> <lon> <lat> <member>")
+		printUsageLine("usage: geoadd <name> <lon> <lat> <member>")
 		return 2
 	}
 	name, member := args[0], args[3]
 	lon, err := parseFloat(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geoadd: bad lon %q: %v\n", args[1], err)
+		printCmdMsg("geoadd", fmt.Sprintf("bad lon %q: %v", args[1], err))
 		return 2
 	}
 	lat, err := parseFloat(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geoadd: bad lat %q: %v\n", args[2], err)
+		printCmdMsg("geoadd", fmt.Sprintf("bad lat %q: %v", args[2], err))
 		return 2
 	}
 	err = sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.GeoAdd(ctx, sess.cfg.keyspace, name, []byte(member), lon, lat)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geoadd: %v\n", err)
+		printCmdErr("geoadd", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK geoadd %s %g %g %s\n", name, lon, lat, member)
+		printOK(fmt.Sprintf("geoadd %s %g %g %s", name, lon, lat, member))
 	}
 	return 0
 }
 
 func cmdGeoRem(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: georem <name> <member>")
+		printUsageLine("usage: georem <name> <member>")
 		return 2
 	}
 	name, member := args[0], args[1]
@@ -705,18 +709,18 @@ func cmdGeoRem(ctx context.Context, sess *session, args []string) int {
 		return cli.GeoRem(ctx, sess.cfg.keyspace, name, []byte(member))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "georem: %v\n", err)
+		printCmdErr("georem", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK georem %s %s\n", name, member)
+		printOK(fmt.Sprintf("georem %s %s", name, member))
 	}
 	return 0
 }
 
 func cmdGeoPos(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: geopos <name> <member>")
+		printUsageLine("usage: geopos <name> <member>")
 		return 2
 	}
 	name, member := args[0], args[1]
@@ -728,11 +732,11 @@ func cmdGeoPos(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geopos: %v\n", err)
+		printCmdErr("geopos", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Printf("%g %g\n", lon, lat)
@@ -741,7 +745,7 @@ func cmdGeoPos(ctx context.Context, sess *session, args []string) int {
 
 func cmdGeoCard(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: geocard <name>")
+		printUsageLine("usage: geocard <name>")
 		return 2
 	}
 	var n int
@@ -751,7 +755,7 @@ func cmdGeoCard(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geocard: %v\n", err)
+		printCmdErr("geocard", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -760,7 +764,7 @@ func cmdGeoCard(ctx context.Context, sess *session, args []string) int {
 
 func cmdGeoDist(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: geodist <name> <a> <b>")
+		printUsageLine("usage: geodist <name> <a> <b>")
 		return 2
 	}
 	var meters float64
@@ -771,11 +775,11 @@ func cmdGeoDist(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "geodist: %v\n", err)
+		printCmdErr("geodist", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(meters)
@@ -784,29 +788,29 @@ func cmdGeoDist(ctx context.Context, sess *session, args []string) int {
 
 func cmdGeoRadius(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 4 {
-		fmt.Fprintln(os.Stderr, "usage: georadius <name> <lon> <lat> <radius_m> [limit]")
+		printUsageLine("usage: georadius <name> <lon> <lat> <radius_m> [limit]")
 		return 2
 	}
 	lon, err := parseFloat(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "georadius: bad lon %q: %v\n", args[1], err)
+		printCmdMsg("georadius", fmt.Sprintf("bad lon %q: %v", args[1], err))
 		return 2
 	}
 	lat, err := parseFloat(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "georadius: bad lat %q: %v\n", args[2], err)
+		printCmdMsg("georadius", fmt.Sprintf("bad lat %q: %v", args[2], err))
 		return 2
 	}
 	rad, err := parseFloat(args[3])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "georadius: bad radius %q: %v\n", args[3], err)
+		printCmdMsg("georadius", fmt.Sprintf("bad radius %q: %v", args[3], err))
 		return 2
 	}
 	limit := 0
 	if len(args) >= 5 {
 		limit, err = parseInt(args[4])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "georadius: bad limit %q: %v\n", args[4], err)
+			printCmdMsg("georadius", fmt.Sprintf("bad limit %q: %v", args[4], err))
 			return 2
 		}
 	}
@@ -817,7 +821,7 @@ func cmdGeoRadius(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "georadius: %v\n", err)
+		printCmdErr("georadius", err)
 		return 1
 	}
 	for _, m := range mem {
@@ -828,43 +832,43 @@ func cmdGeoRadius(ctx context.Context, sess *session, args []string) int {
 
 func cmdLPush(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: lpush <name> <item>")
+		printUsageLine("usage: lpush <name> <item>")
 		return 2
 	}
 	err := sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.LPush(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lpush: %v\n", err)
+		printCmdErr("lpush", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK lpush %s %s\n", args[0], args[1])
+		printOK(fmt.Sprintf("lpush %s %s", args[0], args[1]))
 	}
 	return 0
 }
 
 func cmdRPush(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: rpush <name> <item>")
+		printUsageLine("usage: rpush <name> <item>")
 		return 2
 	}
 	err := sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.RPush(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "rpush: %v\n", err)
+		printCmdErr("rpush", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK rpush %s %s\n", args[0], args[1])
+		printOK(fmt.Sprintf("rpush %s %s", args[0], args[1]))
 	}
 	return 0
 }
 
 func cmdLPop(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: lpop <name>")
+		printUsageLine("usage: lpop <name>")
 		return 2
 	}
 	var item []byte
@@ -875,11 +879,11 @@ func cmdLPop(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lpop: %v\n", err)
+		printCmdErr("lpop", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(string(item))
@@ -888,7 +892,7 @@ func cmdLPop(ctx context.Context, sess *session, args []string) int {
 
 func cmdRPop(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: rpop <name>")
+		printUsageLine("usage: rpop <name>")
 		return 2
 	}
 	var item []byte
@@ -899,11 +903,11 @@ func cmdRPop(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "rpop: %v\n", err)
+		printCmdErr("rpop", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(string(item))
@@ -912,7 +916,7 @@ func cmdRPop(ctx context.Context, sess *session, args []string) int {
 
 func cmdLLen(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: llen <name>")
+		printUsageLine("usage: llen <name>")
 		return 2
 	}
 	var n int
@@ -922,7 +926,7 @@ func cmdLLen(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "llen: %v\n", err)
+		printCmdErr("llen", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -931,12 +935,12 @@ func cmdLLen(ctx context.Context, sess *session, args []string) int {
 
 func cmdLIndex(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: lindex <name> <idx>")
+		printUsageLine("usage: lindex <name> <idx>")
 		return 2
 	}
 	idx, err := parseInt(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lindex: bad idx %q: %v\n", args[1], err)
+		printCmdMsg("lindex", fmt.Sprintf("bad idx %q: %v", args[1], err))
 		return 2
 	}
 	var item []byte
@@ -947,11 +951,11 @@ func cmdLIndex(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lindex: %v\n", err)
+		printCmdErr("lindex", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(string(item))
@@ -960,17 +964,17 @@ func cmdLIndex(ctx context.Context, sess *session, args []string) int {
 
 func cmdLRange(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: lrange <name> <start> <stop>")
+		printUsageLine("usage: lrange <name> <start> <stop>")
 		return 2
 	}
 	start, err := parseInt(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lrange: bad start %q: %v\n", args[1], err)
+		printCmdMsg("lrange", fmt.Sprintf("bad start %q: %v", args[1], err))
 		return 2
 	}
 	stop, err := parseInt(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lrange: bad stop %q: %v\n", args[2], err)
+		printCmdMsg("lrange", fmt.Sprintf("bad stop %q: %v", args[2], err))
 		return 2
 	}
 	var items [][]byte
@@ -980,7 +984,7 @@ func cmdLRange(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lrange: %v\n", err)
+		printCmdErr("lrange", err)
 		return 1
 	}
 	for _, it := range items {
@@ -991,7 +995,7 @@ func cmdLRange(ctx context.Context, sess *session, args []string) int {
 
 func cmdHSet(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: hset <name> <field> <value...>")
+		printUsageLine("usage: hset <name> <field> <value...>")
 		return 2
 	}
 	name, field, value := args[0], args[1], strings.Join(args[2:], " ")
@@ -999,18 +1003,18 @@ func cmdHSet(ctx context.Context, sess *session, args []string) int {
 		return cli.HSet(ctx, sess.cfg.keyspace, name, []byte(field), []byte(value))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hset: %v\n", err)
+		printCmdErr("hset", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK hset %s %s\n", name, field)
+		printOK(fmt.Sprintf("hset %s %s", name, field))
 	}
 	return 0
 }
 
 func cmdHGet(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: hget <name> <field>")
+		printUsageLine("usage: hget <name> <field>")
 		return 2
 	}
 	var v []byte
@@ -1021,11 +1025,11 @@ func cmdHGet(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hget: %v\n", err)
+		printCmdErr("hget", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(string(v))
@@ -1034,25 +1038,25 @@ func cmdHGet(ctx context.Context, sess *session, args []string) int {
 
 func cmdHDel(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: hdel <name> <field>")
+		printUsageLine("usage: hdel <name> <field>")
 		return 2
 	}
 	err := sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.HDel(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hdel: %v\n", err)
+		printCmdErr("hdel", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK hdel %s %s\n", args[0], args[1])
+		printOK(fmt.Sprintf("hdel %s %s", args[0], args[1]))
 	}
 	return 0
 }
 
 func cmdHExists(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: hexists <name> <field>")
+		printUsageLine("usage: hexists <name> <field>")
 		return 2
 	}
 	var present bool
@@ -1062,10 +1066,10 @@ func cmdHExists(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hexists: %v\n", err)
+		printCmdErr("hexists", err)
 		return 1
 	}
-	fmt.Println(present)
+	printBool(present)
 	if !present {
 		return 1
 	}
@@ -1074,7 +1078,7 @@ func cmdHExists(ctx context.Context, sess *session, args []string) int {
 
 func cmdHLen(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: hlen <name>")
+		printUsageLine("usage: hlen <name>")
 		return 2
 	}
 	var n int
@@ -1084,7 +1088,7 @@ func cmdHLen(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hlen: %v\n", err)
+		printCmdErr("hlen", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -1093,7 +1097,7 @@ func cmdHLen(ctx context.Context, sess *session, args []string) int {
 
 func cmdHGetAll(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: hgetall <name>")
+		printUsageLine("usage: hgetall <name>")
 		return 2
 	}
 	var all []client.HashField
@@ -1103,7 +1107,7 @@ func cmdHGetAll(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hgetall: %v\n", err)
+		printCmdErr("hgetall", err)
 		return 1
 	}
 	for _, f := range all {
@@ -1114,14 +1118,14 @@ func cmdHGetAll(ctx context.Context, sess *session, args []string) int {
 
 func cmdIncr(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 || len(args) > 2 {
-		fmt.Fprintln(os.Stderr, "usage: incr <name> [delta]")
+		printUsageLine("usage: incr <name> [delta]")
 		return 2
 	}
 	delta := int64(1)
 	if len(args) == 2 {
 		n, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "incr: bad delta %q: %v\n", args[1], err)
+			printCmdMsg("incr", fmt.Sprintf("bad delta %q: %v", args[1], err))
 			return 2
 		}
 		delta = n
@@ -1133,7 +1137,7 @@ func cmdIncr(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "incr: %v\n", err)
+		printCmdErr("incr", err)
 		return 1
 	}
 	fmt.Println(v)
@@ -1142,7 +1146,7 @@ func cmdIncr(ctx context.Context, sess *session, args []string) int {
 
 func cmdCGet(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: cget <name>")
+		printUsageLine("usage: cget <name>")
 		return 2
 	}
 	var v int64
@@ -1153,11 +1157,11 @@ func cmdCGet(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cget: %v\n", err)
+		printCmdErr("cget", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(v)
@@ -1166,7 +1170,7 @@ func cmdCGet(ctx context.Context, sess *session, args []string) int {
 
 func cmdJSONSet(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: jsonset <name> <path> <json...>")
+		printUsageLine("usage: jsonset <name> <path> <json...>")
 		return 2
 	}
 	name, path, value := args[0], args[1], strings.Join(args[2:], " ")
@@ -1174,18 +1178,18 @@ func cmdJSONSet(ctx context.Context, sess *session, args []string) int {
 		return cli.JsonSet(ctx, sess.cfg.keyspace, name, path, []byte(value))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "jsonset: %v\n", err)
+		printCmdErr("jsonset", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK jsonset %s %s\n", name, path)
+		printOK(fmt.Sprintf("jsonset %s %s", name, path))
 	}
 	return 0
 }
 
 func cmdJSONGet(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: jsonget <name> [path]")
+		printUsageLine("usage: jsonget <name> [path]")
 		return 2
 	}
 	path := "$"
@@ -1200,11 +1204,11 @@ func cmdJSONGet(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "jsonget: %v\n", err)
+		printCmdErr("jsonget", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(string(v))
@@ -1213,7 +1217,7 @@ func cmdJSONGet(ctx context.Context, sess *session, args []string) int {
 
 func cmdJSONDel(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: jsondel <name> [path]")
+		printUsageLine("usage: jsondel <name> [path]")
 		return 2
 	}
 	path := "$"
@@ -1224,23 +1228,23 @@ func cmdJSONDel(ctx context.Context, sess *session, args []string) int {
 		return cli.JsonDel(ctx, sess.cfg.keyspace, args[0], path)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "jsondel: %v\n", err)
+		printCmdErr("jsondel", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK jsondel %s %s\n", args[0], path)
+		printOK(fmt.Sprintf("jsondel %s %s", args[0], path))
 	}
 	return 0
 }
 
 func cmdBitSet(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: bitset <name> <offset> <0|1>")
+		printUsageLine("usage: bitset <name> <offset> <0|1>")
 		return 2
 	}
 	off, err := strconv.ParseUint(args[1], 10, 64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitset: bad offset %q: %v\n", args[1], err)
+		printCmdMsg("bitset", fmt.Sprintf("bad offset %q: %v", args[1], err))
 		return 2
 	}
 	var bit bool
@@ -1250,30 +1254,30 @@ func cmdBitSet(ctx context.Context, sess *session, args []string) int {
 	case "1":
 		bit = true
 	default:
-		fmt.Fprintln(os.Stderr, "usage: bitset <name> <offset> <0|1>")
+		printUsageLine("usage: bitset <name> <offset> <0|1>")
 		return 2
 	}
 	err = sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.BitSet(ctx, sess.cfg.keyspace, args[0], off, bit)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitset: %v\n", err)
+		printCmdErr("bitset", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK bitset %s %d %s\n", args[0], off, args[2])
+		printOK(fmt.Sprintf("bitset %s %d %s", args[0], off, args[2]))
 	}
 	return 0
 }
 
 func cmdBitGet(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: bitget <name> <offset>")
+		printUsageLine("usage: bitget <name> <offset>")
 		return 2
 	}
 	off, err := strconv.ParseUint(args[1], 10, 64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitget: bad offset %q: %v\n", args[1], err)
+		printCmdMsg("bitget", fmt.Sprintf("bad offset %q: %v", args[1], err))
 		return 2
 	}
 	var bit, ok bool
@@ -1283,11 +1287,11 @@ func cmdBitGet(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitget: %v\n", err)
+		printCmdErr("bitget", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	if bit {
@@ -1300,7 +1304,7 @@ func cmdBitGet(ctx context.Context, sess *session, args []string) int {
 
 func cmdBitCount(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 1 && len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: bitcount <name> [start end]")
+		printUsageLine("usage: bitcount <name> [start end]")
 		return 2
 	}
 	start, end := 0, -1
@@ -1308,12 +1312,12 @@ func cmdBitCount(ctx context.Context, sess *session, args []string) int {
 		var err error
 		start, err = parseInt(args[1])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bitcount: bad start %q: %v\n", args[1], err)
+			printCmdMsg("bitcount", fmt.Sprintf("bad start %q: %v", args[1], err))
 			return 2
 		}
 		end, err = parseInt(args[2])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bitcount: bad end %q: %v\n", args[2], err)
+			printCmdMsg("bitcount", fmt.Sprintf("bad end %q: %v", args[2], err))
 			return 2
 		}
 	}
@@ -1324,7 +1328,7 @@ func cmdBitCount(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitcount: %v\n", err)
+		printCmdErr("bitcount", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -1333,7 +1337,7 @@ func cmdBitCount(ctx context.Context, sess *session, args []string) int {
 
 func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 2 && len(args) != 4 {
-		fmt.Fprintln(os.Stderr, "usage: bitpos <name> <0|1> [start end]")
+		printUsageLine("usage: bitpos <name> <0|1> [start end]")
 		return 2
 	}
 	var bit bool
@@ -1343,7 +1347,7 @@ func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 	case "1":
 		bit = true
 	default:
-		fmt.Fprintln(os.Stderr, "usage: bitpos <name> <0|1> [start end]")
+		printUsageLine("usage: bitpos <name> <0|1> [start end]")
 		return 2
 	}
 	start, end := 0, -1
@@ -1351,12 +1355,12 @@ func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 		var err error
 		start, err = parseInt(args[2])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bitpos: bad start %q: %v\n", args[2], err)
+			printCmdMsg("bitpos", fmt.Sprintf("bad start %q: %v", args[2], err))
 			return 2
 		}
 		end, err = parseInt(args[3])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bitpos: bad end %q: %v\n", args[3], err)
+			printCmdMsg("bitpos", fmt.Sprintf("bad end %q: %v", args[3], err))
 			return 2
 		}
 	}
@@ -1368,11 +1372,11 @@ func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bitpos: %v\n", err)
+		printCmdErr("bitpos", err)
 		return 1
 	}
 	if !found {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(pos)
@@ -1381,7 +1385,7 @@ func cmdBitPos(ctx context.Context, sess *session, args []string) int {
 
 func cmdHLLAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: hlladd <name> <item...>")
+		printUsageLine("usage: hlladd <name> <item...>")
 		return 2
 	}
 	name := args[0]
@@ -1390,11 +1394,11 @@ func cmdHLLAdd(ctx context.Context, sess *session, args []string) int {
 			return cli.HLLAdd(ctx, sess.cfg.keyspace, name, []byte(item))
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "hlladd: %v\n", err)
+			printCmdErr("hlladd", err)
 			return 1
 		}
 		if !sess.cfg.quiet {
-			fmt.Printf("OK hlladd %s %s\n", name, item)
+			printOK(fmt.Sprintf("hlladd %s %s", name, item))
 		}
 	}
 	return 0
@@ -1402,7 +1406,7 @@ func cmdHLLAdd(ctx context.Context, sess *session, args []string) int {
 
 func cmdHLLCount(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: hllcount <name>")
+		printUsageLine("usage: hllcount <name>")
 		return 2
 	}
 	var n uint64
@@ -1413,11 +1417,11 @@ func cmdHLLCount(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hllcount: %v\n", err)
+		printCmdErr("hllcount", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("(nil)")
+		printNil()
 		return 1
 	}
 	fmt.Println(n)
@@ -1439,20 +1443,20 @@ func cmdPing(ctx context.Context, sess *session) int {
 		if err != nil && !errors.Is(err, client.ErrNotFound) {
 			return err
 		}
-		fmt.Printf("cache %s: ok\n", addr)
+		fmt.Printf("%s %s: %s\n", paint(os.Stdout, ansiCyan, "cache"), addr, paint(os.Stdout, ansiGreen, "ok"))
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cache: %v\n", err)
+		printCmdErr("cache", err)
 		return 1
 	}
 
 	code, body, aerr, used := adminGET(ctx, sess.cfg, "/healthz")
 	if aerr != nil {
-		fmt.Printf("admin: unreachable (%v)\n", aerr)
+		fmt.Printf("%s: %s (%v)\n", paint(os.Stdout, ansiCyan, "admin"), paint(os.Stdout, ansiYellow, "unreachable"), aerr)
 		return 0
 	}
-	fmt.Printf("admin %s: HTTP %d\n", used, code)
+	fmt.Printf("%s %s: HTTP %d\n", paint(os.Stdout, ansiCyan, "admin"), used, code)
 	if sess.cfg.jsonOut && len(body) > 0 {
 		os.Stdout.Write(body)
 	}
@@ -1462,11 +1466,11 @@ func cmdPing(ctx context.Context, sess *session) int {
 func cmdAdmin(ctx context.Context, cfg *config, path string) int {
 	code, body, err, used := adminGET(ctx, cfg, path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admin %s: %v\n", path, err)
+		printCmdMsg("admin", fmt.Sprintf("%s: %v", path, err))
 		return 1
 	}
 	if code >= 400 {
-		fmt.Fprintf(os.Stderr, "admin %s HTTP %d\n", used, code)
+		printCmdMsg("admin", fmt.Sprintf("%s HTTP %d", used, code))
 		writeBody(body)
 		return 1
 	}

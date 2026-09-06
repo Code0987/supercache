@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -29,60 +28,60 @@ func parseVec(s string) ([]float32, error) {
 
 func cmdVAdd(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: vadd <name> <member> <f1,f2,…>")
+		printUsageLine("usage: vadd <name> <member> <f1,f2,…>")
 		return 2
 	}
 	vec, err := parseVec(args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vadd: bad vec %q\n", args[2])
+		printCmdMsg("vadd", fmt.Sprintf("bad vec %q", args[2]))
 		return 2
 	}
 	err = sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.VAdd(ctx, sess.cfg.keyspace, args[0], []byte(args[1]), vec)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vadd: %v\n", err)
+		printCmdErr("vadd", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK vadd %s %s\n", args[0], args[1])
+		printOK(fmt.Sprintf("vadd %s %s", args[0], args[1]))
 	}
 	return 0
 }
 
 func cmdVRem(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: vrem <name> <member>")
+		printUsageLine("usage: vrem <name> <member>")
 		return 2
 	}
 	err := sess.withClient(func(cli *client.Client, _ string) error {
 		return cli.VRem(ctx, sess.cfg.keyspace, args[0], []byte(args[1]))
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vrem: %v\n", err)
+		printCmdErr("vrem", err)
 		return 1
 	}
 	if !sess.cfg.quiet {
-		fmt.Printf("OK vrem %s %s\n", args[0], args[1])
+		printOK(fmt.Sprintf("vrem %s %s", args[0], args[1]))
 	}
 	return 0
 }
 
 func cmdVSim(ctx context.Context, sess *session, args []string) int {
 	if len(args) < 2 || len(args) > 3 {
-		fmt.Fprintln(os.Stderr, "usage: vsim <name> <f1,f2,…> [k]")
+		printUsageLine("usage: vsim <name> <f1,f2,…> [k]")
 		return 2
 	}
 	vec, err := parseVec(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vsim: bad vec %q\n", args[1])
+		printCmdMsg("vsim", fmt.Sprintf("bad vec %q", args[1]))
 		return 2
 	}
 	k := 0
 	if len(args) == 3 {
 		parsed, err := strconv.Atoi(args[2])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "vsim: bad k %q\n", args[2])
+			printCmdMsg("vsim", fmt.Sprintf("bad k %q", args[2]))
 			return 2
 		}
 		k = parsed
@@ -94,7 +93,7 @@ func cmdVSim(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vsim: %v\n", err)
+		printCmdErr("vsim", err)
 		return 1
 	}
 	for _, h := range hits {
@@ -105,7 +104,7 @@ func cmdVSim(ctx context.Context, sess *session, args []string) int {
 
 func cmdVCard(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: vcard <name>")
+		printUsageLine("usage: vcard <name>")
 		return 2
 	}
 	var n int
@@ -115,7 +114,7 @@ func cmdVCard(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vcard: %v\n", err)
+		printCmdErr("vcard", err)
 		return 1
 	}
 	fmt.Println(n)
@@ -124,7 +123,7 @@ func cmdVCard(ctx context.Context, sess *session, args []string) int {
 
 func cmdVDim(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: vdim <name>")
+		printUsageLine("usage: vdim <name>")
 		return 2
 	}
 	var dim int
@@ -135,11 +134,11 @@ func cmdVDim(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vdim: %v\n", err)
+		printCmdErr("vdim", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("missing")
+		printNil()
 		return 1
 	}
 	fmt.Println(dim)
@@ -148,7 +147,7 @@ func cmdVDim(ctx context.Context, sess *session, args []string) int {
 
 func cmdVEmb(ctx context.Context, sess *session, args []string) int {
 	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: vemb <name> <member>")
+		printUsageLine("usage: vemb <name> <member>")
 		return 2
 	}
 	var vec []float32
@@ -159,11 +158,11 @@ func cmdVEmb(ctx context.Context, sess *session, args []string) int {
 		return e
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vemb: %v\n", err)
+		printCmdErr("vemb", err)
 		return 1
 	}
 	if !ok {
-		fmt.Println("missing")
+		printNil()
 		return 1
 	}
 	parts := make([]string, len(vec))
