@@ -36,7 +36,7 @@ Do **not** compare 3-node SuperCache to 1 Redis and call it “faster.”
 # Prefer native Redis for fairness
 redis-server --port 6379 --save "" --appendonly no
 
-# SuperCache (demo keyspace = CacheOnly "demo")
+# SuperCache (demo keyspace = CacheOnly "cacheonly")
 go run ./cmd/supercache-node \
   -cache 127.0.0.1:9000 -peer 127.0.0.1:9001 -admin 127.0.0.1:8080
 ```

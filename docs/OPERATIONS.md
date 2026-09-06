@@ -78,7 +78,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
-Demo node (`-demo-keyspace`): registers `demo` (CacheOnly), `tags` (ModeSet), `board` (ModeZSet), `profile` (ModeHash), `doc` (ModeJSON), `flags` (ModeBitmap), `embeddings` (ModeVectorSet). Geo/List/Counter/HLL/TopK/CMS keyspaces are configured by the app. Live plays billboard: [examples/billboard](../examples/billboard/README.md). Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md). Bitmap flags: [examples/bitmap](../examples/bitmap/README.md). HLL sketch: [examples/hll](../examples/hll/README.md).
+Demo node (`-demo-keyspace`): one keyspace per shipped demo mode, **name = lowercase `Mode.String()`** — `cacheonly`, `set`, `zset`, `hash`, `json`, `bitmap`, `vectorset`. Geo/List/Counter/HLL/TopK/CMS are not on the stock node (register them in the app). Live plays billboard: [examples/billboard](../examples/billboard/README.md). Hash walkthrough: [examples/hash](../examples/hash/README.md). Rate limiter: [examples/ratelimit](../examples/ratelimit/README.md). JSON document: [examples/json](../examples/json/README.md). Bitmap flags: [examples/bitmap](../examples/bitmap/README.md). HLL sketch: [examples/hll](../examples/hll/README.md).
 
 ## Consistency cheatsheet
 

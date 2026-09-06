@@ -64,31 +64,31 @@ Optional: `-gossip-secret <key>`.
 ### CLI (`sc`)
 
 ```bash
-# With supercache-node running on defaults (-demo-keyspace: demo + tags + board + profile + doc + flags + embeddings):
+# With supercache-node running on defaults (keyspace name = lowercase mode):
 go run ./cmd/sc put greeting "hello"
 go run ./cmd/sc get greeting
 go run ./cmd/sc del greeting
-go run ./cmd/sc -keyspace tags sadd features dark_mode
-go run ./cmd/sc -keyspace tags sismember features dark_mode
-go run ./cmd/sc -keyspace board zadd lb 100 alice
-go run ./cmd/sc -keyspace board zrange lb 0 -1
+go run ./cmd/sc -keyspace set sadd features dark_mode
+go run ./cmd/sc -keyspace set sismember features dark_mode
+go run ./cmd/sc -keyspace zset zadd lb 100 alice
+go run ./cmd/sc -keyspace zset zrange lb 0 -1
 go run ./cmd/sc -keyspace places geoadd city -74 40.7 shop
 go run ./cmd/sc -keyspace places georadius city -74 40.7 20000 10
 go run ./cmd/sc -keyspace inbox rpush q event1
 go run ./cmd/sc -keyspace inbox lrange q 0 -1
-go run ./cmd/sc -keyspace profile hset user email a@b
-go run ./cmd/sc -keyspace profile hgetall user
+go run ./cmd/sc -keyspace hash hset user email a@b
+go run ./cmd/sc -keyspace hash hgetall user
 # ModeCounter (register a ModeCounter keyspace; not in -demo-keyspace):
 # go run ./cmd/sc -keyspace rl incr alice:1
-go run ./cmd/sc -keyspace doc jsonset user $.name '"Ada"'
-go run ./cmd/sc -keyspace doc jsonget user $.name
-go run ./cmd/sc -keyspace flags bitset seen 0 1
-go run ./cmd/sc -keyspace flags bitget seen 0
-go run ./cmd/sc -keyspace embeddings vadd products east 1,0
-go run ./cmd/sc -keyspace embeddings vadd products north 0,1
-go run ./cmd/sc -keyspace embeddings vadd products ne 0.7,0.7
-go run ./cmd/sc -keyspace embeddings vcard products
-go run ./cmd/sc -keyspace embeddings vsim products 1,0.05 3
+go run ./cmd/sc -keyspace json jsonset user $.name '"Ada"'
+go run ./cmd/sc -keyspace json jsonget user $.name
+go run ./cmd/sc -keyspace bitmap bitset seen 0 1
+go run ./cmd/sc -keyspace bitmap bitget seen 0
+go run ./cmd/sc -keyspace vectorset vadd products east 1,0
+go run ./cmd/sc -keyspace vectorset vadd products north 0,1
+go run ./cmd/sc -keyspace vectorset vadd products ne 0.7,0.7
+go run ./cmd/sc -keyspace vectorset vcard products
+go run ./cmd/sc -keyspace vectorset vsim products 1,0.05 3
 go run ./cmd/sc -keyspace seen bloom add users alice   # ModeBloom keyspace
 # ModeTopK (register a ModeTopK keyspace, or use examples/billboard plays/hot):
 # go run ./cmd/sc -keyspace plays topkadd hot t001
@@ -140,7 +140,7 @@ See [examples/billboard/README.md](./examples/billboard/README.md). Official cha
 go run ./examples/hash   # 3-node in-process walkthrough (HSet/HGet/HDel, concurrent fields)
 ```
 
-See [examples/hash/README.md](./examples/hash/README.md). `sc -keyspace profile` talks to the node demo keyspace.
+See [examples/hash/README.md](./examples/hash/README.md). `sc -keyspace hash` talks to the node demo keyspace.
 
 ### ModeCounter rate limiter
 
@@ -156,7 +156,7 @@ See [examples/ratelimit/README.md](./examples/ratelimit/README.md).
 go run ./examples/json   # 3-node in-process walkthrough (path set/get/del)
 ```
 
-See [examples/json/README.md](./examples/json/README.md). `sc -keyspace doc` talks to the node demo keyspace.
+See [examples/json/README.md](./examples/json/README.md). `sc -keyspace json` talks to the node demo keyspace.
 
 ### ModeBitmap packed bits
 
@@ -164,7 +164,7 @@ See [examples/json/README.md](./examples/json/README.md). `sc -keyspace doc` tal
 go run ./examples/bitmap   # 3-node in-process walkthrough (BitSet/BitGet/BitCount/BitPos)
 ```
 
-See [examples/bitmap/README.md](./examples/bitmap/README.md). `sc -keyspace flags` talks to the node demo keyspace.
+See [examples/bitmap/README.md](./examples/bitmap/README.md). `sc -keyspace bitmap` talks to the node demo keyspace.
 
 ### ModeHLL approximate distinct count
 
@@ -213,7 +213,7 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap + HLL + TopK) |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
-| `cmd/supercache-node` | Node binary (`-demo-keyspace`: demo / tags / board / profile / doc / flags / embeddings) |
+| `cmd/supercache-node` | Node binary (`-demo-keyspace`: cacheonly / set / zset / hash / json / bitmap / vectorset) |
 | `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bit*, hlladd/hllcount, topkadd/topklist, admin diagnostics |
 | `cmd/scbench` | SuperCache vs Redis load harness + in-process matrix |
 

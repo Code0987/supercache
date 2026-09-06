@@ -42,7 +42,7 @@ func main() {
 		warmup         = flag.Duration("warmup", 5*time.Second, "warmup before each trial (discarded)")
 		trials         = flag.Int("trials", 5, "independent measure trials; report median")
 		readRatio      = flag.Float64("read-ratio", 0.95, "GET fraction in mixed mode")
-		keyspace       = flag.String("keyspace", "demo", "SuperCache keyspace")
+		keyspace       = flag.String("keyspace", "cacheonly", "SuperCache keyspace")
 		prefix         = flag.String("prefix", "scbench:", "key prefix")
 		prefill        = flag.Bool("prefill", true, "prefill before get/mixed")
 		dist           = flag.String("dist", "uniform", "uniform | zipf")

@@ -38,7 +38,7 @@ func run(args []string) int {
 	var (
 		addr      = fs.String("addr", envOr("SC_ADDR", "127.0.0.1:9000"), "cache gRPC seed(s), comma-separated (app port, not peer)")
 		admin     = fs.String("admin", envOr("SC_ADMIN", "127.0.0.1:8080"), "admin HTTP seed(s), comma-separated")
-		keyspace  = fs.String("keyspace", envOr("SC_KEYSPACE", "demo"), "default keyspace")
+		keyspace  = fs.String("keyspace", envOr("SC_KEYSPACE", "cacheonly"), "default keyspace")
 		timeout   = fs.Duration("timeout", 5*time.Second, "per-request timeout")
 		ttl       = fs.Duration("ttl", 0, "TTL for put (0 + -no-expiry = never expire)")
 		noExpiry  = fs.Bool("no-expiry", false, "put with TTL=0 (no expiry)")
@@ -382,16 +382,16 @@ Environment: SC_ADDR, SC_ADMIN, SC_KEYSPACE, SC_TLS_CA, SC_TLS_CERT, SC_TLS_KEY,
 Examples:
   sc put greeting "hello world"
   sc get greeting
-  sc -keyspace tags sadd features dark_mode
-  sc -keyspace tags sismember features dark_mode
-  sc -keyspace board zadd lb 100 alice
-  sc -keyspace board zrange lb 0 -1
+  sc -keyspace set sadd features dark_mode
+  sc -keyspace set sismember features dark_mode
+  sc -keyspace zset zadd lb 100 alice
+  sc -keyspace zset zrange lb 0 -1
   sc -addr 127.0.0.1:9000,127.0.0.1:9010,127.0.0.1:9020 ping
   sc -admin 127.0.0.1:8081,127.0.0.1:8082 peers
   sc                                    # REPL
   sc> put k v
   sc> get k
-  sc> keyspace demo
+  sc> keyspace cacheonly
   sc> quit
 `)
 }

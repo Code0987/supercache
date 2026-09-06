@@ -25,7 +25,7 @@ func main() {
 	}
 
 	fmt.Println("=== 1) Put session:user1 via n1 (CacheOnly demo) ===")
-	if err := clients[0].Put(ctx, "demo", "session:user1",
+	if err := clients[0].Put(ctx, "cacheonly", "session:user1",
 		[]byte(`{"user":"alice","role":"admin"}`), client.WithTTL(2*time.Minute)); err != nil {
 		fmt.Println("put err:", err)
 		os.Exit(1)
@@ -35,7 +35,7 @@ func main() {
 
 	fmt.Println("\n=== 2) Get session:user1 from all 3 nodes (fan-out check) ===")
 	for i, c := range clients {
-		v, err := c.Get(ctx, "demo", "session:user1")
+		v, err := c.Get(ctx, "cacheonly", "session:user1")
 		if err != nil {
 			fmt.Printf("    n%d ERROR: %v\n", i+1, err)
 		} else {
@@ -46,7 +46,7 @@ func main() {
 	fmt.Println("\n=== 3) ModeSet feature flags via n2 (SetAdd into set name features) ===")
 	// Exact membership: one set name, many items — not one KV key per flag.
 	for _, item := range []string{"dark_mode", "beta", "max_cart"} {
-		if err := clients[1].SetAdd(ctx, "tags", "features", []byte(item)); err != nil {
+		if err := clients[1].SetAdd(ctx, "set", "features", []byte(item)); err != nil {
 			fmt.Printf("    SetAdd %s err: %v\n", item, err)
 			os.Exit(1)
 		}
@@ -56,20 +56,20 @@ func main() {
 
 	fmt.Println("\n=== 4) SetContains / SetCard / SetMembers from n3 ===")
 	for _, item := range []string{"dark_mode", "beta", "max_cart", "unknown_flag"} {
-		ok, err := clients[2].SetContains(ctx, "tags", "features", []byte(item))
+		ok, err := clients[2].SetContains(ctx, "set", "features", []byte(item))
 		if err != nil {
 			fmt.Printf("    contains %s ERROR: %v\n", item, err)
 		} else {
 			fmt.Printf("    contains %s = %v\n", item, ok)
 		}
 	}
-	n, err := clients[2].SetCard(ctx, "tags", "features")
+	n, err := clients[2].SetCard(ctx, "set", "features")
 	if err != nil {
 		fmt.Println("    card ERROR:", err)
 	} else {
 		fmt.Printf("    SetCard(features) = %d\n", n)
 	}
-	mem, err := clients[2].SetMembers(ctx, "tags", "features")
+	mem, err := clients[2].SetMembers(ctx, "set", "features")
 	if err != nil {
 		fmt.Println("    members ERROR:", err)
 	} else {
@@ -81,13 +81,13 @@ func main() {
 	}
 
 	fmt.Println("\n=== 5) SetRemove beta via n1; confirm on n2 ===")
-	if err := clients[0].SetRemove(ctx, "tags", "features", []byte("beta")); err != nil {
+	if err := clients[0].SetRemove(ctx, "set", "features", []byte("beta")); err != nil {
 		fmt.Println("    remove err:", err)
 	} else {
 		fmt.Println("    SetRemove beta OK")
 	}
 	time.Sleep(400 * time.Millisecond)
-	ok, err := clients[1].SetContains(ctx, "tags", "features", []byte("beta"))
+	ok, err := clients[1].SetContains(ctx, "set", "features", []byte("beta"))
 	fmt.Printf("    n2 contains beta = %v err=%v (expect false)\n", ok, err)
 
 	fmt.Println("\n=== 6) ModeZSet leaderboard via n2 (ZAdd into board name top_tracks) ===")
@@ -100,7 +100,7 @@ func main() {
 		{"carol", 180},
 	}
 	for _, s := range scores {
-		if err := clients[1].ZAdd(ctx, "board", "top_tracks", []byte(s.member), s.score); err != nil {
+		if err := clients[1].ZAdd(ctx, "zset", "top_tracks", []byte(s.member), s.score); err != nil {
 			fmt.Printf("    ZAdd %s err: %v\n", s.member, err)
 			os.Exit(1)
 		}
@@ -110,20 +110,20 @@ func main() {
 
 	fmt.Println("\n=== 7) ZScore / ZCard / ZRange from n3 ===")
 	for _, m := range []string{"alice", "bob", "nobody"} {
-		sc, ok, err := clients[2].ZScore(ctx, "board", "top_tracks", []byte(m))
+		sc, ok, err := clients[2].ZScore(ctx, "zset", "top_tracks", []byte(m))
 		if err != nil {
 			fmt.Printf("    zscore %s ERROR: %v\n", m, err)
 		} else {
 			fmt.Printf("    zscore %s = %v present=%v\n", m, sc, ok)
 		}
 	}
-	n, err = clients[2].ZCard(ctx, "board", "top_tracks")
+	n, err = clients[2].ZCard(ctx, "zset", "top_tracks")
 	if err != nil {
 		fmt.Println("    zcard ERROR:", err)
 	} else {
 		fmt.Printf("    ZCard(top_tracks) = %d\n", n)
 	}
-	rank, err := clients[2].ZRange(ctx, "board", "top_tracks", 0, -1)
+	rank, err := clients[2].ZRange(ctx, "zset", "top_tracks", 0, -1)
 	if err != nil {
 		fmt.Println("    zrange ERROR:", err)
 	} else {
@@ -133,7 +133,7 @@ func main() {
 		}
 		fmt.Println()
 	}
-	win, err := clients[2].ZRangeByScore(ctx, "board", "top_tracks", 150, 300)
+	win, err := clients[2].ZRangeByScore(ctx, "zset", "top_tracks", 150, 300)
 	if err != nil {
 		fmt.Println("    zrangebyscore ERROR:", err)
 	} else {
@@ -145,17 +145,17 @@ func main() {
 	}
 
 	fmt.Println("\n=== 8) ZRem alice via n1; confirm on n2 ===")
-	if err := clients[0].ZRem(ctx, "board", "top_tracks", []byte("alice")); err != nil {
+	if err := clients[0].ZRem(ctx, "zset", "top_tracks", []byte("alice")); err != nil {
 		fmt.Println("    zrem err:", err)
 	} else {
 		fmt.Println("    ZRem alice OK")
 	}
 	time.Sleep(400 * time.Millisecond)
-	_, ok, err = clients[1].ZScore(ctx, "board", "top_tracks", []byte("alice"))
+	_, ok, err = clients[1].ZScore(ctx, "zset", "top_tracks", []byte("alice"))
 	fmt.Printf("    n2 zscore alice present=%v err=%v (expect false)\n", ok, err)
 
 	fmt.Println("\n=== 9) Delete session:user1 via n3 ===")
-	if err := clients[2].Delete(ctx, "demo", "session:user1"); err != nil {
+	if err := clients[2].Delete(ctx, "cacheonly", "session:user1"); err != nil {
 		fmt.Println("    delete note:", err)
 	} else {
 		fmt.Println("    Delete OK (all peers ACKed)")
@@ -164,14 +164,14 @@ func main() {
 
 	fmt.Println("\n=== 10) Confirm session miss on all nodes ===")
 	for i, c := range clients {
-		_, err := c.Get(ctx, "demo", "session:user1")
+		_, err := c.Get(ctx, "cacheonly", "session:user1")
 		fmt.Printf("    n%d: %v\n", i+1, err)
 	}
 
 	fmt.Println("\n=== 11) Spread 12 KV keys (write rotate, read next node) ===")
 	for i := 0; i < 12; i++ {
 		k := fmt.Sprintf("item:%d", i)
-		_ = clients[i%3].Put(ctx, "demo", k, []byte(fmt.Sprintf("value-%d", i)))
+		_ = clients[i%3].Put(ctx, "cacheonly", k, []byte(fmt.Sprintf("value-%d", i)))
 	}
 	time.Sleep(600 * time.Millisecond)
 	hits := 0
@@ -179,7 +179,7 @@ func main() {
 		k := fmt.Sprintf("item:%d", i)
 		want := fmt.Sprintf("value-%d", i)
 		c := clients[(i+1)%3]
-		if v, err := c.Get(ctx, "demo", k); err == nil && string(v) == want {
+		if v, err := c.Get(ctx, "cacheonly", k); err == nil && string(v) == want {
 			hits++
 		} else {
 			fmt.Printf("    lag/miss %s: %v\n", k, err)
