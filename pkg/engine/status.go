@@ -1,9 +1,85 @@
 package engine
 
 import (
+	"encoding/json"
+
 	"github.com/Code0987/supercache/pkg/store"
 	"github.com/Code0987/supercache/pkg/telemetry"
 )
+
+// LocalKind is the classified local store state for one name (Peek, not Get).
+type LocalKind uint8
+
+const (
+	LocalMissing LocalKind = iota
+	LocalLive
+	LocalTombstone
+	LocalNegative
+)
+
+func (k LocalKind) String() string {
+	switch k {
+	case LocalLive:
+		return "live"
+	case LocalTombstone:
+		return "tombstone"
+	case LocalNegative:
+		return "negative"
+	default:
+		return "missing"
+	}
+}
+
+func (k LocalKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(k.String())
+}
+
+// LocalView is a read-only Peek classification. It does not touch LRU or stats.
+type LocalView struct {
+	Kind    LocalKind `json:"kind"`
+	Version uint64    `json:"version"`
+	Flags   uint32    `json:"flags"`
+	Bytes   int       `json:"bytes"`
+}
+
+// LocalView reports the local copy of key without owner-forward or LRU update.
+// Unknown keyspace or absent key → LocalMissing.
+func (e *Engine) LocalView(keyspaceName, key string) LocalView {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return LocalView{Kind: LocalMissing}
+	}
+	ent, ok := ks.store.Peek(key)
+	if !ok {
+		return LocalView{Kind: LocalMissing}
+	}
+	v := LocalView{Version: ent.Version, Flags: ent.Flags, Bytes: len(ent.Value)}
+	switch {
+	case ent.IsTombstone():
+		v.Kind = LocalTombstone
+	case ent.IsNegative():
+		v.Kind = LocalNegative
+	default:
+		v.Kind = LocalLive
+	}
+	return v
+}
+
+// BloomDump is a read-only copy of the local Bloom bitset (Peek, no LRU).
+// ok is false when the name is missing, tombstoned, or not a Bloom entry.
+// m and k still come from the keyspace when present.
+func (e *Engine) BloomDump(keyspaceName, name string) (bits []byte, m, k int, ok bool) {
+	ks, err := e.getKS(keyspaceName)
+	if err != nil {
+		return nil, 0, 0, false
+	}
+	m, k = ks.cfg.EffectiveBloomBits(), ks.cfg.EffectiveBloomHashes()
+	ent, found := ks.store.Peek(name)
+	if !found || ent.IsTombstone() || !ent.IsBloom() {
+		return nil, m, k, false
+	}
+	return append([]byte(nil), ent.Value...), m, k, true
+}
 
 // KeySpaceSnapshot is admin/JSON diagnostics for one keyspace.
 type KeySpaceSnapshot struct {
