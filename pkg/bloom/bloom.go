@@ -89,6 +89,23 @@ func (f *Filter) Bytes() []byte {
 	return f.bits
 }
 
+// Indexes returns the k bit positions item hashes to in an m-bit filter.
+func Indexes(mBits, k int, item []byte) []int {
+	if mBits < 8 {
+		mBits = 8
+	}
+	if k < 1 {
+		k = 1
+	}
+	h1, h2 := hash2(item)
+	m := uint64(mBits)
+	out := make([]int, k)
+	for i := 0; i < k; i++ {
+		out[i] = int((h1 + uint64(i)*h2) % m)
+	}
+	return out
+}
+
 func hash2(item []byte) (h1, h2 uint64) {
 	a := fnv.New64a()
 	_, _ = a.Write(item)

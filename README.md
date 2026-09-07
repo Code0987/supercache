@@ -125,6 +125,17 @@ go run ./cmd/scbench -tier=laptop -json=laptop.json
 
 CI runs the smoke suite once per side on the same GitHub runner and comments the diff on pull requests (not a merge gate). See [cmd/scbench/README.md](./cmd/scbench/README.md) and [docs/BENCHMARKS.md](./docs/BENCHMARKS.md).
 
+### SuperCache Lab (interactive explorer)
+
+```bash
+cd examples/lab/ui && npm ci && npm run build && cd ../../..
+go run ./examples/lab
+# UI: http://127.0.0.1:19080/  — connect cache addrs, or -cluster for a local mesh
+```
+
+See [examples/lab/README.md](./examples/lab/README.md). Attach to a running node
+or start a 3-node RF=2 demo; React playground for every keyspace mode.
+
 ### Music trending billboard (cluster demo)
 
 ```bash
