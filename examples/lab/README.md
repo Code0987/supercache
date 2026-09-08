@@ -43,6 +43,7 @@ runs the same verbs by hand. After each call the UI polls `LocalView` on every n
 | LoadThrough | `loadthrough` | SoT miss, hit, singleflight |
 | Tombstone | `cacheonly` | delete marker vs live |
 | Bloom … VectorSet | matching mode | thin widget + wrong-verb on Set |
+| Stream | `stream` | append-only log; XAdd returns id; XRange `-` `+` |
 
 Lab HTTP defaults to `127.0.0.1:19080`. `-cluster` uses ephemeral cache/peer
 ports (`internal/testcluster`). Mock SoT latency: `-sot-latency` (in-process only).

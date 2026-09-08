@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,27 +22,30 @@ type opReq struct {
 }
 
 type opArgs struct {
-	Value  string    `json:"value"`
-	Item   string    `json:"item"`
-	Member string    `json:"member"`
-	Field  string    `json:"field"`
-	Path   string    `json:"path"`
-	A      string    `json:"a"`
-	B      string    `json:"b"`
-	Score  float64   `json:"score"`
-	Delta  int64     `json:"delta"`
-	Offset uint64    `json:"offset"`
-	Bit    *bool     `json:"bit"`
-	Lon    float64   `json:"lon"`
-	Lat    float64   `json:"lat"`
-	Radius float64   `json:"radius"`
-	Limit  int       `json:"limit"`
-	Start  int       `json:"start"`
-	Stop   *int      `json:"stop"`
-	End    *int      `json:"end"`
-	K      int       `json:"k"`
-	N      uint64    `json:"n"`
-	Vec    []float32 `json:"vec"`
+	Value  string          `json:"value"`
+	Item   string          `json:"item"`
+	Member string          `json:"member"`
+	Field  string          `json:"field"`
+	Path   string          `json:"path"`
+	A      string          `json:"a"`
+	B      string          `json:"b"`
+	Score  float64         `json:"score"`
+	Delta  int64           `json:"delta"`
+	Offset uint64          `json:"offset"`
+	Bit    *bool           `json:"bit"`
+	Lon    float64         `json:"lon"`
+	Lat    float64         `json:"lat"`
+	Radius float64         `json:"radius"`
+	Limit  int             `json:"limit"`
+	Start  json.RawMessage `json:"start"`
+	Stop   *int            `json:"stop"`
+	End    json.RawMessage `json:"end"`
+	K      int             `json:"k"`
+	N      uint64          `json:"n"`
+	Vec    []float32       `json:"vec"`
+	ID     string          `json:"id"`
+	Count  int             `json:"count"`
+	MaxLen int             `json:"max_len"`
 }
 
 func (l *Lab) runOp(ctx context.Context, req opReq) (map[string]any, int) {
@@ -171,7 +175,8 @@ func isWriteOp(op string) bool {
 	case "put", "delete", "bloomadd", "sadd", "srem", "zadd", "zrem",
 		"geoadd", "georem", "lpush", "rpush", "lpop", "rpop",
 		"hset", "hdel", "incr", "jsonset", "jsondel",
-		"bitset", "hlladd", "topkadd", "cmsincr", "vadd", "vrem":
+		"bitset", "hlladd", "topkadd", "cmsincr", "vadd", "vrem",
+		"xadd", "xdel", "xtrim":
 		return true
 	}
 	return false
@@ -182,10 +187,8 @@ func dispatch(ctx context.Context, cli *client.Client, ks, op, name string, a op
 	if a.Stop != nil {
 		stop = *a.Stop
 	}
-	end := -1
-	if a.End != nil {
-		end = *a.End
-	}
+	start := asInt(a.Start, 0)
+	end := asInt(a.End, -1)
 	bit := true
 	if a.Bit != nil {
 		bit = *a.Bit
@@ -242,7 +245,7 @@ func dispatch(ctx context.Context, cli *client.Client, ks, op, name string, a op
 		n, err := cli.ZCard(ctx, ks, name)
 		return map[string]any{"card": n}, err
 	case "zrange":
-		ms, err := cli.ZRange(ctx, ks, name, a.Start, stop)
+		ms, err := cli.ZRange(ctx, ks, name, start, stop)
 		return zMembersJSON(ms), err
 	case "geoadd":
 		return map[string]any{"acked": true}, cli.GeoAdd(ctx, ks, name, []byte(a.Member), a.Lon, a.Lat)
@@ -278,10 +281,10 @@ func dispatch(ctx context.Context, cli *client.Client, ks, op, name string, a op
 		n, err := cli.LLen(ctx, ks, name)
 		return map[string]any{"len": n}, err
 	case "lindex":
-		v, ok, err := cli.LIndex(ctx, ks, name, a.Start)
+		v, ok, err := cli.LIndex(ctx, ks, name, start)
 		return map[string]any{"value": string(v), "present": ok}, err
 	case "lrange":
-		ms, err := cli.LRange(ctx, ks, name, a.Start, stop)
+		ms, err := cli.LRange(ctx, ks, name, start, stop)
 		return map[string]any{"items": asStrings(ms)}, err
 	case "hset":
 		return map[string]any{"acked": true}, cli.HSet(ctx, ks, name, []byte(a.Field), []byte(a.Value))
@@ -322,10 +325,10 @@ func dispatch(ctx context.Context, cli *client.Client, ks, op, name string, a op
 		b, ok, err := cli.BitGet(ctx, ks, name, a.Offset)
 		return map[string]any{"bit": b, "present": ok}, err
 	case "bitcount":
-		n, err := cli.BitCount(ctx, ks, name, a.Start, end)
+		n, err := cli.BitCount(ctx, ks, name, start, end)
 		return map[string]any{"count": n}, err
 	case "bitpos":
-		pos, ok, err := cli.BitPos(ctx, ks, name, bit, a.Start, end)
+		pos, ok, err := cli.BitPos(ctx, ks, name, bit, start, end)
 		return map[string]any{"pos": pos, "found": ok}, err
 	case "hlladd":
 		return map[string]any{"acked": true}, cli.HLLAdd(ctx, ks, name, []byte(a.Item))
@@ -366,9 +369,65 @@ func dispatch(ctx context.Context, cli *client.Client, ks, op, name string, a op
 	case "vemb":
 		v, ok, err := cli.VEmb(ctx, ks, name, []byte(a.Member))
 		return map[string]any{"vec": v, "present": ok}, err
+	case "xadd":
+		id, err := cli.XAdd(ctx, ks, name, []byte(a.Value))
+		return map[string]any{"id": id}, err
+	case "xrange":
+		rows, err := cli.XRange(ctx, ks, name, asBound(a.Start, "-"), asBound(a.End, "+"), a.Count)
+		return streamJSON(rows), err
+	case "xrevrange":
+		rows, err := cli.XRevRange(ctx, ks, name, asBound(a.Start, "-"), asBound(a.End, "+"), a.Count)
+		return streamJSON(rows), err
+	case "xlen":
+		n, ok, err := cli.XLen(ctx, ks, name)
+		return map[string]any{"n": n, "present": ok}, err
+	case "xdel":
+		return map[string]any{"acked": true}, cli.XDel(ctx, ks, name, a.ID)
+	case "xtrim":
+		return map[string]any{"acked": true}, cli.XTrim(ctx, ks, name, a.MaxLen)
 	default:
 		return nil, fmt.Errorf("%w: unknown op %q", engine.ErrInvalidArgument, op)
 	}
+}
+
+func asInt(raw json.RawMessage, def int) int {
+	if len(raw) == 0 {
+		return def
+	}
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		return n
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func asBound(raw json.RawMessage, def string) string {
+	if len(raw) == 0 {
+		return def
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil && s != "" {
+		return s
+	}
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		return strconv.Itoa(n)
+	}
+	return def
+}
+
+func streamJSON(rows []engine.StreamEntry) map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{"id": r.ID, "payload": string(r.Payload)})
+	}
+	return map[string]any{"entries": out}
 }
 
 func asStrings(in [][]byte) []string {

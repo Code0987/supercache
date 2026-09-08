@@ -21,7 +21,7 @@ const (
 
 var modeNames = []string{
 	"cacheonly", "loadthrough", "bloom", "set", "zset", "geo", "list",
-	"hash", "counter", "json", "bitmap", "hll", "topk", "cms", "vectorset",
+	"hash", "counter", "json", "bitmap", "hll", "topk", "cms", "vectorset", "stream",
 }
 
 type mockSoT struct {
@@ -79,6 +79,7 @@ func labKeyspaces(src datasource.DataSource) []keyspace.Config {
 			c.VectorDim = 2
 			return c
 		}(),
+		base("stream", keyspace.ModeStream),
 	}
 }
 

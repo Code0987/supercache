@@ -35,6 +35,7 @@ Do not implement from a draft.
 | [2026-09-02-feature-folders.md](./2026-09-02-feature-folders.md) | Feature folders (List first) |
 | [2026-09-04-mode-vector-set.md](./2026-09-04-mode-vector-set.md) | `ModeVectorSet` |
 | [2026-09-08-mode-stream.md](./2026-09-08-mode-stream.md) | `ModeStream` |
+| [2026-09-08-lab-mode-stream.md](./2026-09-08-lab-mode-stream.md) | Lab Stream chapter |
 | [2026-08-25-list-counter-version.md](./2026-08-25-list-counter-version.md) | List/Counter snapshot version |
 | [2026-08-13-unify-grpc-error-map.md](./2026-08-13-unify-grpc-error-map.md) | grpcmap |
 

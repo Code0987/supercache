@@ -12,6 +12,7 @@ import { ListWidget } from "./widgets/List";
 import { LoadThroughWidget } from "./widgets/LoadThrough";
 import { SetWidget } from "./widgets/Set";
 import { TopKWidget } from "./widgets/TopK";
+import { StreamWidget } from "./widgets/Stream";
 import { VectorSetWidget } from "./widgets/VectorSet";
 import { ZSetWidget } from "./widgets/ZSet";
 import type { WidgetProps } from "./widgets/shared";
@@ -87,6 +88,8 @@ function ModeWidget({ id, w }: { id: string; w: WidgetProps }) {
       return <CMSWidget {...w} />;
     case "vectorset":
       return <VectorSetWidget {...w} />;
+    case "stream":
+      return <StreamWidget {...w} />;
     default:
       return <CacheOnlyWidget {...w} />;
   }
