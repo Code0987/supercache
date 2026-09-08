@@ -113,7 +113,8 @@ func run(args []string) int {
 		"hlladd", "hllcount",
 		"topkadd", "topklist",
 		"cmsincr", "cmsquery",
-		"vadd", "vrem", "vsim", "vcard", "vdim", "vemb":
+		"vadd", "vrem", "vsim", "vcard", "vdim", "vemb",
+		"xadd", "xlen", "xrange", "xrevrange", "xdel", "xtrim":
 		sess := newSession(cfg)
 		defer sess.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)

@@ -102,6 +102,9 @@ func TestModeString(t *testing.T) {
 	if ModeVectorSet.String() != "VectorSet" {
 		t.Fatal(ModeVectorSet.String())
 	}
+	if ModeStream.String() != "Stream" {
+		t.Fatal(ModeStream.String())
+	}
 	if Mode(99).String() != "Mode(99)" {
 		t.Fatal(Mode(99).String())
 	}
@@ -215,6 +218,15 @@ func TestConfigHashIncludesVectorFields(t *testing.T) {
 	c.VectorMetric = VectorMetricL2
 	if a.ConfigHash() == c.ConfigHash() {
 		t.Fatal("VectorMetric must change hash")
+	}
+}
+
+func TestConfigHashIncludesStreamMaxLen(t *testing.T) {
+	a := Config{Name: "k", Mode: ModeStream, MaxBytes: 1 << 20, StreamMaxLen: 8}
+	b := a
+	b.StreamMaxLen = 16
+	if a.ConfigHash() == b.ConfigHash() {
+		t.Fatal("StreamMaxLen must change hash")
 	}
 }
 

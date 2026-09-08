@@ -138,6 +138,18 @@ func dispatch(ctx context.Context, sess *session, cmd string, args []string) int
 		return cmdVCard(ctx, sess, args)
 	case "vdim":
 		return cmdVDim(ctx, sess, args)
+	case "xadd":
+		return cmdXAdd(ctx, sess, args)
+	case "xlen":
+		return cmdXLen(ctx, sess, args)
+	case "xrange":
+		return cmdXRange(ctx, sess, args)
+	case "xrevrange":
+		return cmdXRevRange(ctx, sess, args)
+	case "xdel":
+		return cmdXDel(ctx, sess, args)
+	case "xtrim":
+		return cmdXTrim(ctx, sess, args)
 	case "vemb":
 		return cmdVEmb(ctx, sess, args)
 	default:

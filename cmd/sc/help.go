@@ -25,6 +25,7 @@ var cacheHelpGroups = []helpGroup{
 	{"topk", "topkadd  topklist"},
 	{"cms", "cmsincr  cmsquery"},
 	{"vector", "vadd  vrem  vsim  vcard  vdim  vemb"},
+	{"stream", "xadd  xlen  xrange  xrevrange  xdel  xtrim"},
 	{"admin", "ping  peers  keyspaces  metrics  health  ready"},
 }
 

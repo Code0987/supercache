@@ -6,7 +6,7 @@ import (
 	"github.com/Code0987/supercache/pkg/store"
 )
 
-func (e *Engine) gMutViaOwner(ctx context.Context, ks *ksRuntime, name string, value []byte, flag uint32) error {
+func (e *Engine) gMutViaOwner(ctx context.Context, ks *ksRuntime, name string, value []byte, flag uint64) error {
 	c := e.clusterSnapshot()
 	owner, _ := c.Ring.Owner(name)
 	ent := store.Entry{Value: value, Flags: flag, Version: 1}

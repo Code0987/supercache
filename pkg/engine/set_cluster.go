@@ -6,7 +6,7 @@ import (
 	"github.com/Code0987/supercache/pkg/store"
 )
 
-func (e *Engine) setMutViaOwner(ctx context.Context, ks *ksRuntime, name string, item []byte, flag uint32) error {
+func (e *Engine) setMutViaOwner(ctx context.Context, ks *ksRuntime, name string, item []byte, flag uint64) error {
 	c := e.clusterSnapshot()
 	owner, _ := c.Ring.Owner(name)
 	ent := store.Entry{Value: append([]byte(nil), item...), Flags: flag, Version: 1}

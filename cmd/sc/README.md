@@ -1,6 +1,6 @@
 # sc — SuperCache CLI
 
-Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount**, **topkadd** / **topklist**, **cmsincr** / **cmsquery** over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
+Talk to SuperCache without writing Go: **get/put/del**, **bloom**, **z\***, **geo\***, **l\***, **h\***, **incr** / **cget**, **jsonset** / **jsonget** / **jsondel**, **bitset** / **bitget** / **bitcount** / **bitpos**, **hlladd** / **hllcount**, **topkadd** / **topklist**, **cmsincr** / **cmsquery**, **vadd**…, **xadd** / **xlen** / **xrange**… over Cache gRPC, **admin** diagnostics over HTTP, **multi-seed** failover, and an interactive **REPL**.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 |---------|------|----------------|
 | `get <key> [key...]` | Cache gRPC | Fetch value(s); miss = `(nil)`; exit `1` if any missing |
 | `put` / `set` | Cache gRPC | Store a value (string, `-file`, or stdin) — **KV modes only** (`set` is put, not ModeSet) |
-| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json/bitmap |
+| `del` / `delete` | Cache gRPC | Cluster invalidate (peer warnings on stderr); also wipes named Bloom/set/zset/geo/list/hash/counter/json/bitmap/hll/topk/cms/vectorset/stream |
 | `bloom add\|test <name> <item>` | Cache gRPC | `ModeBloom` membership (`test` prints `true`/`false`) |
 | `sadd <name> <item>` | Cache gRPC | `ModeSet` add |
 | `srem <name> <item>` | Cache gRPC | `ModeSet` remove |
@@ -98,6 +98,7 @@ This is **not** client-side sharding. Any healthy cache node is a valid front do
 | `cmsincr <name> <item> [n]` | Cache gRPC | `ModeCMS` increment (`n` optional, default 1; 0 means 1) |
 | `cmsquery <name> <item>` | Cache gRPC | decimal estimate, or `(nil)` + exit 1 if name missing |
 | `vadd` / `vrem` / `vsim` / `vcard` / `vdim` / `vemb` | Cache gRPC | `ModeVectorSet`; miss = `(nil)` |
+| `xadd` / `xlen` / `xrange` / `xrevrange` / `xdel` / `xtrim` | Cache gRPC | `ModeStream`; `xadd <name> * <payload>` prints id |
 | `ping` | both | Dial cache seeds + admin `/healthz` |
 | `peers` / `keyspaces` / `metrics` | Admin HTTP | Diagnostics |
 | `health` / `ready` | Admin HTTP | Probes |

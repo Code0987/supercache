@@ -284,6 +284,9 @@ func (e *Engine) Get(ctx context.Context, keyspaceName, key string) ([]byte, err
 	if ks.cfg.Mode == keyspace.ModeVectorSet {
 		return nil, fmt.Errorf("%w: use VEmb", ErrInvalidArgument)
 	}
+	if ks.cfg.Mode == keyspace.ModeStream {
+		return nil, fmt.Errorf("%w: use XRange", ErrInvalidArgument)
+	}
 
 	if ent, ok := ks.store.Get(key); ok {
 		if ent.IsNegative() {
@@ -508,6 +511,9 @@ func (e *Engine) Put(ctx context.Context, keyspaceName, key string, value []byte
 		}
 		if ks.cfg.Mode == keyspace.ModeVectorSet {
 			return fmt.Errorf("%w: use VAdd", ErrInvalidArgument)
+		}
+		if ks.cfg.Mode == keyspace.ModeStream {
+			return fmt.Errorf("%w: use XAdd", ErrInvalidArgument)
 		}
 	}
 	return e.putViaCluster(ctx, keyspaceName, key, value, opts...)
@@ -772,6 +778,9 @@ func (e *Engine) ApplyPutWithRingGen(keyspaceName, key string, ent store.Entry, 
 	}
 	if ent.IsVectorSet() {
 		return e.applyVectorSet(ks, key, ent), nil
+	}
+	if ent.IsStream() {
+		return e.applyStream(ks, key, ent), nil
 	}
 	if ent.IsNegative() {
 		// Negatives must not clobber live positives (AcceptNegative).

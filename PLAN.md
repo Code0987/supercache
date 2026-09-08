@@ -189,9 +189,9 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 
 | Operation | Contract |
 |-----------|----------|
-| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet. |
+| **Get** | Returns a local copy if present. On CacheOnly miss, **forwards to the owner** (replica stores the result; non-replica does not). May lag other replicas or the source-of-truth. **Invalid** on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet / ModeStream. |
 | **Put / PutMany** | Returns once the key's **owner** has accepted the write (assigned version, local apply). Value is **async fan-out** to the other **R−1 replicas** on the ring (`ReplicationFactor`, default 3; negative = all peers). Non-replica peer failures are not contacted. Replica failures: **log + metric only** (not in Put error). **Invalid** on structured modes. |
-| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK / CMS / vector-set entries. |
+| **Delete / DeleteMany** | Owner installs a tombstone and fans it through the **same replica apply+hint pool as Put** (`Fanout.Apply`, sync first attempt). Failed RPCs are hinted and replayed (LWW so a later delete supersedes a queued put). Returns **structured multi-error** if any replica is unreachable on the first attempt. Topology handoff uses the same pool. Applies to KV keys **and** named Bloom / set / zset / geo / list / hash / counter / JSON / bitmap / HLL / TopK / CMS / vector-set / stream entries. |
 | **BloomAdd / BloomTest** | `ModeBloom` only. Add ORs bits on owner + replicas (not LWW of the bitset). Test: local if replica has the filter, else owner-forward. Missing filter → test false. No per-item delete. |
 | **SetAdd / SetRemove / SetContains / SetCard / SetMembers** | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains/card/members: local on replica, owner-forward otherwise. Missing set → contains false, card 0, empty members. |
 | **ZAdd / ZRem / ZScore / ZCard / ZRange / ZRangeByScore** | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; score `float64` (NaN rejected). Equal scores order by member bytes. Range by Redis-style rank or inclusive score window. |
@@ -205,13 +205,14 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | **TopKAdd / TopKList** | `ModeTopK` only. Approximate heavy-hitters; Space-Saving, +1 observations. Owner applies the op then fans out a **full `FlagTopK` snapshot**. Replica `TopKList` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `TopKAdd` is ACK-only. Estimates do **not** match Redis `TOPK`. |
 | **CMSIncr / CMSQuery** | `ModeCMS` only. Approximate frequency of a named item; Count-Min, d=4 w=2048 dense 64 KiB. Owner applies the op then fans out a **full `FlagCMS` snapshot**. Replica `CMSQuery` may lag. Missing name → `ok=false`. Empty-until-delete. Get/Put **invalid**. `CMSIncr` is ACK-only (`n==0` means 1; no returned estimate). Estimates do **not** match Redis `CMS.QUERY`. |
 | **VAdd / VRem / VSim / VCard / VDim / VEmb** | `ModeVectorSet` only. Named embedding set; brute-force K-NN (`VectorMetric` cosine/L2/IP). Owner applies then fans a **full `FlagVectorSet` snapshot** (inbox `A`/`R` owner-only). Replica `VSim` may lag. Missing name → `VSim` empty, `VCard`/`VDim` `present=false`. Last rem keeps empty set (dim locked). Get/Put **invalid**. |
+| **XAdd / XRange / XRevRange / XLen / XDel / XTrim** | `ModeStream` only. Named append-only log; owner-minted `millis-seq` ids; opaque `[]byte` payload. Owner `XAdd` returns the id (peer `StreamAdd` from non-owner). Replicas install a **full `FlagStream` snapshot** (`S`; inbox `A`/`D`/`T` owner-only). Replica `XRange` may lag. Missing name → `XRange` empty, `XLen` `present=false`. Empty after last del/trim stays live until `Delete(name)`. Get/Put **invalid**. |
 | **UpdateKeySpace / DeleteKeySpace** | **Local to the calling node.** Re-issue on every node for cluster-wide rollout. Drift is unsupported in v1; expose config generation on `/peers` for detection. |
 
 ### Read-your-writes (normative)
 
 | Where | Guarantee |
 |-------|-----------|
-| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / TopKAdd / CMSIncr / BloomAdd | Local read verbs see the update immediately. |
+| **Owner node** after successful Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / Incr / JsonSet / JsonDel / BitSet / HLLAdd / TopKAdd / CMSIncr / BloomAdd / XAdd | Local read verbs see the update immediately. |
 | **Initiating client** (via gRPC) | **No** automatic same-socket RYOW unless the client dials the owner and reads there, **or** the client enables optional **client-side sticky buffer** (out of scope for v1 server). Document: *Write success means owner has the value; other nodes may lag until fan-out.* |
 | **Optional v1.1** | Client library may cache last write locally for RYOW within process — not server contract. |
 
@@ -318,6 +319,7 @@ Each keyspace has a mode. Opaque KV modes use Get/Put/Delete. Structured modes r
 | `ModeTopK` | table `name` | TopKAdd, TopKList; Delete(name) | `FlagTopK` snapshot; owner-inbox `FlagTopKAdd` |
 | `ModeCMS` | sketch `name` | CMSIncr, CMSQuery; Delete(name) | `FlagCMS` snapshot; owner-inbox `FlagCMSIncr` |
 | `ModeVectorSet` | set `name` | VAdd, VRem, VSim, VCard, VDim, VEmb; Delete(name) | `FlagVectorSet` snapshot; owner-inbox same flag + A/R prefix |
+| `ModeStream` | stream `name` | XAdd, XRange, XRevRange, XLen, XDel, XTrim; Delete(name) | `FlagStream` snapshot; owner-inbox same flag + A/D/T prefix |
 
 Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.openapi.yaml`, proto `api/proto/cache.proto`.
 
@@ -441,6 +443,17 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 - Package: `pkg/cmsx`; CLI: `sc cmsincr|cmsquery`; billboard complement: [`examples/billboard`](./examples/billboard/)
 - Design: [docs/design/2026-09-01-mode-cms.md](./docs/design/2026-09-01-mode-cms.md)
 
+### `ModeStream` (append-only log)
+
+- Named log; `XAdd` / `XRange` / `XRevRange` / `XLen` / `XDel` / `XTrim`; `Delete(name)` tombstone
+- Owner-minted `millis-seq` ids; one opaque `[]byte` payload (client encodes). Exclusive start is a leading `(` on `start`
+- Owner `XAdd` returns the id (peer `StreamAdd` from a non-owner). `XDel` / `XTrim` are ACK-only inbox `ApplyPut`
+- Replicas install a **full `FlagStream` snapshot** (`S`; inbox `A`/`D`/`T` owner-only). Replica `XRange` may lag
+- Missing name → `XRange` empty, `XLen` `present=false`. Empty after last del/trim stays live until `Delete(name)`
+- `StreamMaxLen` 0 = no auto-trim; hard cap **4096**. Get/Put invalid. Not consumer groups / not blocking `XREAD`
+- Package: `pkg/stream`; CLI: `sc xadd|xlen|xrange|xrevrange|xdel|xtrim`
+- Design: [docs/design/2026-09-08-mode-stream.md](./docs/design/2026-09-08-mode-stream.md)
+
 ### Precedence matrix
 
 | Incoming | vs local | Result |
@@ -453,7 +466,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
 | Negative entry | higher version / miss path | store negative; **Put always overrides** negative with higher version |
 | ApplyDelete adequate version | present or missing | install tombstone |
 | FlagSetAdd / FlagZSetAdd / FlagHashSet / Bloom item-add | structure present | mutate under mutex; version gate |
-| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL / FlagTopK / FlagCMS snapshot | structure or tombstone | install if version **>** local (equal ignore; tombstone blocks stale) |
+| FlagSet / FlagZSet / FlagBloom / FlagHash / FlagCounter / FlagJSON / FlagBitmap / FlagHLL / FlagTopK / FlagCMS / FlagVectorSet / FlagStream snapshot | structure or tombstone | install if version **>** local (equal ignore; tombstone blocks stale) |
 
 ---
 
@@ -464,7 +477,7 @@ Public reference: [docs/API.md](./docs/API.md), OpenAPI `api/openapi/cache.opena
                  pkg/client · cmd/sc (not in ring)
                          │
                     gRPC Cache :client
-                    (KV · Bloom · Set · ZSet · Geo · List · Hash · Counter · JSON · Bitmap · HLL · TopK)
+                    (KV · Bloom · Set · ZSet · Geo · List · Hash · Counter · JSON · Bitmap · HLL · TopK · CMS · VectorSet · Stream)
                          ▼
               ┌─────────────────────┐
               │  supercache-node    │
@@ -619,17 +632,23 @@ CMSIncr (ModeCMS; List-class snapshot, not step-3 item flag):
   2. else: CMSIncr under store mutex (stored = local+1); fan-out FlagCMS snapshot at PeekVersion
   3. replica ApplyPut of inbox flags is ignored
 
-Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount / TopKList / CMSQuery):
+XAdd / XDel / XTrim (ModeStream; List-class snapshot, Value[0] inbox):
+  1. if self != owner → peer StreamAdd (XAdd, returns id) or ApplyPut inbox A/D/T (XDel / XTrim, ACK-only)
+  2. else: mutate under store mutex (stored = local+1); mint millis-seq on XAdd; fan-out FlagStream snapshot
+  3. replica ApplyPut of inbox A/D/T is ignored; S snapshot installs LWW
+
+Read (SetContains / ZScore / GeoPos / HGet / HExists / HLen / HGetAll / BloomTest / CounterGet / JsonGet / BitGet / BitCount / BitPos / HLLCount / TopKList / CMSQuery / VSim / XRange / XLen):
   1. if local live structure → answer from store cache (field miss stays local)
      BitGet / BitCount / BitPos: local extract if HasBitmap (replica may lag)
      HLLCount: local extract if HasHLL (replica may lag)
      TopKList: local extract if HasTopK (replica may lag)
      CMSQuery: local extract if HasCMS (replica may lag)
+     XRange / XLen: local extract if HasStream (replica may lag)
   2. else if owner self → missing → empty/false
   3. else → peer.GetOrLoad(owner) structure snapshot; optional install if holdsReplica
   4. decode / answer
 
-Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL|FlagTopK|FlagCMS
+Handoff: include structure entries in LocalEntries; ApplyPut FlagSet|FlagZSet|FlagGeo|FlagHash|FlagBloom|FlagCounter|FlagJSON|FlagBitmap|FlagHLL|FlagTopK|FlagCMS|FlagVectorSet|FlagStream
          if incoming version > local (tombstone still blocks stale).
 ```
 
@@ -643,7 +662,7 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 
 | Need | Approach |
 |------|----------|
-| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK / CMS protected while live |
+| MaxBytes | cost-based eviction; tombstones / Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK / CMS / VectorSet / Stream protected while live |
 | TTL | `expire_at` on entry; lazy expire |
 | Set / Delete | First-class AcceptIfNewer / DeleteIfVersion |
 | Negative | Envelope flag |
@@ -655,6 +674,8 @@ Bloom **add** ORs bits (no full-blob LWW on item add). Set/ZSet **item** ops app
 | ModeHLL | dense register `Value` (no dirty cache); protect `FlagHLL` |
 | ModeTopK | encoded table `Value` (no dirty cache); protect `FlagTopK` |
 | ModeCMS | dense counter `Value` (no dirty cache); protect `FlagCMS` |
+| ModeVectorSet | encoded member table `Value` (no dirty cache); protect `FlagVectorSet` |
+| ModeStream | encoded log `Value` (no dirty cache); protect `FlagStream` |
 | ModeBloom | Bitset in entry value; in-place OR under mutex |
 
 **Not using stock golang/groupcache** for distribution or primary API (get-only, HTTP peers, no Put/Delete/TTL).
@@ -755,6 +776,22 @@ type Engine interface {
     CMSIncr(ctx context.Context, keyspace, name string, item []byte, n uint64) error
     CMSQuery(ctx context.Context, keyspace, name string, item []byte) (n uint64, ok bool, err error)
 
+    // ModeVectorSet
+    VAdd(ctx context.Context, keyspace, name string, member []byte, vec []float32) error
+    VRem(ctx context.Context, keyspace, name string, member []byte) error
+    VSim(ctx context.Context, keyspace, name string, vec []float32, k int) ([]VSimHit, error)
+    VCard(ctx context.Context, keyspace, name string) (n int, present bool, err error)
+    VDim(ctx context.Context, keyspace, name string) (dim int, present bool, err error)
+    VEmb(ctx context.Context, keyspace, name string, member []byte) (vec []float32, found bool, err error)
+
+    // ModeStream
+    XAdd(ctx context.Context, keyspace, name string, payload []byte) (id string, err error)
+    XRange(ctx context.Context, keyspace, name, start, end string, count int) ([]StreamEntry, error)
+    XRevRange(ctx context.Context, keyspace, name, start, end string, count int) ([]StreamEntry, error)
+    XLen(ctx context.Context, keyspace, name string) (n int, present bool, err error)
+    XDel(ctx context.Context, keyspace, name, id string) error
+    XTrim(ctx context.Context, keyspace, name string, maxLen int) error
+
     UpdateKeySpace(cfg KeySpaceConfig) error
     DeleteKeySpace(name string) error
     Events() <-chan ClusterEvent
@@ -794,6 +831,8 @@ const (
     ModeHLL
     ModeTopK
     ModeCMS
+    ModeVectorSet
+    ModeStream
 )
 
 type KeySpaceConfig struct {
@@ -814,6 +853,9 @@ type KeySpaceConfig struct {
     BloomBits      int            // ModeBloom; 0 = default
     BloomHashes    int            // ModeBloom; 0 = default
     TopKSize       int            // ModeTopK; 0 = default 100
+    VectorDim      int            // ModeVectorSet; 0 = first add locks
+    VectorMetric   VectorMetric   // ModeVectorSet; cosine / l2 / ip
+    StreamMaxLen   int            // ModeStream; 0 = no auto-trim; cap 4096
 }
 ```
 
@@ -827,7 +869,7 @@ type KeySpaceConfig struct {
 | Multi-node availability + read scale | Replicated mesh §2 |
 | Reduced backend load | Local hits, owner singleflight, negative TTL, protect |
 | TTL + LRU + MaxBytes + negative TTL | Store envelope + cost eviction |
-| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx`, `pkg/topkx`, `pkg/cmsx` |
+| ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet / ModeStream | §7, §9.6; `pkg/bloom`, `pkg/set`, `pkg/zset`, `pkg/geo`, `pkg/listx`, `pkg/hashx`, `pkg/counter`, `pkg/jsonx`, `pkg/bitmapx`, `pkg/hllx`, `pkg/topkx`, `pkg/cmsx`, `pkg/vecset`, `pkg/stream` |
 | Node discovery | memberlist among supercache-nodes |
 | KeySpace overrides | KeySpaceConfig |
 | Dynamic keyspace updates | Local UpdateKeySpace + config hash |
@@ -837,7 +879,7 @@ type KeySpaceConfig struct {
 | Admin diagnostics + OpenAPI docs | admin HTTP `/docs`; GitHub Pages |
 | OTel | telemetry pkg |
 | TLS + gossip auth | transport + memberlist secret |
-| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, hlladd/hllcount, topkadd/topklist, cmsincr/cmsquery |
+| CLI | `cmd/sc` get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bitset/bitget/bitcount/bitpos, hlladd/hllcount, topkadd/topklist, cmsincr/cmsquery, vadd*, xadd* |
 
 ---
 
@@ -939,6 +981,20 @@ service Cache {
   // ModeCMS
   rpc CMSIncr(CMSIncrRequest) returns (CMSIncrResponse);
   rpc CMSQuery(CMSQueryRequest) returns (CMSQueryResponse);
+  // ModeVectorSet
+  rpc VAdd(VAddRequest) returns (VAddResponse);
+  rpc VRem(VRemRequest) returns (VRemResponse);
+  rpc VSim(VSimRequest) returns (VSimResponse);
+  rpc VCard(VCardRequest) returns (VCardResponse);
+  rpc VDim(VDimRequest) returns (VDimResponse);
+  rpc VEmb(VEmbRequest) returns (VEmbResponse);
+  // ModeStream
+  rpc XAdd(XAddRequest) returns (XAddResponse);
+  rpc XRange(XRangeRequest) returns (XRangeResponse);
+  rpc XRevRange(XRevRangeRequest) returns (XRangeResponse);
+  rpc XLen(XLenRequest) returns (XLenResponse);
+  rpc XDel(XDelRequest) returns (XDelResponse);
+  rpc XTrim(XTrimRequest) returns (XTrimResponse);
 }
 
 // Messages carry: keyspace, key/name, value/item/member, score, start/stop,
@@ -960,6 +1016,7 @@ service Peer {
   rpc Prefetch(PrefetchRequest) returns (PrefetchResponse);
   rpc ListPop(ListPopRequest) returns (ListPopResponse); // ModeList non-owner pop
   rpc CounterIncr(CounterIncrRequest) returns (CounterIncrResponse); // ModeCounter non-owner incr
+  rpc StreamAdd(StreamAddRequest) returns (StreamAddResponse); // ModeStream non-owner XAdd
 }
 ```
 
@@ -1138,7 +1195,7 @@ Do **not** use SuperCache for:
 | No versioning | §6 owner versions + LWW apply rules |
 | groupcache unfit | §10 custom LRU Store interface |
 | DataSource vs Put | §7 LoadThrough vs CacheOnly + precedence |
-| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS; §9.6; §11 Engine API; §14 Cache RPCs |
+| Structured types | §7 ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet / ModeStream; §9.6; §11 Engine API; §14 Cache RPCs |
 | Library vs peers | §4 nodes-only ring; pkg/client for apps |
 | Multi-error / PutMany | §11 MultiError; §9.2–9.3 batch rules |
 | Get miss underspecified | §9.1 normative algorithm |
