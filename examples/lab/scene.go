@@ -8,7 +8,7 @@ import (
 
 var demoNames = []string{
 	"session", "chart", "users", "flags", "board", "places", "inbox",
-	"profile", "rl", "doc", "seen", "uniques", "hot", "freq", "items",
+	"profile", "rl", "doc", "seen", "uniques", "hot", "freq", "items", "logs",
 }
 
 type sceneStep struct {
@@ -132,6 +132,12 @@ func sceneOps(id string) ([]opReq, string, error) {
 			mustOp("vectorset", "vadd", "items", "", map[string]any{"member": "north", "vec": []float32{0, 1}}),
 			mustOp("vectorset", "vsim", "items", "", map[string]any{"vec": []float32{1, 0.05}, "k": 2}),
 		}, "Brute-force K-NN. Metric is a keyspace knob, not a query argument.", nil
+	case "stream":
+		return []opReq{
+			mustOp("stream", "xadd", "logs", "", map[string]any{"value": "hello"}),
+			mustOp("stream", "xadd", "logs", "", map[string]any{"value": "world"}),
+			mustOp("stream", "xrange", "logs", "", map[string]any{"start": "-", "end": "+", "count": 0}),
+		}, "Append-only log. XAdd returns a millis-seq id; replicas get a full snapshot.", nil
 	default:
 		return nil, "", fmt.Errorf("unknown scene %q", id)
 	}

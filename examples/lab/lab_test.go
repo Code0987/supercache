@@ -20,7 +20,7 @@ func TestLabHTTPCluster(t *testing.T) {
 	}
 	want := []string{
 		"cacheonly", "loadthrough", "bloom", "set", "zset", "geo", "list",
-		"hash", "counter", "json", "bitmap", "hll", "topk", "cms", "vectorset",
+		"hash", "counter", "json", "bitmap", "hll", "topk", "cms", "vectorset", "stream",
 	}
 	got := map[string]bool{}
 	for _, raw := range asSlice(body["keyspaces"]) {
@@ -195,6 +195,88 @@ func TestLabBloomGrid(t *testing.T) {
 	if len(bits) != 64 {
 		t.Fatalf("bits len %d", len(bits))
 	}
+}
+
+func TestLabStreamXAddRange(t *testing.T) {
+	lab := startTestLab(t)
+	name := "logs-" + fmt.Sprint(time.Now().UnixNano())
+	a := postJSON(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "xadd", "name": name,
+		"args": map[string]any{"value": "old"},
+	})
+	if ok, _ := a["ok"].(bool); !ok {
+		t.Fatalf("xadd1: %v", a)
+	}
+	id1, _ := resultMap(a)["id"].(string)
+	if !strings.Contains(id1, "-") {
+		t.Fatalf("id1: %v", a)
+	}
+	b := postJSON(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "xadd", "name": name,
+		"args": map[string]any{"value": "new"},
+	})
+	id2, _ := resultMap(b)["id"].(string)
+	ln := postJSON(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "xlen", "name": name,
+	})
+	res := resultMap(ln)
+	if n, _ := res["n"].(float64); n != 2 {
+		t.Fatalf("xlen: %v", ln)
+	}
+	if present, _ := res["present"].(bool); !present {
+		t.Fatalf("present: %v", ln)
+	}
+	fwd := postJSON(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "xrange", "name": name,
+		"args": map[string]any{"start": "-", "end": "+", "count": 0},
+	})
+	ents := resultEntries(fwd)
+	if len(ents) != 2 || ents[0]["id"] != id1 || ents[1]["id"] != id2 || ents[0]["payload"] != "old" {
+		t.Fatalf("xrange: %v", fwd)
+	}
+	rev := postJSON(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "xrevrange", "name": name,
+		"args": map[string]any{"start": "-", "end": "+", "count": 1},
+	})
+	rents := resultEntries(rev)
+	if len(rents) != 1 || rents[0]["id"] != id2 || rents[0]["payload"] != "new" {
+		t.Fatalf("xrevrange: %v", rev)
+	}
+}
+
+func TestLabStreamWrongVerb(t *testing.T) {
+	lab := startTestLab(t)
+	code, body := postJSONStatus(t, lab, "/v1/op", map[string]any{
+		"ks": "stream", "op": "get", "name": "logs",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status %d body=%s", code, body)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if inv, _ := resp["invalid_argument"].(bool); !inv {
+		t.Fatalf("want invalid_argument: %v", resp)
+	}
+}
+
+func resultMap(resp map[string]any) map[string]any {
+	m, _ := resp["result"].(map[string]any)
+	if m == nil {
+		return map[string]any{}
+	}
+	return m
+}
+
+func resultEntries(resp map[string]any) []map[string]any {
+	raw, _ := resultMap(resp)["entries"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, v := range raw {
+		m, _ := v.(map[string]any)
+		out = append(out, m)
+	}
+	return out
 }
 
 func TestLabHoldFalse(t *testing.T) {

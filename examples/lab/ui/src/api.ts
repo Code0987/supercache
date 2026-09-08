@@ -84,6 +84,7 @@ export const CHAPTERS: Chapter[] = [
   { id: "topk", label: "TopK", ks: "topk", name: "hot" },
   { id: "cms", label: "CMS", ks: "cms", name: "freq" },
   { id: "vectorset", label: "VectorSet", ks: "vectorset", name: "items" },
+  { id: "stream", label: "Stream", ks: "stream", name: "logs" },
 ];
 
 export async function getCluster(): Promise<ClusterInfo> {
