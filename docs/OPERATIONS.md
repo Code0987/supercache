@@ -75,6 +75,7 @@ Peer mesh with mTLS: every node uses the same CA; each node presents a cert sign
 | `ModeTopK` | TopKAdd / TopKList / Delete(name) | Space-Saving table; snapshot fan-out + owner-inbox; replica TopKList may lag |
 | `ModeCMS` | CMSIncr / CMSQuery / Delete(name) | Count-Min 64 KiB; snapshot fan-out + owner-inbox; replica CMSQuery may lag |
 | `ModeVectorSet` | VAdd / VRem / VSim / VCard / VDim / VEmb / Delete(name) | embeddings; cosine/L2/IP; snapshot fan-out + A/R inbox; replica VSim may lag |
+| `ModeStream` | XAdd / XRange / XRevRange / XLen / XDel / XTrim / Delete(name) | append-only log; opaque payload; snapshot fan-out; XAdd returns id |
 
 Wrong verb for the mode → invalid argument. Configure the same modes on every node (see rollout above).
 
@@ -86,7 +87,7 @@ Demo node (`-demo-keyspace`): one keyspace per shipped demo mode, **name = lower
 |----|-----------|
 | Get | Local observation on the queried node |
 | Put | ACK after **owner** accept; async fan-out to **R−1 replicas** (`ReplicationFactor`, default 3). Failed `ApplyPut`s are hinted per replica and replayed when that peer is reachable again (bounded; oldest dropped). |
-| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap/HLL/TopK entries. |
+| Delete | Owner tombstone, then the **same replica apply+hint pool as Put** (sync first attempt). Failed peers are hinted and replayed. `MultiError` if any replica fails on that first attempt. Tombstones expire after `TombstoneTTL` (default 5m; negative = never). Join handoff uses the same pool. Applies to KV keys **and** named Bloom/Set/ZSet/Geo/List/Hash/Counter/JSON/Bitmap/HLL/TopK/CMS/VectorSet/Stream entries. |
 | BloomAdd / BloomTest | `ModeBloom` only. Add ORs bits on the owner and replicas (not LWW of the bitset). Test is local on a replica, owner-forward otherwise. There is no per-item delete. |
 | SetAdd / SetRemove / SetContains | `ModeSet` only. Owner serializes mutations; item-level fan-out (`FlagSetAdd` / `FlagSetRemove`). Contains is local on a replica, owner-forward otherwise. |
 | ZAdd / ZRem / ZScore / ZRange* | `ModeZSet` only. Same ownership pattern as ModeSet; item-level `FlagZSetAdd` / `FlagZSetRem`; handoff ships full encoded zset (`FlagZSet`). |
@@ -100,6 +101,7 @@ Demo node (`-demo-keyspace`): one keyspace per shipped demo mode, **name = lower
 | TopKAdd / TopKList | `ModeTopK` only. Owner applies the op then fans out a **full `FlagTopK` snapshot** (inbox `FlagTopKAdd` stays owner-only). Replica `TopKList` may lag. Missing name → `ok=false`. `TopKAdd` is ACK-only (+1). |
 | CMSIncr / CMSQuery | `ModeCMS` only. Owner applies the op then fans out a **full `FlagCMS` snapshot** (inbox `FlagCMSIncr` stays owner-only). Replica `CMSQuery` may lag. Missing name → `ok=false`. `CMSIncr` is ACK-only (`n==0` means 1). See [`examples/billboard`](../examples/billboard/) for the ModeCMS complement. |
 | VAdd / VSim / VRem | `ModeVectorSet` only. Owner applies then fans a **full `FlagVectorSet` snapshot** (`A`/`R` inbox owner-only). Metric is keyspace `VectorMetric`. Replica `VSim` may lag. See [`examples/vecset`](../examples/vecset/). |
+| XAdd / XRange / XLen | `ModeStream` only. Owner mints `millis-seq` and fans a **full `FlagStream` snapshot**. Non-owner `XAdd` uses peer `StreamAdd`. Replica `XRange` may lag. |
 | Failures | Fan-out errors are metrics-only on Put (and analogous async structure fan-out) |
 
 Set TTLs to your max acceptable staleness (TTL applies to the **whole** named structure, not per member).

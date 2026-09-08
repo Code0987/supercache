@@ -217,6 +217,14 @@ type Store interface {
 	HasVectorSet(key string) bool
 	VSInstall(key string, blob []byte, version uint64, expireAt int64) bool
 
+	XAdd(key string, payload []byte, version uint64, expireAt int64, maxValue, autoTrim int) (id string, applied, tooLarge, full bool)
+	XDel(key, id string, version uint64, expireAt int64) bool
+	XTrim(key string, maxLen int, version uint64, expireAt int64) bool
+	XRange(key, start, end string, count int, rev bool) ([]StreamEntry, bool, error)
+	XLen(key string) (n int, ok bool)
+	HasStream(key string) bool
+	SXInstall(key string, blob []byte, version uint64, expireAt int64) bool
+
 	// Close releases resources.
 	Close()
 }

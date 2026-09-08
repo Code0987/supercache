@@ -4,38 +4,39 @@ import "time"
 
 // Flag bits for Entry.Flags.
 const (
-	FlagNegative  uint32 = 1 << 0
-	FlagTombstone uint32 = 1 << 1  // versioned delete marker (blocks stale ApplyPut)
-	FlagBloom     uint32 = 1 << 2  // value is a Bloom bitset
-	FlagBloomAdd  uint32 = 1 << 3  // fan-out only: value is an item to OR into the filter
-	FlagSet       uint32 = 1 << 4  // value is encoded exact-set membership
-	FlagSetAdd    uint32 = 1 << 5  // fan-out only: value is an item to insert
-	FlagSetRemove uint32 = 1 << 6  // fan-out only: value is an item to remove
-	FlagZSet      uint32 = 1 << 7  // value is encoded sorted set
-	FlagZSetAdd   uint32 = 1 << 8  // fan-out: single scored member
-	FlagZSetRem   uint32 = 1 << 9  // fan-out: member to remove
-	FlagGeo       uint32 = 1 << 10 // value is encoded geo index
-	FlagGeoAdd    uint32 = 1 << 11 // fan-out: single lon/lat member
-	FlagGeoRem    uint32 = 1 << 12 // fan-out: member to remove
-	FlagList      uint32 = 1 << 13 // value is encoded list
-	FlagListLPush uint32 = 1 << 14 // owner-inbox: prepend item
-	FlagListRPush uint32 = 1 << 15 // owner-inbox: append item
-	FlagHash      uint32 = 1 << 16 // value is encoded hash
-	FlagHashSet   uint32 = 1 << 17 // fan-out: single field/value
-	FlagHashDel   uint32 = 1 << 18 // fan-out: field to remove
-	FlagCounter   uint32 = 1 << 19 // value is 8-byte LE int64 snapshot
-	FlagJSON      uint32 = 1 << 20 // value is encoded JSON document snapshot
-	FlagJSONSet   uint32 = 1 << 21 // owner-inbox: path + JSON value
-	FlagJSONDel   uint32 = 1 << 22 // owner-inbox: path
-	FlagBitmap    uint32 = 1 << 23 // value is packed Redis-order bit string snapshot
-	FlagBitmapSet uint32 = 1 << 24 // owner-inbox: uvarint(offset) + 0/1
-	FlagHLL       uint32 = 1 << 25 // value is dense 12 KiB register snapshot
-	FlagHLLAdd    uint32 = 1 << 26 // owner-inbox: raw item bytes
-	FlagTopK      uint32 = 1 << 27 // value is encoded Space-Saving snapshot
-	FlagTopKAdd   uint32 = 1 << 28 // owner-inbox only: raw item to Add (replicas ignore)
-	FlagCMS       uint32 = 1 << 29 // value is dense 64 KiB Count-Min snapshot
-	FlagCMSIncr   uint32 = 1 << 30 // owner-inbox only: uvarint(n) || item (replicas ignore)
-	FlagVectorSet uint32 = 1 << 31 // snapshot or owner-inbox; discriminate by Value[0]
+	FlagNegative  uint64 = 1 << 0
+	FlagTombstone uint64 = 1 << 1  // versioned delete marker (blocks stale ApplyPut)
+	FlagBloom     uint64 = 1 << 2  // value is a Bloom bitset
+	FlagBloomAdd  uint64 = 1 << 3  // fan-out only: value is an item to OR into the filter
+	FlagSet       uint64 = 1 << 4  // value is encoded exact-set membership
+	FlagSetAdd    uint64 = 1 << 5  // fan-out only: value is an item to insert
+	FlagSetRemove uint64 = 1 << 6  // fan-out only: value is an item to remove
+	FlagZSet      uint64 = 1 << 7  // value is encoded sorted set
+	FlagZSetAdd   uint64 = 1 << 8  // fan-out: single scored member
+	FlagZSetRem   uint64 = 1 << 9  // fan-out: member to remove
+	FlagGeo       uint64 = 1 << 10 // value is encoded geo index
+	FlagGeoAdd    uint64 = 1 << 11 // fan-out: single lon/lat member
+	FlagGeoRem    uint64 = 1 << 12 // fan-out: member to remove
+	FlagList      uint64 = 1 << 13 // value is encoded list
+	FlagListLPush uint64 = 1 << 14 // owner-inbox: prepend item
+	FlagListRPush uint64 = 1 << 15 // owner-inbox: append item
+	FlagHash      uint64 = 1 << 16 // value is encoded hash
+	FlagHashSet   uint64 = 1 << 17 // fan-out: single field/value
+	FlagHashDel   uint64 = 1 << 18 // fan-out: field to remove
+	FlagCounter   uint64 = 1 << 19 // value is 8-byte LE int64 snapshot
+	FlagJSON      uint64 = 1 << 20 // value is encoded JSON document snapshot
+	FlagJSONSet   uint64 = 1 << 21 // owner-inbox: path + JSON value
+	FlagJSONDel   uint64 = 1 << 22 // owner-inbox: path
+	FlagBitmap    uint64 = 1 << 23 // value is packed Redis-order bit string snapshot
+	FlagBitmapSet uint64 = 1 << 24 // owner-inbox: uvarint(offset) + 0/1
+	FlagHLL       uint64 = 1 << 25 // value is dense 12 KiB register snapshot
+	FlagHLLAdd    uint64 = 1 << 26 // owner-inbox: raw item bytes
+	FlagTopK      uint64 = 1 << 27 // value is encoded Space-Saving snapshot
+	FlagTopKAdd   uint64 = 1 << 28 // owner-inbox only: raw item to Add (replicas ignore)
+	FlagCMS       uint64 = 1 << 29 // value is dense 64 KiB Count-Min snapshot
+	FlagCMSIncr   uint64 = 1 << 30 // owner-inbox only: uvarint(n) || item (replicas ignore)
+	FlagVectorSet uint64 = 1 << 31 // snapshot or owner-inbox; discriminate by Value[0]
+	FlagStream    uint64 = 1 << 32 // snapshot or owner-inbox; discriminate by Value[0]
 )
 
 // Entry is the on-node stored value envelope (versioned LWW + TTL).
@@ -43,7 +44,7 @@ type Entry struct {
 	Value    []byte
 	Version  uint64
 	ExpireAt int64 // unix nano; 0 = no expiry
-	Flags    uint32
+	Flags    uint64
 }
 
 // IsNegative reports whether this is a negative-cache sentinel.
@@ -185,6 +186,10 @@ func (e Entry) IsCMSIncr() bool {
 
 func (e Entry) IsVectorSet() bool {
 	return e.Flags&FlagVectorSet != 0
+}
+
+func (e Entry) IsStream() bool {
+	return e.Flags&FlagStream != 0
 }
 
 // Expired reports whether the entry is past ExpireAt at time now.

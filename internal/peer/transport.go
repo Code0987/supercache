@@ -195,6 +195,21 @@ func (t *Transport) CounterIncr(ctx context.Context, addr, keyspace, name string
 	return resp.GetValue(), nil
 }
 
+// StreamAdd asks the owner to XAdd and returns the minted id.
+func (t *Transport) StreamAdd(ctx context.Context, addr, keyspace, name string, payload []byte) (string, error) {
+	cli, err := t.client(addr)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := t.rpcContext(ctx)
+	defer cancel()
+	resp, err := cli.StreamAdd(ctx, &peerv1.StreamAddRequest{Keyspace: keyspace, Name: name, Payload: payload})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetId(), nil
+}
+
 // FanoutConfig controls async ApplyPut fan-out.
 type FanoutConfig struct {
 	Workers   int

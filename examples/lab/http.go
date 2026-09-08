@@ -286,7 +286,7 @@ func (l *Lab) snapshot(ks, key string) map[string]any {
 	}
 	out := make([]map[string]any, 0, len(nodes))
 	for _, n := range nodes {
-		kind, ver, flags, bytes := "missing", uint64(0), uint32(0), 0
+		kind, ver, flags, bytes := "missing", uint64(0), uint64(0), 0
 		role := "other"
 		if n.Engine != nil {
 			v := n.Engine.LocalView(ks, key)

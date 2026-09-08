@@ -38,7 +38,7 @@ func (k LocalKind) MarshalJSON() ([]byte, error) {
 type LocalView struct {
 	Kind    LocalKind `json:"kind"`
 	Version uint64    `json:"version"`
-	Flags   uint32    `json:"flags"`
+	Flags   uint64    `json:"flags"`
 	Bytes   int       `json:"bytes"`
 }
 

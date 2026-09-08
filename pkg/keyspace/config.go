@@ -48,6 +48,8 @@ const (
 	ModeCMS
 	// ModeVectorSet is a named embedding set (VAdd / VSim / VRem / …).
 	ModeVectorSet
+	// ModeStream is a named append-only log (XAdd / XRange / …).
+	ModeStream
 )
 
 func (m Mode) String() string {
@@ -82,6 +84,8 @@ func (m Mode) String() string {
 		return "CMS"
 	case ModeVectorSet:
 		return "VectorSet"
+	case ModeStream:
+		return "Stream"
 	default:
 		return fmt.Sprintf("Mode(%d)", int(m))
 	}
@@ -107,6 +111,8 @@ const (
 	DefaultBloomHashes = 7
 	// DefaultTopKSize is K when Config.TopKSize is 0 (billboard-sized).
 	DefaultTopKSize = 100
+	// StreamHardCap is the max entries per name even when StreamMaxLen is 0.
+	StreamHardCap = 4096
 )
 
 // EffectiveReplication returns how many peers should store each key given
@@ -182,6 +188,10 @@ type Config struct {
 	VectorDim int
 	// VectorMetric is cosine (0), L2, or IP for ModeVectorSet.
 	VectorMetric VectorMetric
+
+	// StreamMaxLen auto-trims oldest entries after XAdd (0 = no auto-trim).
+	// Capped at StreamHardCap (4096).
+	StreamMaxLen int
 }
 
 // VectorMetric is the keyspace K-NN formula.
@@ -304,6 +314,17 @@ func (c Config) EffectiveTopKSize() int {
 	return c.TopKSize
 }
 
+// EffectiveStreamMaxLen is auto-trim after XAdd (0 = none). Values above StreamHardCap clamp.
+func (c Config) EffectiveStreamMaxLen() int {
+	if c.StreamMaxLen <= 0 {
+		return 0
+	}
+	if c.StreamMaxLen > StreamHardCap {
+		return StreamHardCap
+	}
+	return c.StreamMaxLen
+}
+
 // ConfigHash is a stable hash of non-function config fields for drift detection.
 func (c Config) ConfigHash() string {
 	type wire struct {
@@ -330,6 +351,7 @@ func (c Config) ConfigHash() string {
 		TopKSize          int
 		VectorDim         int
 		VectorMetric      int
+		StreamMaxLen      int
 	}
 	b, _ := json.Marshal(wire{
 		Name:              c.Name,
@@ -355,6 +377,7 @@ func (c Config) ConfigHash() string {
 		TopKSize:          c.TopKSize,
 		VectorDim:         c.VectorDim,
 		VectorMetric:      int(c.VectorMetric),
+		StreamMaxLen:      c.StreamMaxLen,
 	})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])

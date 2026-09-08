@@ -140,6 +140,14 @@ func (s *Server) CounterIncr(ctx context.Context, req *peerv1.CounterIncrRequest
 	return &peerv1.CounterIncrResponse{Value: n}, nil
 }
 
+func (s *Server) StreamAdd(ctx context.Context, req *peerv1.StreamAddRequest) (*peerv1.StreamAddResponse, error) {
+	id, err := s.eng.XAdd(ctx, req.Keyspace, req.Name, req.Payload)
+	if err != nil {
+		return nil, grpcmap.Status(err)
+	}
+	return &peerv1.StreamAddResponse{Id: id}, nil
+}
+
 // ListenAndServe starts a gRPC server on addr (e.g. ":9001").
 // Pass grpc.Creds(credentials.NewTLS(cfg)) for TLS/mTLS; omit for plaintext (dev only).
 func ListenAndServe(addr string, eng *engine.Engine, opts ...grpc.ServerOption) (*grpc.Server, net.Listener, error) {

@@ -321,7 +321,7 @@ flowchart TD
 
 ---
 
-## Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap)
+## Structured types (Bloom / Set / ZSet / Geo / List / Hash / Counter / JSON / Bitmap / HLL / TopK / CMS / VectorSet / Stream)
 
 KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 
@@ -340,6 +340,7 @@ KV Get/Put diagrams above apply only to `ModeCacheOnly` / `ModeLoadThrough`.
 | ModeTopK | owner `TopKAdd` then **`FlagTopK` snapshot** | `TopKList` | Space-Saving table (≤ K slots) |
 | ModeCMS | owner `CMSIncr` then **`FlagCMS` snapshot** | `CMSQuery` | dense 64 KiB Count-Min |
 | ModeVectorSet | owner `VAdd`/`VRem` then **`FlagVectorSet` snapshot** | `VSim` / `VEmb` / `VCard` / `VDim` | brute-force cosine/L2/IP |
+| ModeStream | owner `XAdd`/`XDel`/`XTrim` then **`FlagStream` snapshot** | `XRange` / `XRevRange` / `XLen` | append-only log; peer `StreamAdd` returns id |
 
 `Delete(name)` uses the same tombstone path as KV Delete. Owner serializes writes; replicas apply under version gates. Non-replicas forward reads to the owner (and may install a replica copy when in RF).
 
@@ -352,7 +353,7 @@ See [API.md](./API.md) and design docs under `docs/design/`.
 ```mermaid
 flowchart TB
   subgraph Client
-    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet / Json* / BitSet / BitGet / BitCount / BitPos / HLLAdd / HLLCount / TopKAdd / TopKList / CMSIncr / CMSQuery"]
+    OPS["Get / Put / PutMany<br/>Delete / DeleteMany<br/>Bloom* / Set* / Z* / Geo* / L* / H* / Incr / CounterGet / Json* / BitSet / BitGet / BitCount / BitPos / HLLAdd / HLLCount / TopKAdd / TopKList / CMSIncr / CMSQuery / VAdd / VSim / XAdd / XRange"]
   end
 
   subgraph Node["Any of N nodes"]

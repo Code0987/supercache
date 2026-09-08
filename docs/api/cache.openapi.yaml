@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: SuperCache Cache API (gRPC reference)
-  version: 0.13.0
+  version: 0.14.0
   description: |
     **Application data plane** — gRPC service `supercache.cache.v1.Cache` on the
     node **`-cache`** port (default `9000`).
@@ -14,7 +14,7 @@ info:
     | Client | Example |
     |--------|---------|
     | Go | `pkg/client` — `client.Dial` / `DialTLS` |
-    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` / `topkadd` / `cmsincr` / `vadd` … |
+    | CLI | `sc get` / `put` / `del` / `bloom` / `sadd` / `zadd` / `geoadd` / `lpush` / `hset` / `incr` / `jsonset` / `bitset` / `hlladd` / `topkadd` / `cmsincr` / `vadd` / `xadd` … |
     | Proto | `api/proto/cache.proto` |
 
     Stock demo keyspaces are lowercase `Mode.String()`: `cacheonly`, `set`, `zset`,
@@ -38,13 +38,14 @@ info:
     | ModeTopK | TopKAdd, TopKList; Delete(name) |
     | ModeCMS | CMSIncr, CMSQuery; Delete(name) |
     | ModeVectorSet | VAdd, VRem, VSim, VCard, VDim, VEmb; Delete(name) |
+    | ModeStream | XAdd, XRange, XRevRange, XLen, XDel, XTrim; Delete(name) |
 
     Wrong verb for the mode → invalid argument (gRPC InvalidArgument).
 
     ### Consistency (short)
 
-    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount / TopKList / CMSQuery / VSim / VCard / VDim / VEmb** — observation on the **queried node** (may lag; non-replicas may owner-forward)
-    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd / TopKAdd / CMSIncr / VAdd / VRem** — ACK after **ring owner** accepts; async fan-out to replicas
+    - **Get / SetContains / ZScore / GeoPos / LIndex / HGet / BloomTest / JsonGet / BitGet / HLLCount / TopKList / CMSQuery / VSim / VCard / VDim / VEmb / XRange / XRevRange / XLen** — observation on the **queried node** (may lag; non-replicas may owner-forward)
+    - **Put / SetAdd / ZAdd / GeoAdd / LPush / HSet / BloomAdd / JsonSet / BitSet / HLLAdd / TopKAdd / CMSIncr / VAdd / VRem / XAdd** — ACK after **ring owner** accepts; async fan-out to replicas
     - **Delete** — owner tombstone + replica apply/hint; peer failures returned on first attempt
 
     Peer mesh (`api/proto/peer.proto`) is internal — do not expose to apps.
@@ -96,6 +97,12 @@ tags:
       Dim 2–256 (first `VAdd` locks). Max 512 members, member id 1–255 bytes.
       Keyspace `VectorMetric`: cosine (default, high→low), l2 (low→high), ip (high→low).
       Cosine rejects the zero vector; L2/IP allow zeros. Not HNSW / not Redis VADD wire.
+  - name: Stream
+    description: |
+      Named append-only log (`ModeStream`). Owner-minted `millis-seq` ids;
+      one opaque `[]byte` payload. Exclusive start is a leading `(` on `start`.
+      `StreamMaxLen` 0 = no auto-trim; hard cap 4096. Not consumer groups /
+      not blocking XREAD.
 
 paths:
   /supercache.cache.v1.Cache/Get:
@@ -107,7 +114,7 @@ paths:
         gRPC `Get(GetRequest) returns (GetResponse)`.
 
         Returns `found=false` when missing or negative-cached (client maps to not found).
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet / ModeStream.
 
         CLI: `sc get greeting` (miss → `(nil)`).
       requestBody:
@@ -137,7 +144,7 @@ paths:
 
         `ttl_set=true` applies `ttl_nanos` for this write (0 = no expiry).
         When `ttl_set=false`, the keyspace default TTL is used.
-        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet.
+        Invalid on ModeBloom / ModeSet / ModeZSet / ModeGeo / ModeList / ModeHash / ModeCounter / ModeJSON / ModeBitmap / ModeHLL / ModeTopK / ModeCMS / ModeVectorSet / ModeStream.
 
         CLI: `sc put greeting "hello"` → `OK put greeting (5 bytes)`.
       requestBody:
@@ -1428,6 +1435,180 @@ paths:
               schema:
                 $ref: "#/components/schemas/VEmbResponse"
 
+  /supercache.cache.v1.Cache/XAdd:
+    post:
+      tags: [Stream]
+      operationId: Cache_XAdd
+      summary: Append an entry
+      description: |
+        ModeStream only. Creates the stream if missing. Returns the minted
+        `millis-seq` id. Payload is opaque `[]byte` (empty allowed).
+        Non-owner calls use peer `StreamAdd`. Replicas install a full
+        `FlagStream` snapshot. After add, `StreamMaxLen` (if >0) drops oldest
+        until `len <= StreamMaxLen`. Hard cap 4096.
+
+        CLI: `sc -keyspace events xadd logs * hello` → prints id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XAddRequest"
+            example:
+              keyspace: events
+              name: logs
+              payload: aGVsbG8=
+      responses:
+        "200":
+          description: Minted id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/XAddResponse"
+
+  /supercache.cache.v1.Cache/XRange:
+    post:
+      tags: [Stream]
+      operationId: Cache_XRange
+      summary: Inclusive id window, oldest first
+      description: |
+        ModeStream only. `start`/`end` are Redis-ish `-` / `+` or `millis-seq`.
+        A leading `(` on `start` is exclusive (resume after a cursor).
+        `count<=0` means no cap; `count>512` is clamped to 512.
+        Missing name → empty `entries` (not an error). Replica may lag.
+
+        CLI: `sc -keyspace events xrange logs - + 10`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XRangeRequest"
+            example:
+              keyspace: events
+              name: logs
+              start: "-"
+              end: "+"
+              count: 10
+      responses:
+        "200":
+          description: Entries, oldest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/XRangeResponse"
+
+  /supercache.cache.v1.Cache/XRevRange:
+    post:
+      tags: [Stream]
+      operationId: Cache_XRevRange
+      summary: Inclusive id window, newest first
+      description: |
+        ModeStream only. Same `start`/`end` window as `XRange` (`-` min, `+` max;
+        exclusive `(` on `start` only). Returns newest first.
+        Missing name → empty `entries`. Replica may lag.
+
+        CLI: `sc -keyspace events xrevrange logs - + 10`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XRevRangeRequest"
+            example:
+              keyspace: events
+              name: logs
+              start: "-"
+              end: "+"
+              count: 10
+      responses:
+        "200":
+          description: Entries, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/XRangeResponse"
+
+  /supercache.cache.v1.Cache/XLen:
+    post:
+      tags: [Stream]
+      operationId: Cache_XLen
+      summary: Entry count
+      description: |
+        ModeStream only. Missing name → `present=false`, `n=0`.
+        Empty live stream (after last XDel / XTrim 0) → `present=true`, `n=0`.
+
+        CLI: `sc -keyspace events xlen logs` (miss → `(nil)`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XLenRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/XLenResponse"
+
+  /supercache.cache.v1.Cache/XDel:
+    post:
+      tags: [Stream]
+      operationId: Cache_XDel
+      summary: Remove one id
+      description: |
+        ModeStream only. ACK-only. Missing name or id is a no-op.
+        Last delete leaves a live empty stream until `Delete(name)`.
+
+        CLI: `sc -keyspace events xdel logs 1710000000000-0`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XDelRequest"
+            example:
+              keyspace: events
+              name: logs
+              id: "1710000000000-0"
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
+  /supercache.cache.v1.Cache/XTrim:
+    post:
+      tags: [Stream]
+      operationId: Cache_XTrim
+      summary: Keep newest N entries
+      description: |
+        ModeStream only. ACK-only. `max_len < 0` is invalid. `max_len=0`
+        empties the stream but keeps it live until `Delete(name)`.
+
+        CLI: `sc -keyspace events xtrim logs 100`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/XTrimRequest"
+            example:
+              keyspace: events
+              name: logs
+              max_len: 100
+      responses:
+        "200":
+          description: Accepted by owner (empty body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+
 components:
   schemas:
     Empty:
@@ -2286,3 +2467,111 @@ components:
             format: float
         found:
           type: boolean
+    StreamEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "millis-seq, e.g. 1710000000000-0"
+        payload:
+          type: string
+          format: byte
+          description: Opaque client-encoded payload
+    XAddRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        payload:
+          type: string
+          format: byte
+    XAddResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Minted millis-seq id
+    XRangeRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        start:
+          type: string
+          description: "-" / millis-seq / exclusive "(id"
+        end:
+          type: string
+          description: "+" / millis-seq (always inclusive)
+        count:
+          type: integer
+          format: int32
+          description: "<=0 no cap; >512 clamped to 512"
+    XRevRangeRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        start:
+          type: string
+          description: "-" / millis-seq / exclusive "(id" (same as XRange)
+        end:
+          type: string
+          description: "+" / millis-seq (always inclusive)
+        count:
+          type: integer
+          format: int32
+    XRangeResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/StreamEntry"
+    XLenRequest:
+      type: object
+      required: [keyspace, name]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+    XLenResponse:
+      type: object
+      properties:
+        n:
+          type: integer
+          format: int64
+        present:
+          type: boolean
+          description: false if the name is missing / expired / tombstoned
+    XDelRequest:
+      type: object
+      required: [keyspace, name, id]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        id:
+          type: string
+    XTrimRequest:
+      type: object
+      required: [keyspace, name, max_len]
+      properties:
+        keyspace:
+          type: string
+        name:
+          type: string
+        max_len:
+          type: integer
+          format: int32
+          description: Keep newest N; 0 empties the live stream

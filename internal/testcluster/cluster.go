@@ -263,8 +263,13 @@ func (c *Cluster) ready() error {
 		}
 		// ModeVectorSet rejects Get; missing name is present=false, nil error.
 		_, _, verr := cli.VCard(ctx, ks, "__testcluster_ready__")
-		_ = cli.Close()
 		if verr == nil {
+			_ = cli.Close()
+			continue
+		}
+		_, _, serr2 := cli.XLen(ctx, ks, "__testcluster_ready__")
+		_ = cli.Close()
+		if serr2 == nil {
 			continue
 		}
 		return fmt.Errorf("testcluster: ready get %s: %w", n.ID, err)

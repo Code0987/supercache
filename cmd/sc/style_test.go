@@ -111,6 +111,7 @@ func TestCompactHelp(t *testing.T) {
 		"Commands",
 		"get  put  del",
 		"vadd  vrem  vsim",
+		"xadd  xlen  xrange",
 		"Flags",
 		"Examples",
 	} {

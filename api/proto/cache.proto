@@ -64,6 +64,12 @@ service Cache {
   rpc VCard(VCardRequest) returns (VCardResponse);
   rpc VDim(VDimRequest) returns (VDimResponse);
   rpc VEmb(VEmbRequest) returns (VEmbResponse);
+  rpc XAdd(XAddRequest) returns (XAddResponse);
+  rpc XRange(XRangeRequest) returns (XRangeResponse);
+  rpc XRevRange(XRevRangeRequest) returns (XRangeResponse);
+  rpc XLen(XLenRequest) returns (XLenResponse);
+  rpc XDel(XDelRequest) returns (XDelResponse);
+  rpc XTrim(XTrimRequest) returns (XTrimResponse);
 }
 
 message GetRequest {
@@ -636,3 +642,58 @@ message VEmbResponse {
   repeated float vec = 1;
   bool found = 2;
 }
+
+message StreamEntry {
+  string id = 1;
+  bytes payload = 2;
+}
+
+message XAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes payload = 3;
+}
+message XAddResponse {
+  string id = 1;
+}
+
+message XRangeRequest {
+  string keyspace = 1;
+  string name = 2;
+  string start = 3;
+  string end = 4;
+  int32 count = 5;
+}
+message XRevRangeRequest {
+  string keyspace = 1;
+  string name = 2;
+  string start = 3;
+  string end = 4;
+  int32 count = 5;
+}
+message XRangeResponse {
+  repeated StreamEntry entries = 1;
+}
+
+message XLenRequest {
+  string keyspace = 1;
+  string name = 2;
+}
+message XLenResponse {
+  int64 n = 1;
+  bool present = 2;
+}
+
+message XDelRequest {
+  string keyspace = 1;
+  string name = 2;
+  string id = 3;
+}
+message XDelResponse {}
+
+message XTrimRequest {
+  string keyspace = 1;
+  string name = 2;
+  int32 max_len = 3;
+}
+message XTrimResponse {}

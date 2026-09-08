@@ -25,7 +25,7 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
-- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, `vadd`…, or REPL)
+- **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, `vadd`…, `xadd`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
 
 ## Keyspace modes
@@ -49,8 +49,9 @@ Each keyspace has exactly one mode. Verbs that do not match the mode return inva
 | `ModeTopK` | Named Space-Saving heavy-hitters | `TopKAdd`, `TopKList`; `Delete(name)` |
 | `ModeCMS` | Named Count-Min frequency sketch | `CMSIncr`, `CMSQuery`; `Delete(name)` |
 | `ModeVectorSet` | Named embedding set + K-NN | `VAdd`, `VRem`, `VSim`, `VCard`, `VDim`, `VEmb`; `Delete(name)` |
+| `ModeStream` | Named append-only log | `XAdd`, `XRange`, `XRevRange`, `XLen`, `XDel`, `XTrim`; `Delete(name)` |
 
-Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100). ModeVectorSet uses `VectorDim` (0 = first add locks) and `VectorMetric` (cosine / l2 / ip).
+Config: `pkg/keyspace.Config` (`Name`, `Mode`, `MaxBytes`, `TTL`, `ReplicationFactor`, …). Bloom also uses `BloomBits` / `BloomHashes`. ModeTopK uses `TopKSize` (0 → 100). ModeVectorSet uses `VectorDim` (0 = first add locks) and `VectorMetric` (cosine / l2 / ip). ModeStream uses `StreamMaxLen` (0 = no auto-trim; hard cap 4096).
 
 ## Cache gRPC RPCs
 
@@ -214,6 +215,20 @@ Hosted shapes: Cache gRPC tab on [`/docs`](https://code0987.github.io/supercache
 | `Delete(name)` | Tombstone whole set |
 
 Named embedding set. Dim **2–256**, max **512** members, member id **1–255** bytes. Keyspace `VectorMetric`: **cosine** (default, high→low; rejects zero), **l2** (low→high), **ip** (high→low). Replicas install a **full `FlagVectorSet` snapshot**. Replica `VSim` may lag. Get/Put on `ModeVectorSet` are invalid. Not HNSW / not Redis `VADD` wire. Walkthrough: [`examples/vecset`](../examples/vecset/). CLI: `sc -keyspace vectorset vadd items a 1,0`.
+
+### Stream (`ModeStream`)
+
+| RPC | Notes |
+|-----|--------|
+| `XAdd` | Append opaque `[]byte`. Creates the stream if missing. Returns minted id `millis-seq` |
+| `XRange` | Inclusive id window, oldest first. `-` / `+`. Start `(`+id is exclusive. Missing → empty |
+| `XRevRange` | Same `start`/`end` window as `XRange`, newest first |
+| `XLen` | Count + present-bit. Missing ⇒ `present=false` |
+| `XDel` | Remove one id. ACK-only. Missing id is a no-op |
+| `XTrim` | Keep newest `max_len`. ACK-only |
+| `Delete(name)` | Tombstone whole stream |
+
+Named append-only log. Payload is opaque (client encodes). Owner mints ids; `XAdd` from a non-owner uses peer `StreamAdd`. Replicas install a **full `FlagStream` snapshot**. `StreamMaxLen` 0 = no auto-trim; hard cap 4096. Empty after last delete/trim stays live until `Delete(name)`. Get/Put invalid. Not consumer groups / not blocking `XREAD`. CLI: `sc -keyspace events xadd logs * hello`.
 
 ## Enabling GitHub Pages
 

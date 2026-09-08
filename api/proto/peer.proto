@@ -12,13 +12,14 @@ service Peer {
   rpc GetOrLoad(GetOrLoadRequest) returns (GetOrLoadResponse);
   rpc ListPop(ListPopRequest) returns (ListPopResponse);
   rpc CounterIncr(CounterIncrRequest) returns (CounterIncrResponse);
+  rpc StreamAdd(StreamAddRequest) returns (StreamAddResponse);
 }
 
 message Entry {
   bytes value = 1;
   uint64 version = 2;
   int64 expire_at_unix_nano = 3;
-  uint32 flags = 4;
+  uint64 flags = 4;
 }
 
 message ApplyPutRequest {
@@ -98,4 +99,13 @@ message CounterIncrRequest {
 }
 message CounterIncrResponse {
   int64 value = 1;
+}
+
+message StreamAddRequest {
+  string keyspace = 1;
+  string name = 2;
+  bytes payload = 3;
+}
+message StreamAddResponse {
+  string id = 1;
 }

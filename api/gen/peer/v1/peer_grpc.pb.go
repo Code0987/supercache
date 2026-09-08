@@ -26,6 +26,7 @@ const (
 	Peer_GetOrLoad_FullMethodName     = "/supercache.peer.v1.Peer/GetOrLoad"
 	Peer_ListPop_FullMethodName       = "/supercache.peer.v1.Peer/ListPop"
 	Peer_CounterIncr_FullMethodName   = "/supercache.peer.v1.Peer/CounterIncr"
+	Peer_StreamAdd_FullMethodName     = "/supercache.peer.v1.Peer/StreamAdd"
 )
 
 // PeerClient is the client API for Peer service.
@@ -39,6 +40,7 @@ type PeerClient interface {
 	GetOrLoad(ctx context.Context, in *GetOrLoadRequest, opts ...grpc.CallOption) (*GetOrLoadResponse, error)
 	ListPop(ctx context.Context, in *ListPopRequest, opts ...grpc.CallOption) (*ListPopResponse, error)
 	CounterIncr(ctx context.Context, in *CounterIncrRequest, opts ...grpc.CallOption) (*CounterIncrResponse, error)
+	StreamAdd(ctx context.Context, in *StreamAddRequest, opts ...grpc.CallOption) (*StreamAddResponse, error)
 }
 
 type peerClient struct {
@@ -119,6 +121,16 @@ func (c *peerClient) CounterIncr(ctx context.Context, in *CounterIncrRequest, op
 	return out, nil
 }
 
+func (c *peerClient) StreamAdd(ctx context.Context, in *StreamAddRequest, opts ...grpc.CallOption) (*StreamAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StreamAddResponse)
+	err := c.cc.Invoke(ctx, Peer_StreamAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PeerServer is the server API for Peer service.
 // All implementations must embed UnimplementedPeerServer
 // for forward compatibility.
@@ -130,6 +142,7 @@ type PeerServer interface {
 	GetOrLoad(context.Context, *GetOrLoadRequest) (*GetOrLoadResponse, error)
 	ListPop(context.Context, *ListPopRequest) (*ListPopResponse, error)
 	CounterIncr(context.Context, *CounterIncrRequest) (*CounterIncrResponse, error)
+	StreamAdd(context.Context, *StreamAddRequest) (*StreamAddResponse, error)
 	mustEmbedUnimplementedPeerServer()
 }
 
@@ -160,6 +173,9 @@ func (UnimplementedPeerServer) ListPop(context.Context, *ListPopRequest) (*ListP
 }
 func (UnimplementedPeerServer) CounterIncr(context.Context, *CounterIncrRequest) (*CounterIncrResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CounterIncr not implemented")
+}
+func (UnimplementedPeerServer) StreamAdd(context.Context, *StreamAddRequest) (*StreamAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StreamAdd not implemented")
 }
 func (UnimplementedPeerServer) mustEmbedUnimplementedPeerServer() {}
 func (UnimplementedPeerServer) testEmbeddedByValue()              {}
@@ -308,6 +324,24 @@ func _Peer_CounterIncr_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Peer_StreamAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StreamAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PeerServer).StreamAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Peer_StreamAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PeerServer).StreamAdd(ctx, req.(*StreamAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Peer_ServiceDesc is the grpc.ServiceDesc for Peer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -342,6 +376,10 @@ var Peer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CounterIncr",
 			Handler:    _Peer_CounterIncr_Handler,
+		},
+		{
+			MethodName: "StreamAdd",
+			Handler:    _Peer_StreamAdd_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

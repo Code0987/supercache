@@ -77,6 +77,12 @@ const (
 	Cache_VCard_FullMethodName         = "/supercache.cache.v1.Cache/VCard"
 	Cache_VDim_FullMethodName          = "/supercache.cache.v1.Cache/VDim"
 	Cache_VEmb_FullMethodName          = "/supercache.cache.v1.Cache/VEmb"
+	Cache_XAdd_FullMethodName          = "/supercache.cache.v1.Cache/XAdd"
+	Cache_XRange_FullMethodName        = "/supercache.cache.v1.Cache/XRange"
+	Cache_XRevRange_FullMethodName     = "/supercache.cache.v1.Cache/XRevRange"
+	Cache_XLen_FullMethodName          = "/supercache.cache.v1.Cache/XLen"
+	Cache_XDel_FullMethodName          = "/supercache.cache.v1.Cache/XDel"
+	Cache_XTrim_FullMethodName         = "/supercache.cache.v1.Cache/XTrim"
 )
 
 // CacheClient is the client API for Cache service.
@@ -143,6 +149,12 @@ type CacheClient interface {
 	VCard(ctx context.Context, in *VCardRequest, opts ...grpc.CallOption) (*VCardResponse, error)
 	VDim(ctx context.Context, in *VDimRequest, opts ...grpc.CallOption) (*VDimResponse, error)
 	VEmb(ctx context.Context, in *VEmbRequest, opts ...grpc.CallOption) (*VEmbResponse, error)
+	XAdd(ctx context.Context, in *XAddRequest, opts ...grpc.CallOption) (*XAddResponse, error)
+	XRange(ctx context.Context, in *XRangeRequest, opts ...grpc.CallOption) (*XRangeResponse, error)
+	XRevRange(ctx context.Context, in *XRevRangeRequest, opts ...grpc.CallOption) (*XRangeResponse, error)
+	XLen(ctx context.Context, in *XLenRequest, opts ...grpc.CallOption) (*XLenResponse, error)
+	XDel(ctx context.Context, in *XDelRequest, opts ...grpc.CallOption) (*XDelResponse, error)
+	XTrim(ctx context.Context, in *XTrimRequest, opts ...grpc.CallOption) (*XTrimResponse, error)
 }
 
 type cacheClient struct {
@@ -733,6 +745,66 @@ func (c *cacheClient) VEmb(ctx context.Context, in *VEmbRequest, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *cacheClient) XAdd(ctx context.Context, in *XAddRequest, opts ...grpc.CallOption) (*XAddResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XAddResponse)
+	err := c.cc.Invoke(ctx, Cache_XAdd_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) XRange(ctx context.Context, in *XRangeRequest, opts ...grpc.CallOption) (*XRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XRangeResponse)
+	err := c.cc.Invoke(ctx, Cache_XRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) XRevRange(ctx context.Context, in *XRevRangeRequest, opts ...grpc.CallOption) (*XRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XRangeResponse)
+	err := c.cc.Invoke(ctx, Cache_XRevRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) XLen(ctx context.Context, in *XLenRequest, opts ...grpc.CallOption) (*XLenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XLenResponse)
+	err := c.cc.Invoke(ctx, Cache_XLen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) XDel(ctx context.Context, in *XDelRequest, opts ...grpc.CallOption) (*XDelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XDelResponse)
+	err := c.cc.Invoke(ctx, Cache_XDel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cacheClient) XTrim(ctx context.Context, in *XTrimRequest, opts ...grpc.CallOption) (*XTrimResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XTrimResponse)
+	err := c.cc.Invoke(ctx, Cache_XTrim_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CacheServer is the server API for Cache service.
 // All implementations must embed UnimplementedCacheServer
 // for forward compatibility.
@@ -797,6 +869,12 @@ type CacheServer interface {
 	VCard(context.Context, *VCardRequest) (*VCardResponse, error)
 	VDim(context.Context, *VDimRequest) (*VDimResponse, error)
 	VEmb(context.Context, *VEmbRequest) (*VEmbResponse, error)
+	XAdd(context.Context, *XAddRequest) (*XAddResponse, error)
+	XRange(context.Context, *XRangeRequest) (*XRangeResponse, error)
+	XRevRange(context.Context, *XRevRangeRequest) (*XRangeResponse, error)
+	XLen(context.Context, *XLenRequest) (*XLenResponse, error)
+	XDel(context.Context, *XDelRequest) (*XDelResponse, error)
+	XTrim(context.Context, *XTrimRequest) (*XTrimResponse, error)
 	mustEmbedUnimplementedCacheServer()
 }
 
@@ -980,6 +1058,24 @@ func (UnimplementedCacheServer) VDim(context.Context, *VDimRequest) (*VDimRespon
 }
 func (UnimplementedCacheServer) VEmb(context.Context, *VEmbRequest) (*VEmbResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VEmb not implemented")
+}
+func (UnimplementedCacheServer) XAdd(context.Context, *XAddRequest) (*XAddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XAdd not implemented")
+}
+func (UnimplementedCacheServer) XRange(context.Context, *XRangeRequest) (*XRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XRange not implemented")
+}
+func (UnimplementedCacheServer) XRevRange(context.Context, *XRevRangeRequest) (*XRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XRevRange not implemented")
+}
+func (UnimplementedCacheServer) XLen(context.Context, *XLenRequest) (*XLenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XLen not implemented")
+}
+func (UnimplementedCacheServer) XDel(context.Context, *XDelRequest) (*XDelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XDel not implemented")
+}
+func (UnimplementedCacheServer) XTrim(context.Context, *XTrimRequest) (*XTrimResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method XTrim not implemented")
 }
 func (UnimplementedCacheServer) mustEmbedUnimplementedCacheServer() {}
 func (UnimplementedCacheServer) testEmbeddedByValue()               {}
@@ -2046,6 +2142,114 @@ func _Cache_VEmb_Handler(srv interface{}, ctx context.Context, dec func(interfac
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cache_XAdd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XAddRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XAdd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XAdd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XAdd(ctx, req.(*XAddRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_XRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XRange(ctx, req.(*XRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_XRevRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XRevRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XRevRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XRevRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XRevRange(ctx, req.(*XRevRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_XLen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XLenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XLen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XLen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XLen(ctx, req.(*XLenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_XDel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XDelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XDel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XDel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XDel(ctx, req.(*XDelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Cache_XTrim_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XTrimRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CacheServer).XTrim(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cache_XTrim_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CacheServer).XTrim(ctx, req.(*XTrimRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cache_ServiceDesc is the grpc.ServiceDesc for Cache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2284,6 +2488,30 @@ var Cache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VEmb",
 			Handler:    _Cache_VEmb_Handler,
+		},
+		{
+			MethodName: "XAdd",
+			Handler:    _Cache_XAdd_Handler,
+		},
+		{
+			MethodName: "XRange",
+			Handler:    _Cache_XRange_Handler,
+		},
+		{
+			MethodName: "XRevRange",
+			Handler:    _Cache_XRevRange_Handler,
+		},
+		{
+			MethodName: "XLen",
+			Handler:    _Cache_XLen_Handler,
+		},
+		{
+			MethodName: "XDel",
+			Handler:    _Cache_XDel_Handler,
+		},
+		{
+			MethodName: "XTrim",
+			Handler:    _Cache_XTrim_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
