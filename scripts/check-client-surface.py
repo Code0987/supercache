@@ -14,7 +14,7 @@ from pathlib import Path
 
 # (rpc, python method, node method)
 SURFACE = [
-    # TEMP: Get removed to prove clients-up-to-date fails. Revert this commit.
+    ("Get", "get", "get"),
     ("Put", "put", "put"),
     ("PutMany", "put_many", "putMany"),
     ("Delete", "delete", "delete"),
