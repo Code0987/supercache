@@ -25,8 +25,14 @@ go run ./cmd/supercache-node \
 ### Clients
 
 - **Go:** `pkg/client`
+- **Python:** `clients/python` (`import supercache`, sync). Install from source; not published.
+- **Node.js:** `clients/node` (`@code0987/supercache`, Promises, Node 22+). Install from source; the package is `private`.
 - **CLI:** `cmd/sc` (`sc get` / `put` / `del`, `bloom`, `sadd`…, `zadd`…, `geoadd`…, `lpush`…, `hset`…, `incr` / `cget`, `jsonset`…, `bitset`…, `vadd`…, `xadd`…, or REPL)
 - **Protos:** `api/proto/cache.proto`, `api/proto/peer.proto` (peer is mesh-internal)
+
+Python and Node speak the Cache port only. They follow `pkg/client`: a Get with `found=false` raises `NotFound`. A gRPC status is a different error, including `NOT_FOUND` when the keyspace is missing (`supercache: keyspace not found`). `PutMany` / `DeleteMany` per-key failures and `Delete` peer failures are raised from the response body, not from the status. Omitted TTL leaves `ttl_set` false. An explicit zero TTL sets `ttl_set` and stores no expiry.
+
+`scripts/check-client-surface.py` fails CI unless every Cache RPC below is wrapped by both clients and named in this file: Get, Put, PutMany, Delete, DeleteMany, BloomAdd, BloomTest, SetAdd, SetRemove, SetContains, SetCard, SetMembers, ZAdd, ZRem, ZScore, ZCard, ZRange, ZRangeByScore, GeoAdd, GeoRem, GeoPos, GeoCard, GeoDist, GeoRadius, LPush, RPush, LPop, RPop, LLen, LIndex, LRange, HSet, HGet, HDel, HExists, HLen, HGetAll, Incr, CounterGet, JsonSet, JsonGet, JsonDel, BitSet, BitGet, BitCount, BitPos, HLLAdd, HLLCount, TopKAdd, TopKList, CMSIncr, CMSQuery, VAdd, VRem, VSim, VCard, VDim, VEmb, XAdd, XRange, XRevRange, XLen, XDel, XTrim.
 
 ## Keyspace modes
 
