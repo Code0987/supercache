@@ -1,0 +1,31 @@
+{
+  "name": "@code0987/supercache",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SuperCache Cache gRPC client for Node.js",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/test/client.test.js"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
+    "@grpc/grpc-js": "1.12.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.10",
+    "ts-proto": "2.7.7",
+    "typescript": "5.8.2"
+  }
+}

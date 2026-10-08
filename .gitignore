@@ -33,3 +33,11 @@ Thumbs.db
 # Python
 __pycache__/
 *.py[cod]
+clients/python/*.egg-info/
+clients/python/src/*.egg-info/
+clients/python/.pytest_cache/
+clients/python/.venv/
+
+# Node client (stubs under src/gen are committed)
+clients/node/node_modules/
+clients/node/dist/

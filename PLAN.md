@@ -141,7 +141,7 @@ Owner-only storage + remote Get would scale memory with N but would **break** th
 | Peer write path | Owner ACK + **async fan-out to R−1 replicas**; peer failures **logged, not retried, not returned** on Put |
 | Persistence | **None** |
 | Workload | **Read-heavy** |
-| Client API | **gRPC** `Cache` service (KV + Bloom + Set + ZSet) + optional in-process Engine + `cmd/sc` |
+| Client API | **gRPC** `Cache` service + in-process Engine + `cmd/sc` + in-repo Python (`clients/python`) and Node (`clients/node`) clients |
 | Local store | Custom versioned **LRU** (`pkg/store`) with structure caches for set/zset — **not** stock groupcache |
 | Membership | **hashicorp/memberlist** (gossip); optional `WithGossipSecret` |
 | Hash ring | Consistent hash with virtual nodes over **cache-node** peers only |
