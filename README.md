@@ -110,6 +110,38 @@ go run ./cmd/sc
 
 Install: `go install ./cmd/sc`. See [cmd/sc/README.md](./cmd/sc/README.md).
 
+### Python and Node
+
+In-repo clients for the Cache port. They are not published. Do not point them at the peer port.
+
+```bash
+# Python 3.11+
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ./clients/python
+```
+
+```python
+import supercache
+c = supercache.dial("127.0.0.1:9000")
+c.put("cacheonly", "greeting", b"hello")
+print(c.get("cacheonly", "greeting"))
+c.close()
+```
+
+```bash
+cd clients/node && npm ci && npm run build
+```
+
+```js
+import { dial } from "@code0987/supercache";
+const c = dial("127.0.0.1:9000");
+await c.put("cacheonly", "greeting", "hello");
+console.log(Buffer.from(await c.get("cacheonly", "greeting")).toString());
+c.close();
+```
+
+See [clients/python/README.md](./clients/python/README.md) and [clients/node/README.md](./clients/node/README.md).
+
 ### Benchmarks
 
 Local SuperCache vs Redis (multi-trial medians):
@@ -228,6 +260,8 @@ Apps: `client.DialTLS` with `pkg/tlsconfig.ClientFiles`. See [docs/OPERATIONS.md
 | `pkg/membership` | Gossip + ring rebuild |
 | `pkg/warmup` | Hot keys, topology handoff (hot then rest), refresh-ahead |
 | `pkg/client` | Application gRPC client (KV + Bloom + Set + ZSet + Geo + List + Hash + Counter + JSON + Bitmap + HLL + TopK + CMS + VectorSet + Stream) |
+| `clients/python`, `clients/node` | Same Cache contract for Python 3.11+ and Node 22+ |
+| `clients/conformance` | Single-node Cache server the language tests dial |
 | `pkg/tlsconfig` | TLS/mTLS config from PEM files |
 | `cmd/supercache-node` | Node binary (`-demo-keyspace`: cacheonly / set / zset / hash / json / bitmap / vectorset) |
 | `cmd/sc` | CLI: get/put/del, bloom, sadd*, z*, geo*, l*, h*, incr/cget, json*, bit*, hlladd/hllcount, topkadd/topklist, cmsincr/cmsquery, vadd*, xadd* |
